@@ -343,7 +343,10 @@ export class JavaScriptExecutor {
           ) &&
           !lastNoSemi.endsWith("{") &&
           !lastNoSemi.endsWith("}") &&
-          !/^[\s\S]*=[^=][\s\S]*$/.test(lastNoSemi);
+          // Skip genuine assignments (x = ...), but NOT arrow functions (=>) or
+          // comparisons (==, ===, <=, >=, !=). A bare `=` here means the cell's
+          // last line is an assignment statement, which we don't display.
+          !/(^|[^=!<>])=(?![=>])/.test(lastNoSemi);
 
         let execBody = code;
         if (isLikelyExpression && !isAsyncIIFE) {
