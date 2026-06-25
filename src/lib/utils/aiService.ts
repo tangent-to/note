@@ -55,8 +55,12 @@ function viteEnv(): any {
 // time via VITE_OLLAMA_PROXY_URL. When present, the deployed web build routes
 // requests through it so the browser never makes a blocked cross-origin call.
 function proxyBase(): string | undefined {
-  const url = viteEnv()?.VITE_OLLAMA_PROXY_URL;
-  return url ? String(url).replace(/\/+$/, '') : undefined;
+  const raw = viteEnv()?.VITE_OLLAMA_PROXY_URL;
+  if (!raw) return undefined;
+  // Be forgiving about pasted values: trim, take only the first token (guards
+  // against accidental trailing text/notes), and drop any trailing slash.
+  const url = String(raw).trim().split(/\s+/)[0].replace(/\/+$/, '');
+  return url || undefined;
 }
 
 // Resolve the default base URL:
@@ -117,7 +121,12 @@ export class AIService {
   }
 
   private endpoint(path: string): string {
-    return this.config.baseUrl.replace(/\/+$/, '') + path;
+    // The Ollama API lives under /api. Tolerate a base URL given with or
+    // without it (e.g. a proxy root like https://…workers.dev) so requests
+    // always hit /api/chat rather than /chat.
+    let base = this.config.baseUrl.replace(/\/+$/, '');
+    if (!/\/api$/.test(base)) base += '/api';
+    return base + path;
   }
 
   private headers(): Record<string, string> {
