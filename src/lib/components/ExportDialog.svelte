@@ -21,21 +21,21 @@
   }> = [
     {
       value: 'js',
-      title: 'Export JS — checkpoint & reuse',
+      title: 'Export JS: checkpoint & reuse',
       description:
         "Save Tangent's .js format with cell delimiters so you can version control or re-import later.",
       button: 'Download .js file'
     },
     {
       value: 'html-static',
-      title: 'Static export — read-only snapshot',
+      title: 'Static export: read-only snapshot',
       description:
         'Generate a styled, read-only HTML page that mirrors your notebook for sharing or archiving.',
       button: 'Download static HTML'
     },
     {
       value: 'html-runnable',
-      title: 'Runnable export — executable/print-ready',
+      title: 'Runnable export: executable/print-ready',
       description:
         'Bundle notebook code and outputs into a single HTML file that can replay cells (via CDN modules).',
       button: 'Download runnable HTML'

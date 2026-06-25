@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import type { Notebook, NotebookCell, NotebookFile } from '../types/notebook';
 import { saveToLocalStorage } from '../utils/webPersistence';
+import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependencyGraph';
 
 // Current notebook being edited
 export const currentNotebook = writable<Notebook | null>(null);
@@ -16,7 +17,52 @@ export const selectedCellId = writable<string | null>(null);
 
 export const notebookDirty = writable(false);
 
-// Current file path (for Tauri)
+// Set of cell ids whose output is stale: an upstream dependency changed or ran
+// more recently, or the cell was edited since it last ran.
+export const staleCells = writable<Set<string>>(new Set());
+
+// Per-cell record of the last run (when + content hash). Not persisted.
+const cellRunInfo = new Map<string, RunRecord>();
+
+// Record that a cell just ran with the given content.
+export function recordCellRun(cellId: string, content: string): void {
+  cellRunInfo.set(cellId, { at: Date.now(), hash: hashCode(content) });
+}
+
+// Recompute which cells are stale and publish to the store.
+export function recomputeStaleCells(notebook: Notebook | null): void {
+  staleCells.set(notebook ? computeStaleCells(notebook.cells, cellRunInfo) : new Set());
+}
+
+// Forget all run history (e.g. on new/imported notebook or kernel reset).
+export function resetStaleTracking(): void {
+  cellRunInfo.clear();
+  staleCells.set(new Set());
+}
+
+// Reactive mode: when on, running a cell automatically re-runs its downstream
+// dependents in dependency order. Persisted across sessions.
+const REACTIVE_KEY = 'tangent-reactive-mode';
+
+function loadReactiveMode(): boolean {
+  try {
+    return localStorage.getItem(REACTIVE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export const reactiveMode = writable<boolean>(loadReactiveMode());
+
+reactiveMode.subscribe((on) => {
+  try {
+    localStorage.setItem(REACTIVE_KEY, on ? '1' : '0');
+  } catch {
+    // ignore persistence failures
+  }
+});
+
+// Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 
 // Execution order counter
@@ -105,6 +151,7 @@ export function addToRecentFiles(path: string, name: string): void {
 export function createNewNotebook(): Notebook {
   const now = Date.now();
   resetExecutionCounter();
+  resetStaleTracking();
   const notebook = {
     id: `notebook-${now}`,
     name: 'Untitled Notebook',

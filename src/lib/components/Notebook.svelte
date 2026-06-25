@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
   import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter } from '../stores/notebook';
   import {
@@ -7,13 +8,21 @@
     addCellAfter,
     deleteCell,
     moveCellUp,
-    moveCellDown
+    moveCellDown,
+    staleCells,
+    recordCellRun,
+    recomputeStaleCells,
+    reactiveMode
   } from '../stores/notebook';
   import { JavaScriptExecutor } from '../utils/jsExecutor';
+  import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
   let jsExecutor: JavaScriptExecutor;
   let isRunningAll = false;
+  // While true, handleRunCell won't trigger a reactive cascade — used so that
+  // run-all, run-stale, and the cascade itself don't recurse.
+  let suppressCascade = false;
 
   // Drag-and-drop state
   let draggedCellId: string | null = null;
@@ -21,22 +30,56 @@
   let dragOverPosition: 'above' | 'below' | null = null;
 
   const handleRunAllEvent = () => handleRunAll();
+  const handleRunStaleEvent = () => handleRunStale();
+  const handleInputChangeEvent = (e: Event) => {
+    const name = (e as CustomEvent).detail?.name;
+    if (name) runDependentsOfName(name);
+  };
 
   onMount(async () => {
     jsExecutor = new JavaScriptExecutor();
     await jsExecutor.setupCommonLibraries();
     window.addEventListener('run-all-cells', handleRunAllEvent);
+    window.addEventListener('run-stale-cells', handleRunStaleEvent);
+    window.addEventListener('tangent-input-change', handleInputChangeEvent);
   });
 
   onDestroy(() => {
     window.removeEventListener('run-all-cells', handleRunAllEvent);
+    window.removeEventListener('run-stale-cells', handleRunStaleEvent);
+    window.removeEventListener('tangent-input-change', handleInputChangeEvent);
   });
+
+  // A reactive input (e.g. a slider) changed: re-run the cells that read its
+  // bound variable, in document order. Inputs drive their dependents regardless
+  // of the reactive-mode toggle — that's the point of an interactive control.
+  async function runDependentsOfName(name: string) {
+    if (suppressCascade) return;
+    const notebook = getNotebookSnapshot();
+    if (!notebook) return;
+    const dependents = getDependentsOfName(notebook.cells, name);
+    if (dependents.size === 0) return;
+
+    suppressCascade = true;
+    try {
+      for (const cell of notebook.cells) {
+        if (cell.type === 'code' && dependents.has(cell.id)) {
+          await handleRunCell({ cellId: cell.id });
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      }
+    } finally {
+      suppressCascade = false;
+    }
+  }
 
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
       return updateCellContent(notebook, cellId, content);
     });
+    // Editing a cell may make it (and its dependents) stale.
+    recomputeStaleCells(getNotebookSnapshot());
   }
 
   async function handleRunCell({ cellId }: { cellId: string }) {
@@ -84,6 +127,9 @@
           )
         };
       });
+
+      recordCellRun(cellId, cell.content);
+      recomputeStaleCells(getNotebookSnapshot());
     } catch (error: any) {
       currentNotebook.update(nb => {
         if (!nb) return nb;
@@ -104,7 +150,55 @@
           )
         };
       });
+
+      recordCellRun(cellId, cell.content);
+      recomputeStaleCells(getNotebookSnapshot());
     }
+
+    // Reactive mode: re-run everything that depends on this cell.
+    if ($reactiveMode && !suppressCascade) {
+      await cascadeFrom(cellId);
+    }
+  }
+
+  // Run the transitive downstream dependents of `originId` in document order.
+  async function cascadeFrom(originId: string) {
+    const notebook = getNotebookSnapshot();
+    if (!notebook) return;
+    const downstream = getDownstreamCells(notebook.cells, originId);
+    if (downstream.size === 0) return;
+
+    suppressCascade = true;
+    try {
+      for (const cell of notebook.cells) {
+        if (cell.type === 'code' && downstream.has(cell.id)) {
+          await handleRunCell({ cellId: cell.id });
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+      }
+    } finally {
+      suppressCascade = false;
+    }
+  }
+
+  async function handleRunStale() {
+    const notebook = getNotebookSnapshot();
+    if (!notebook || isRunningAll) return;
+
+    const stale = get(staleCells);
+    if (stale.size === 0) return;
+
+    isRunningAll = true;
+    suppressCascade = true;
+    // Run stale code cells top-to-bottom (an approximation of dependency order).
+    for (const cell of notebook.cells) {
+      if (cell.type === 'code' && stale.has(cell.id)) {
+        await handleRunCell({ cellId: cell.id });
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    suppressCascade = false;
+    isRunningAll = false;
   }
 
   async function handleRunAll() {
@@ -115,6 +209,7 @@
     if (!notebook || isRunningAll) return;
 
     isRunningAll = true;
+    suppressCascade = true;
     resetExecutionCounter();
 
     for (const cell of notebook.cells) {
@@ -128,7 +223,9 @@
       }
     }
 
+    suppressCascade = false;
     isRunningAll = false;
+    recomputeStaleCells(getNotebookSnapshot());
   }
 
   async function handleRunAndAdvance({ cellId }: { cellId: string }) {
@@ -379,6 +476,7 @@
         <Cell
           {cell}
           isSelected={$selectedCellId === cell.id}
+          isStale={$staleCells.has(cell.id)}
           isDraggedOver={dragOverCellId === cell.id}
           dragPosition={dragOverCellId === cell.id ? dragOverPosition : null}
           oncontentChange={handleContentChange}

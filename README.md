@@ -1,13 +1,12 @@
 # tangent/notebook
 
-A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, on the web but local-first with a tauri app, with a Zed/deno -style notebook format in pure JavaScript.
+A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, local-first on the web, with a Zed/deno -style notebook format in pure JavaScript.
 
 ## Start
 
 ### Prerequisites
 
-- Node.js 18+
-- Rust (for desktop app only)
+- Node.js 20+
 
 ### Installation
 
@@ -22,27 +21,15 @@ npm install
 
 ### Running
 
-**Web Version:**
 ```bash
 npm run dev
 # then head to http://localhost:5173
 ```
 
-**Desktop App (Tauri):**
-Make sure you have Rust and Cargo installed.
-
-```bash
-npm run tauri:dev
-```
-
 **Build for Production:**
 
 ```bash
-# Web version
 npm run build
-
-# Desktop app
-npm run tauri:build
 ```
 
 ## Usage
@@ -62,15 +49,29 @@ npm run tauri:build
 
 ### AI Setup
 
-Not thouroughly tested...
+The AI assistant is powered by **Ollama Cloud**. Open the AI sidebar
+(`Ctrl/Cmd + /`), click the settings icon, and paste your API key (from
+[ollama.com/settings/keys](https://ollama.com/settings/keys)). The current
+notebook is automatically sent to the model as context (as a system prompt), so
+you can ask it to explain, extend, or debug your cells.
 
-1. **Claude API**:
-   - Configure in AI settings with your Anthropic API key
+Default model: `qwen3-coder:480b-cloud` (any Ollama Cloud model works, e.g.
+`gpt-oss:120b-cloud`).
 
-2. **Ollama (Local)**:
-   - Install from https://ollama.ai
-   - Run `ollama pull codellama`
-   - No API key needed!
+#### CORS and the browser
+
+Ollama Cloud doesn't send CORS headers, so a browser can't call it directly.
+This project handles that with a small proxy — no browser extensions needed:
+
+- **Running locally (`npm run dev`)** — works out of the box. The Vite dev
+  server proxies requests to `ollama.com`, so there's nothing to configure.
+- **Deployed web build (e.g. notebook.tangent.to)** — deploy the bundled
+  **Cloudflare Worker** proxy once and point the app at it. The worker forwards
+  requests to `ollama.com` and adds CORS headers; each user still uses their own
+  API key (it just passes through — the worker never stores it). See
+  [`workers/ollama-proxy/README.md`](workers/ollama-proxy/README.md), then build
+  with `VITE_OLLAMA_PROXY_URL` set to the worker URL. Without it configured, the
+  app shows a notice and AI calls will be blocked by the browser.
 
 ### Examples
 
@@ -81,7 +82,7 @@ Head to notebook.tangent.to
 - **Frontend**. Svelte, TypeScript, Tailwind CSS
 - **Build Tool**. Vite
 - **Editor**. Monaco Editor
-- **Desktop**. Tauri (Rust)
+- **AI**. Ollama Cloud
 - **Viz Libraries**. Observable Plot, Plotly, D3.js, Vega-Lite, Arquero
 
 ## File Format

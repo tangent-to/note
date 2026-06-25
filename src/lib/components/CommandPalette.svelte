@@ -62,6 +62,13 @@
       action: () => oncommand?.({ id: 'run-all' })
     },
     {
+      id: 'toggle-reactive',
+      name: 'Toggle Reactive Mode',
+      description: 'Auto re-run cells that depend on a cell when it runs',
+      icon: 'zap',
+      action: () => oncommand?.({ id: 'toggle-reactive' })
+    },
+    {
       id: 'add-code-cell',
       name: 'Add Code Cell',
       description: 'Insert a new code cell',
@@ -169,15 +176,27 @@
     'type': 'M4 7V4h16v3M9 20h6M12 4v16',
     'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z',
     'x-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM15 9l-6 6M9 9l6 6',
-    'help-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01'
+    'help-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01',
+    'zap': 'M13 2L3 14h7l-1 8 10-12h-7l1-8z'
   };
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if visible}
-  <div class="palette-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true">
-    <div class="palette-container">
+  <div
+    class="palette-backdrop"
+    role="presentation"
+    onclick={handleBackdropClick}
+    onkeydown={(e) => { if (e.key === 'Escape') close(); }}
+  >
+    <div
+      class="palette-container"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      tabindex="-1"
+    >
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { aiService } from '../utils/aiService';
+  import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, type ChatMessage } from '../utils/aiService';
+  import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
+  import { buildSystemPrompt } from '../utils/notebookContext';
 
   interface Props {
     onclose?: () => void;
@@ -22,64 +24,45 @@
   let messagesContainer: HTMLDivElement = $state(null as any);
   let isConfigured = $state(false);
   let showSettings = $state(false);
-  let selectedProvider = $state('ollama');
-  let claudeApiKey = $state('');
-  let ollamaUrl = $state('http://localhost:11434/api');
+
+  // Ollama Cloud settings
+  let apiKey = $state('');
+  let baseUrl = $state('');
+  let model = $state('');
+  let rememberKey = $state(false);
+
+  // Only a concern on a deployed web build with no CORS proxy configured:
+  // direct browser calls to ollama.com would be blocked by CORS.
+  const showCorsNotice = isWebDeployment() && !corsProxyConfigured();
 
   onMount(() => {
-    const savedProvider = localStorage.getItem('chat_provider');
-    const savedClaudeKey = localStorage.getItem('claude_api_key');
-    const savedOllamaUrl = localStorage.getItem('ollama_url');
-
-    if (savedProvider) selectedProvider = savedProvider;
-    if (savedClaudeKey) claudeApiKey = savedClaudeKey;
-    if (savedOllamaUrl) ollamaUrl = savedOllamaUrl;
-
-    if (savedProvider === 'claude' && savedClaudeKey) {
-      configureProvider('claude', savedClaudeKey);
-    } else if (savedProvider === 'ollama') {
-      configureProvider('ollama', '');
-    }
-
-    checkConfiguration();
+    const config = loadAISettings();
+    apiKey = config.apiKey;
+    baseUrl = config.baseUrl;
+    model = config.model;
+    rememberKey = config.rememberKey;
+    isConfigured = aiService.isConfigured();
   });
 
-  function checkConfiguration() {
-    const provider = aiService.getActiveProvider();
-    isConfigured = provider !== null && (
-      provider.apiKey !== undefined || selectedProvider === 'ollama'
-    );
-  }
-
-  function configureProvider(provider: string, key: string) {
-    if (provider === 'claude') {
-      aiService.configureProvider('claude', key);
-      aiService.setProvider('claude');
-      localStorage.setItem('chat_provider', 'claude');
-      localStorage.setItem('claude_api_key', key);
-    } else if (provider === 'ollama') {
-      aiService.configureProvider('ollama', '', { baseUrl: ollamaUrl });
-      aiService.setProvider('ollama');
-      localStorage.setItem('chat_provider', 'ollama');
-      localStorage.setItem('ollama_url', ollamaUrl);
-    }
-
-    isConfigured = true;
-    showSettings = false;
-  }
-
   function handleSettingsSave() {
-    if (selectedProvider === 'claude' && claudeApiKey.trim()) {
-      configureProvider('claude', claudeApiKey.trim());
-    } else if (selectedProvider === 'ollama') {
-      configureProvider('ollama', '');
-    }
+    const config = saveAISettings({
+      apiKey: apiKey.trim(),
+      baseUrl: baseUrl.trim(),
+      model: model.trim(),
+    }, rememberKey);
+    apiKey = config.apiKey;
+    baseUrl = config.baseUrl;
+    model = config.model;
+    rememberKey = config.rememberKey;
+    isConfigured = aiService.isConfigured();
+    if (isConfigured) showSettings = false;
   }
 
   function handleDisconnect() {
-    claudeApiKey = '';
-    localStorage.removeItem('chat_provider');
-    localStorage.removeItem('claude_api_key');
+    apiKey = '';
+    rememberKey = false;
+    aiService.configure({ apiKey: '' });
+    clearStoredKey();
     isConfigured = false;
   }
 
@@ -94,32 +77,34 @@
     };
 
     messages = [...messages, userMessage];
-    const userInput = inputValue;
     inputValue = '';
     isLoading = true;
 
     setTimeout(scrollToBottom, 0);
 
     try {
-      const response = await aiService.generateCode({
-        prompt: userInput,
-        language: 'javascript',
-        context: messages.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n')
-      });
+      // Send the recent conversation, with the current notebook injected as the
+      // system prompt so the assistant can reason about the user's cells.
+      const conversation: ChatMessage[] = messages
+        .slice(-10)
+        .map(m => ({ role: m.role, content: m.content }));
+
+      const reply = await aiService.chat(conversation, buildSystemPrompt());
 
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-${Math.random()}`,
         role: 'assistant',
-        content: response.code,
+        content: reply || '(no response)',
         timestamp: Date.now()
       };
 
       messages = [...messages, assistantMessage];
     } catch (error: any) {
+      const hint = error instanceof CorsLikelyError ? error.message : `Error: ${error.message}`;
       const errorMessage: Message = {
         id: `msg-${Date.now()}-${Math.random()}`,
         role: 'assistant',
-        content: `Error: ${error.message}`,
+        content: hint,
         timestamp: Date.now()
       };
       messages = [...messages, errorMessage];
@@ -167,15 +152,33 @@
 
   {#if showSettings}
     <div class="settings-panel">
-      <h3>Chat Provider Settings</h3>
+      <h3>Ollama Cloud Settings</h3>
 
       <div class="info-box">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 16v-4M12 8h.01"/>
         </svg>
-        <p><strong>Note:</strong> GitHub Copilot is for inline code completion only. For chat, use Claude or Ollama.</p>
+        <p>
+          Powered by <strong>Ollama Cloud</strong>. Get an API key at
+          <a href="https://ollama.com/settings/keys" target="_blank">ollama.com</a>.
+        </p>
       </div>
+
+      {#if showCorsNotice}
+        <div class="warn-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <path d="M12 9v4M12 17h.01"/>
+          </svg>
+          <p>
+            This deployment has no Ollama proxy configured, so the browser will
+            block calls to Ollama Cloud (CORS). Run the app locally (the dev server
+            proxies requests), or deploy the bundled Cloudflare proxy and set
+            <code>VITE_OLLAMA_PROXY_URL</code> (see <code>workers/ollama-proxy</code>).
+          </p>
+        </div>
+      {/if}
 
       {#if isConfigured}
         <div class="status-connected">
@@ -183,50 +186,57 @@
             <circle cx="12" cy="12" r="10"/>
             <path d="M9 12l2 2 4-4"/>
           </svg>
-          <span>Connected to {selectedProvider === 'claude' ? 'Claude' : 'Ollama'}</span>
+          <span>Connected to Ollama Cloud ({model})</span>
         </div>
         <button class="btn-secondary" onclick={handleDisconnect}>Disconnect</button>
       {:else}
         <div class="form-group">
-          <label for="provider">AI Provider</label>
-          <select id="provider" bind:value={selectedProvider} class="input">
-            <option value="ollama">Ollama (Local - Free)</option>
-            <option value="claude">Claude (Anthropic API)</option>
-          </select>
+          <label for="ollama-key">API Key</label>
+          <input
+            id="ollama-key"
+            type="password"
+            bind:value={apiKey}
+            placeholder="Your Ollama Cloud API key"
+            class="input"
+          />
+          <label class="remember-row">
+            <input type="checkbox" bind:checked={rememberKey} />
+            Remember key on this device
+          </label>
+          {#if rememberKey}
+            <p class="key-warning">
+              ⚠ Stored unencrypted in this browser (localStorage). Avoid on shared
+              or public devices. Unchecked, the key is kept only until you close the tab.
+            </p>
+          {/if}
         </div>
 
-        {#if selectedProvider === 'claude'}
-          <div class="form-group">
-            <label for="claude-key">Claude API Key</label>
-            <input
-              id="claude-key"
-              type="password"
-              bind:value={claudeApiKey}
-              placeholder="sk-ant-..."
-              class="input"
-            />
-            <p class="help-text">
-              Get your API key from <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a>
-            </p>
-          </div>
-        {:else if selectedProvider === 'ollama'}
-          <div class="form-group">
-            <label for="ollama-url">Ollama URL</label>
-            <input
-              id="ollama-url"
-              type="text"
-              bind:value={ollamaUrl}
-              placeholder="http://localhost:11434/api"
-              class="input"
-            />
-            <p class="help-text">
-              Install Ollama from <a href="https://ollama.ai" target="_blank">ollama.ai</a>, then run <code>ollama pull codellama</code>
-            </p>
-          </div>
-        {/if}
+        <div class="form-group">
+          <label for="ollama-model">Model</label>
+          <input
+            id="ollama-model"
+            type="text"
+            bind:value={model}
+            placeholder="qwen3-coder:480b-cloud"
+            class="input"
+          />
+          <p class="help-text">e.g. <code>qwen3-coder:480b-cloud</code>, <code>gpt-oss:120b-cloud</code></p>
+        </div>
+
+        <div class="form-group">
+          <label for="ollama-url">Base URL</label>
+          <input
+            id="ollama-url"
+            type="text"
+            bind:value={baseUrl}
+            placeholder="https://ollama.com/api"
+            class="input"
+          />
+          <p class="help-text">Leave as default unless you route through a proxy.</p>
+        </div>
 
         <div class="settings-actions">
-          <button class="btn-primary" onclick={handleSettingsSave}>Connect</button>
+          <button class="btn-primary" onclick={handleSettingsSave} disabled={!apiKey.trim()}>Connect</button>
           <button class="btn-secondary" onclick={() => showSettings = false}>Cancel</button>
         </div>
       {/if}
@@ -238,8 +248,8 @@
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
       </svg>
-      <h3>Connect AI Provider</h3>
-      <p>Configure an AI provider to start chatting</p>
+      <h3>Connect Ollama Cloud</h3>
+      <p>Add your API key to start chatting about your notebook</p>
       <button class="btn-primary" onclick={() => showSettings = true}>Configure</button>
     </div>
   {:else if isConfigured}
@@ -255,8 +265,8 @@
               <button class="suggestion" onclick={() => inputValue = 'Load and analyze CSV data with Arquero'}>
                 Analyze CSV data
               </button>
-              <button class="suggestion" onclick={() => inputValue = 'Create an interactive plot with Observable Plot'}>
-                Create a plot
+              <button class="suggestion" onclick={() => inputValue = 'Explain what my notebook does'}>
+                Explain my notebook
               </button>
             </div>
           </div>
@@ -279,7 +289,7 @@
             </div>
             <div class="message-content">
               <div class="message-text">{message.content}</div>
-              {#if message.role === 'assistant' && message.content && !message.content.startsWith('Error:')}
+              {#if message.role === 'assistant' && message.content && !message.content.startsWith('Error:') && !message.content.startsWith('Could not reach')}
                 <button
                   class="insert-btn"
                   onclick={() => oninsertCode?.({ code: message.content })}
@@ -419,13 +429,30 @@
 
   .info-box svg { flex-shrink: 0; margin-top: 0.125rem; }
   .info-box p { margin: 0; }
+  .info-box a { color: #1d4ed8; font-weight: 600; }
 
-  .info-box code {
-    background-color: #dbeafe;
-    padding: 0.125rem 0.375rem;
+  .warn-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    color: #92400e;
+    font-size: 0.8125rem;
+    margin-bottom: 1rem;
+    line-height: 1.5;
+  }
+
+  .warn-box svg { flex-shrink: 0; margin-top: 0.125rem; }
+  .warn-box p { margin: 0; }
+  .warn-box code {
+    background-color: #fef3c7;
+    padding: 0.0625rem 0.25rem;
     border-radius: 3px;
     font-family: 'Fira Code', monospace;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
   }
 
   .status-connected {
@@ -461,7 +488,6 @@
   }
 
   input.input { font-family: 'Fira Code', monospace; }
-  select.input { font-family: inherit; cursor: pointer; }
 
   .input:focus {
     outline: none;
@@ -469,9 +495,37 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
+  .remember-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: #4a4a4a;
+    cursor: pointer;
+  }
+  .remember-row input { cursor: pointer; }
+
+  .key-warning {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.5rem;
+    background-color: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #92400e;
+  }
+
   .help-text { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; }
-  .help-text a { color: #3b82f6; text-decoration: none; }
-  .help-text a:hover { text-decoration: underline; }
+  .help-text code {
+    background-color: #f3f4f6;
+    padding: 0.0625rem 0.25rem;
+    border-radius: 3px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem;
+  }
 
   .settings-actions { display: flex; gap: 0.5rem; }
 

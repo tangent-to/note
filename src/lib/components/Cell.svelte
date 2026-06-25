@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { marked } from 'marked';
   import katex from 'katex';
   import MonacoEditor from './MonacoEditor.svelte';
@@ -9,6 +9,7 @@
   interface Props {
     cell: NotebookCell;
     isSelected?: boolean;
+    isStale?: boolean;
     isDraggedOver?: boolean;
     dragPosition?: 'above' | 'below' | null;
     oncontentChange?: (detail: { cellId: string; content: string }) => void;
@@ -30,6 +31,7 @@
   let {
     cell,
     isSelected = false,
+    isStale = false,
     isDraggedOver = false,
     dragPosition = null,
     oncontentChange,
@@ -50,7 +52,9 @@
 
   let editorRef: MonacoEditor = $state(null as any);
   let isDragging = $state(false);
-  let isEditingMarkdown = $state(true);
+  // Markdown renders by default; empty cells open in edit mode so you can type.
+  // Capture only the initial content (untracked) — toggling is user-driven after.
+  let isEditingMarkdown = $state(untrack(() => !cell.content || !cell.content.trim()));
   let renderedMarkdown = $state('');
   let markdownTextarea: HTMLTextAreaElement = $state(null as any);
   let markdownPreview: any = $state(null);
@@ -201,9 +205,12 @@
 
 <div
   class="cell-wrapper {isSelected ? 'selected' : ''} {isDragging ? 'dragging' : ''}"
+  class:stale={isStale}
   class:drag-above={isDraggedOver && dragPosition === 'above'}
   class:drag-below={isDraggedOver && dragPosition === 'below'}
   data-testid="cell-{cell.id}"
+  role="group"
+  aria-label="Notebook cell"
   ondragover={onDragOver}
   ondrop={onDrop}
 >
@@ -225,6 +232,9 @@
           <span
             class="drag-handle"
             draggable="true"
+            role="button"
+            tabindex="-1"
+            aria-label="Drag to reorder cell (or use the move up/down buttons)"
             ondragstart={onDragStart}
             ondragend={onDragEnd}
             title="Drag to reorder"
@@ -254,6 +264,20 @@
 
           {#if cell.type === 'code'}
             <span class="exec-order" title="Execution order">{execLabel}</span>
+          {/if}
+
+          {#if cell.type === 'code' && isStale}
+            <button
+              class="stale-badge"
+              onclick={(e) => { e.stopPropagation(); handleRun(); }}
+              title="Stale: a dependency changed since this cell last ran. Click to re-run."
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <path d="M12 9v4M12 17h.01"/>
+              </svg>
+              stale
+            </button>
           {/if}
 
           <select
@@ -486,6 +510,19 @@
     gap: 0.3rem;
   }
 
+  /* Keep run + cell-type always visible; reveal secondary actions on
+     hover/focus/selection to reduce per-cell clutter. */
+  .toolbar-right {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .cell-wrapper:hover .toolbar-right,
+  .cell-wrapper:focus-within .toolbar-right,
+  .cell-wrapper.selected .toolbar-right {
+    opacity: 1;
+  }
+
   .drag-handle {
     display: flex;
     align-items: center;
@@ -511,6 +548,28 @@
     color: #9ca3af;
     min-width: 2rem;
     text-align: center;
+  }
+
+  .stale-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.4rem;
+    background-color: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fcd34d;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .stale-badge:hover { background-color: #fef3c7; }
+
+  /* Stale cells get a black border so they stand out at a glance. */
+  .cell-wrapper.stale .cell-container {
+    border-color: #1a1a1a;
   }
 
   .toolbar-btn {

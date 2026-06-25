@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import loader from '@monaco-editor/loader';
   import { aiService } from '../utils/aiService';
+  import { buildNotebookContext } from '../utils/notebookContext';
 
   interface Props {
     value?: string;
@@ -253,6 +254,7 @@
         acceptSuggestionOnEnter: 'on',
         acceptSuggestionOnCommitCharacter: true,
         snippetSuggestions: 'top',
+        inlineSuggest: { enabled: true },
         scrollbar: {
           vertical: 'auto',
           horizontal: 'auto',
@@ -397,7 +399,8 @@
       const completion = await aiService.getCodeCompletion({
         code,
         cursor: offset,
-        language: 'javascript'
+        language: 'javascript',
+        context: buildNotebookContext()
       });
 
       if (completion.completions.length > 0) {
@@ -427,7 +430,8 @@
     try {
       const generation = await aiService.generateCode({
         prompt: userPrompt,
-        language: 'javascript'
+        language: 'javascript',
+        context: buildNotebookContext()
       });
 
       if (generation.code) {
@@ -442,35 +446,61 @@
     }
   }
 
+  // Inline (ghost-text) AI completion, Copilot-style. Registered once globally
+  // for the `javascript` language. Debounced and cancellable so we don't fire
+  // the (slow, paid) cloud model on every keystroke.
+  let inlineRequestSeq = 0;
+
   function registerAICompletionProvider() {
-    if (!aiService.isConfigured() || !monacoLib) return;
+    if (!monacoLib) return;
+    if ((window as any).__tangent_inlineProviderRegistered) return;
+    (window as any).__tangent_inlineProviderRegistered = true;
 
-    monacoLib.languages.registerCompletionItemProvider('javascript', {
-      provideCompletionItems: async (model: any, position: any) => {
+    monacoLib.languages.registerInlineCompletionsProvider('javascript', {
+      provideInlineCompletions: async (model: any, position: any, _context: any, token: any) => {
+        if (!aiService.isConfigured()) return { items: [] };
+
+        const requestId = ++inlineRequestSeq;
+        // Debounce: wait for a typing pause, bail if superseded or cancelled.
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (token.isCancellationRequested || requestId !== inlineRequestSeq) {
+          return { items: [] };
+        }
+
+        const offset = model.getOffsetAt(position);
+        const prefix = model.getValue().slice(0, offset);
+        if (!prefix.trim()) return { items: [] };
+
         try {
-          const code = model.getValue();
-          const offset = model.getOffsetAt(position);
-
           const completion = await aiService.getCodeCompletion({
-            code,
+            code: prefix,
             cursor: offset,
-            language: 'javascript'
+            language: 'javascript',
+            context: buildNotebookContext()
           });
 
+          if (token.isCancellationRequested || requestId !== inlineRequestSeq) {
+            return { items: [] };
+          }
+
+          const text = completion.completions[0];
+          if (!text) return { items: [] };
+
           return {
-            suggestions: completion.completions.map((text: string, index: number) => ({
-              label: `AI: ${text.substring(0, 50)}...`,
-              kind: monacoLib.languages.CompletionItemKind.Snippet,
+            items: [{
               insertText: text,
-              documentation: 'AI-generated completion',
-              sortText: `0${index}`
-            }))
+              range: new monacoLib.Range(
+                position.lineNumber, position.column,
+                position.lineNumber, position.column
+              )
+            }]
           };
         } catch (error) {
-          console.error('AI completion provider failed:', error);
-          return { suggestions: [] };
+          console.error('AI inline completion failed:', error);
+          return { items: [] };
         }
-      }
+      },
+      freeInlineCompletions: () => {}
     });
   }
 
