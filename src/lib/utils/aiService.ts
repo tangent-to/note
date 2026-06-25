@@ -55,8 +55,12 @@ function viteEnv(): any {
 // time via VITE_OLLAMA_PROXY_URL. When present, the deployed web build routes
 // requests through it so the browser never makes a blocked cross-origin call.
 function proxyBase(): string | undefined {
-  const url = viteEnv()?.VITE_OLLAMA_PROXY_URL;
-  return url ? String(url).replace(/\/+$/, '') : undefined;
+  const raw = viteEnv()?.VITE_OLLAMA_PROXY_URL;
+  if (!raw) return undefined;
+  // Be forgiving about pasted values: trim, take only the first token (guards
+  // against accidental trailing text/notes), and drop any trailing slash.
+  const url = String(raw).trim().split(/\s+/)[0].replace(/\/+$/, '');
+  return url || undefined;
 }
 
 // Resolve the default base URL:
