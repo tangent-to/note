@@ -1,13 +1,12 @@
 # tangent/notebook
 
-A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, on the web but local-first with a tauri app, with a Zed/deno -style notebook format in pure JavaScript.
+A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, local-first on the web, with a Zed/deno -style notebook format in pure JavaScript.
 
 ## Start
 
 ### Prerequisites
 
-- Node.js 18+
-- Rust (for desktop app only)
+- Node.js 20+
 
 ### Installation
 
@@ -22,27 +21,15 @@ npm install
 
 ### Running
 
-**Web Version:**
 ```bash
 npm run dev
 # then head to http://localhost:5173
 ```
 
-**Desktop App (Tauri):**
-Make sure you have Rust and Cargo installed.
-
-```bash
-npm run tauri:dev
-```
-
 **Build for Production:**
 
 ```bash
-# Web version
 npm run build
-
-# Desktop app
-npm run tauri:build
 ```
 
 ## Usage
@@ -62,15 +49,31 @@ npm run tauri:build
 
 ### AI Setup
 
-Not thouroughly tested...
+The AI assistant is powered by **Ollama Cloud**. Open the AI sidebar
+(`Ctrl/Cmd + /`), click the settings icon, and paste your API key (from
+[ollama.com/settings/keys](https://ollama.com/settings/keys)). The current
+notebook is automatically sent to the model as context (as a system prompt), so
+you can ask it to explain, extend, or debug your cells.
 
-1. **Claude API**:
-   - Configure in AI settings with your Anthropic API key
+Default model: `qwen3-coder:480b-cloud` (any Ollama Cloud model works, e.g.
+`gpt-oss:120b-cloud`).
 
-2. **Ollama (Local)**:
-   - Install from https://ollama.ai
-   - Run `ollama pull codellama`
-   - No API key needed!
+#### CORS and the browser
+
+Ollama Cloud is called directly from your browser, and browsers block such
+cross-origin requests by default (CORS):
+
+- **Running locally (`npm run dev`)** — works out of the box. The dev server
+  proxies requests to `ollama.com`, so there's nothing to configure.
+- **Deployed web build (e.g. notebook.tangent.to)** — the app will detect this
+  and show a notice. To make it work you need to relax CORS in your browser:
+  - **Chrome / Firefox**: install a CORS-unblock extension (e.g. "CORS Unblock"
+    or "Allow CORS") and enable it for the site.
+  - **Safari**: enable the Develop menu, then check
+    *Develop → Disable Cross-Origin Restrictions*.
+
+  Only enable these while using the app — leaving CORS disabled globally is a
+  security risk.
 
 ### Examples
 
@@ -81,7 +84,7 @@ Head to notebook.tangent.to
 - **Frontend**. Svelte, TypeScript, Tailwind CSS
 - **Build Tool**. Vite
 - **Editor**. Monaco Editor
-- **Desktop**. Tauri (Rust)
+- **AI**. Ollama Cloud
 - **Viz Libraries**. Observable Plot, Plotly, D3.js, Vega-Lite, Arquero
 
 ## File Format

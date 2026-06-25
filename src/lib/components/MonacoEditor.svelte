@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import loader from '@monaco-editor/loader';
   import { aiService } from '../utils/aiService';
+  import { buildNotebookContext } from '../utils/notebookContext';
 
   interface Props {
     value?: string;
@@ -397,7 +398,8 @@
       const completion = await aiService.getCodeCompletion({
         code,
         cursor: offset,
-        language: 'javascript'
+        language: 'javascript',
+        context: buildNotebookContext()
       });
 
       if (completion.completions.length > 0) {
@@ -427,7 +429,8 @@
     try {
       const generation = await aiService.generateCode({
         prompt: userPrompt,
-        language: 'javascript'
+        language: 'javascript',
+        context: buildNotebookContext()
       });
 
       if (generation.code) {
@@ -454,7 +457,8 @@
           const completion = await aiService.getCodeCompletion({
             code,
             cursor: offset,
-            language: 'javascript'
+            language: 'javascript',
+            context: buildNotebookContext()
           });
 
           return {

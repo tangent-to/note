@@ -1,8 +1,23 @@
-export interface AIProvider {
-  name: string;
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
+// Ollama Cloud client.
+//
+// This app talks to a single provider: Ollama Cloud (https://ollama.com).
+// Authentication is a Bearer API key, and chat/generation use the native
+// `/api/chat` endpoint so we can pass a system prompt (used to inject the
+// current notebook as context).
+//
+// CORS note: the deployed static web build calls ollama.com directly from the
+// browser. During local development we route through a Vite dev proxy (see
+// vite.config.ts) to avoid cross-origin issues. See README for the options.
+
+export interface OllamaConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
 export interface AICompletionRequest {
@@ -21,6 +36,8 @@ export interface AIGenerationRequest {
   prompt: string;
   language: string;
   context?: string;
+  /** Optional system prompt (e.g. the current notebook as context). */
+  system?: string;
 }
 
 export interface AIGenerationResponse {
@@ -28,311 +45,164 @@ export interface AIGenerationResponse {
   explanation?: string;
 }
 
+export const DEFAULT_MODEL = 'qwen3-coder:480b-cloud';
+
+// In dev, hit the Vite proxy (`/ollama` -> https://ollama.com) so the browser
+// never makes a cross-origin request. In production, call ollama.com directly.
+export function defaultBaseUrl(): string {
+  // import.meta.env.DEV is true under `vite dev`.
+  const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
+  return isDev ? '/ollama/api' : 'https://ollama.com/api';
+}
+
+// True when running as the deployed static web build (i.e. not the Vite dev
+// server, which proxies requests to ollama.com for us). In a deployed build,
+// calls go straight from the browser and may be blocked by CORS.
+export function isWebDeployment(): boolean {
+  if (typeof window === 'undefined') return false;
+  const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
+  return !isDev;
+}
+
+/** Raised when a request most likely failed because of a CORS/network block. */
+export class CorsLikelyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CorsLikelyError';
+  }
+}
+
+function stripCodeFences(text: string): string {
+  const fenced = text.match(/```(?:[a-zA-Z]+)?\n([\s\S]*?)\n```/);
+  return (fenced ? fenced[1] : text).trim();
+}
+
 export class AIService {
-  private providers: Map<string, AIProvider> = new Map();
-  private activeProvider: string | null = null;
+  private config: OllamaConfig = {
+    apiKey: '',
+    baseUrl: defaultBaseUrl(),
+    model: DEFAULT_MODEL,
+  };
 
-  constructor() {
-    this.initializeProviders();
+  configure(config: Partial<OllamaConfig>): void {
+    this.config = { ...this.config, ...config };
+    if (!this.config.baseUrl) this.config.baseUrl = defaultBaseUrl();
+    if (!this.config.model) this.config.model = DEFAULT_MODEL;
   }
 
-  private initializeProviders() {
-    // Initialize with default providers
-    this.providers.set('github-copilot', {
-      name: 'GitHub Copilot',
-      baseUrl: 'https://api.github.com/copilot',
-      model: 'copilot'
-    });
-
-    this.providers.set('claude', {
-      name: 'Claude',
-      baseUrl: 'https://api.anthropic.com/v1',
-      model: 'claude-3-sonnet-20240229'
-    });
-
-    this.providers.set('ollama', {
-      name: 'Ollama',
-      baseUrl: 'http://localhost:11434/api',
-      model: 'codellama'
-    });
+  getConfig(): OllamaConfig {
+    return { ...this.config };
   }
 
-  setProvider(providerId: string, config?: Partial<AIProvider>) {
-    const provider = this.providers.get(providerId);
-    if (provider) {
-      if (config) {
-        Object.assign(provider, config);
-      }
-      this.activeProvider = providerId;
+  isConfigured(): boolean {
+    return Boolean(this.config.apiKey && this.config.baseUrl && this.config.model);
+  }
+
+  private endpoint(path: string): string {
+    return this.config.baseUrl.replace(/\/+$/, '') + path;
+  }
+
+  private headers(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.config.apiKey) {
+      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
     }
+    return headers;
   }
 
-  getActiveProvider(): AIProvider | null {
-    if (!this.activeProvider) return null;
-    return this.providers.get(this.activeProvider) || null;
+  /**
+   * Core chat call. `system` is sent as the first message so models receive
+   * the notebook context as a proper system prompt.
+   */
+  async chat(messages: ChatMessage[], system?: string): Promise<string> {
+    if (!this.isConfigured()) {
+      throw new Error('Ollama Cloud is not configured. Add your API key in settings.');
+    }
+
+    const fullMessages: ChatMessage[] = system
+      ? [{ role: 'system', content: system }, ...messages]
+      : messages;
+
+    let response: Response;
+    try {
+      response = await fetch(this.endpoint('/chat'), {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          model: this.config.model,
+          messages: fullMessages,
+          stream: false,
+        }),
+      });
+    } catch (error: any) {
+      // A thrown fetch (TypeError "Failed to fetch") almost always means the
+      // request was blocked before a response came back — usually CORS.
+      throw new CorsLikelyError(
+        'Could not reach Ollama Cloud. This is usually a CORS restriction in the ' +
+          'browser. Enable a CORS-unblocking browser extension for this site, or run ' +
+          'the app locally (the dev server proxies requests for you). ' +
+          `(${error?.message ?? 'network error'})`
+      );
+    }
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(
+          `Ollama Cloud rejected the request (${response.status}). Check that your ` +
+            `API key is valid. ${detail}`.trim()
+        );
+      }
+      throw new Error(`Ollama API error: ${response.status} ${response.statusText} ${detail}`.trim());
+    }
+
+    const data = await response.json();
+    return data?.message?.content ?? '';
   }
 
   async getCodeCompletion(request: AICompletionRequest): Promise<AICompletionResponse> {
-    const provider = this.getActiveProvider();
-    if (!provider) {
-      throw new Error('No AI provider configured');
-    }
-
-    switch (this.activeProvider) {
-      case 'github-copilot':
-        return this.getGitHubCopilotCompletion(request, provider);
-      case 'claude':
-        return this.getClaudeCompletion(request, provider);
-      case 'ollama':
-        return this.getOllamaCompletion(request, provider);
-      default:
-        throw new Error(`Unsupported provider: ${this.activeProvider}`);
-    }
-  }
-
-  async generateCode(request: AIGenerationRequest): Promise<AIGenerationResponse> {
-    const provider = this.getActiveProvider();
-    if (!provider) {
-      throw new Error('No AI provider configured');
-    }
-
-    switch (this.activeProvider) {
-      case 'claude':
-        return this.generateWithClaude(request, provider);
-      case 'ollama':
-        return this.generateWithOllama(request, provider);
-      default:
-        throw new Error(`Code generation not supported for provider: ${this.activeProvider}`);
-    }
-  }
-
-  private async getGitHubCopilotCompletion(
-    request: AICompletionRequest,
-    provider: AIProvider
-  ): Promise<AICompletionResponse> {
-    if (!provider.apiKey) {
-      throw new Error('GitHub Copilot API key not configured');
-    }
-
-    try {
-      const response = await fetch(`${provider.baseUrl}/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${provider.apiKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          prompt: request.code,
-          max_tokens: 100,
-          temperature: 0.2,
-          stop: ['\n\n']
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`GitHub Copilot API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return {
-        completions: data.choices?.map((choice: any) => choice.text) || [],
-        suggestions: []
-      };
-    } catch (error) {
-      console.error('GitHub Copilot completion error:', error);
+    if (!this.isConfigured()) {
       return { completions: [], suggestions: [] };
     }
-  }
-
-  private async getClaudeCompletion(
-    request: AICompletionRequest,
-    provider: AIProvider
-  ): Promise<AICompletionResponse> {
-    if (!provider.apiKey) {
-      throw new Error('Claude API key not configured');
-    }
 
     try {
-      const prompt = `Complete this JavaScript code:\n\n${request.code}\n\nProvide only the completion, no explanation:`;
+      const system =
+        `You are a ${request.language} code completion engine. ` +
+        `Continue the code from where it ends. Respond with ONLY the raw code to ` +
+        `insert at the cursor — no explanations, no markdown fences.` +
+        (request.context ? `\n\nNotebook context:\n${request.context}` : '');
 
-      const response = await fetch(`${provider.baseUrl}/messages`, {
-        method: 'POST',
-        headers: {
-          'x-api-key': provider.apiKey,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          max_tokens: 150,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const completion = data.content?.[0]?.text || '';
-      
-      return {
-        completions: completion ? [completion] : [],
-        suggestions: []
-      };
-    } catch (error) {
-      console.error('Claude completion error:', error);
-      return { completions: [], suggestions: [] };
-    }
-  }
-
-  private async getOllamaCompletion(
-    request: AICompletionRequest,
-    provider: AIProvider
-  ): Promise<AICompletionResponse> {
-    try {
-      const response = await fetch(`${provider.baseUrl}/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: provider.model || 'codellama',
-          prompt: `Complete this JavaScript code:\n${request.code}`,
-          stream: false,
-          options: {
-            temperature: 0.2,
-            top_p: 0.9,
-            stop: ['\n\n']
-          }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return {
-        completions: data.response ? [data.response] : [],
-        suggestions: []
-      };
+      const text = await this.chat([{ role: 'user', content: request.code }], system);
+      const cleaned = stripCodeFences(text);
+      return { completions: cleaned ? [cleaned] : [], suggestions: [] };
     } catch (error) {
       console.error('Ollama completion error:', error);
       return { completions: [], suggestions: [] };
     }
   }
 
-  private async generateWithClaude(
-    request: AIGenerationRequest,
-    provider: AIProvider
-  ): Promise<AIGenerationResponse> {
-    if (!provider.apiKey) {
-      throw new Error('Claude API key not configured');
+  async generateCode(request: AIGenerationRequest): Promise<AIGenerationResponse> {
+    const system =
+      request.system ??
+      `You are a helpful coding assistant embedded in a JavaScript notebook. ` +
+        `Write clean, runnable ${request.language} suitable for a notebook cell. ` +
+        `Prefer returning a single fenced code block, optionally followed by a short explanation.`;
+
+    const userContent = request.context
+      ? `${request.context}\n\n${request.prompt}`
+      : request.prompt;
+
+    const content = await this.chat([{ role: 'user', content: userContent }], system);
+
+    const codeMatch = content.match(/```(?:javascript|js)?\n([\s\S]*?)\n```/);
+    if (codeMatch) {
+      const explanation = content
+        .replace(/```(?:javascript|js)?\n[\s\S]*?\n```/, '')
+        .trim();
+      return { code: codeMatch[1].trim(), explanation: explanation || undefined };
     }
 
-    try {
-      const prompt = `Generate JavaScript code for the following request:\n\n${request.prompt}\n\nProvide clean, well-commented code that can be executed in a notebook environment. Include any necessary explanations.`;
-
-      const response = await fetch(`${provider.baseUrl}/messages`, {
-        method: 'POST',
-        headers: {
-          'x-api-key': provider.apiKey,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Claude API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      const content = data.content?.[0]?.text || '';
-      
-      // Try to extract code and explanation
-      const codeMatch = content.match(/```(?:javascript|js)?\n([\s\S]*?)\n```/);
-      const code = codeMatch ? codeMatch[1] : content;
-      
-      return {
-        code: code.trim(),
-        explanation: content.includes('```') ? content.replace(/```(?:javascript|js)?\n[\s\S]*?\n```/, '').trim() : undefined
-      };
-    } catch (error) {
-      console.error('Claude generation error:', error);
-      throw error;
-    }
-  }
-
-  private async generateWithOllama(
-    request: AIGenerationRequest,
-    provider: AIProvider
-  ): Promise<AIGenerationResponse> {
-    try {
-      const response = await fetch(`${provider.baseUrl}/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: provider.model || 'codellama',
-          prompt: `Generate JavaScript code for: ${request.prompt}\n\nCode:`,
-          stream: false,
-          options: {
-            temperature: 0.3,
-            top_p: 0.9
-          }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return {
-        code: data.response || '',
-        explanation: undefined
-      };
-    } catch (error) {
-      console.error('Ollama generation error:', error);
-      throw error;
-    }
-  }
-
-  // Utility methods
-  isConfigured(): boolean {
-    const provider = this.getActiveProvider();
-    return provider !== null && (provider.apiKey !== undefined || this.activeProvider === 'ollama');
-  }
-
-  getAvailableProviders(): Array<{ id: string; name: string; configured: boolean }> {
-    return Array.from(this.providers.entries()).map(([id, provider]) => ({
-      id,
-      name: provider.name,
-      configured: provider.apiKey !== undefined || id === 'ollama'
-    }));
-  }
-
-  configureProvider(providerId: string, apiKey: string, options?: { baseUrl?: string; model?: string }) {
-    const provider = this.providers.get(providerId);
-    if (provider) {
-      provider.apiKey = apiKey;
-      if (options?.baseUrl) provider.baseUrl = options.baseUrl;
-      if (options?.model) provider.model = options.model;
-    }
+    return { code: content.trim() };
   }
 }
 

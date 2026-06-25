@@ -30,21 +30,22 @@ This document outlines the comprehensive improvements made to Tangent Notebooks 
 
 ### 3. AI-Powered Features
 
-#### GitHub Copilot Integration
-- Direct integration in Monaco editor
-- Inline code completion
-- Intelligent suggestions based on context
-- Custom completions for common libraries (D3.js, Observable Plot, etc.)
+Powered by **Ollama Cloud** (the only supported provider).
+
+#### Monaco Editor Integration
+- Inline code completion (Ctrl+Space)
+- Generate code from a prompt (Ctrl+Shift+G)
+- The current notebook is sent as context
 
 #### AI Chat Sidebar (Ctrl/Cmd + /)
-- Interactive AI assistant for code generation
-- Support for multiple AI providers:
-  - GitHub Copilot
-  - Claude (Anthropic)
-  - Ollama (local models)
+- Interactive AI assistant for code generation and Q&A
+- The current notebook is injected into the system prompt, so the
+  assistant can explain, extend and debug your cells
 - Insert generated code directly into notebooks
 - Contextual conversations with chat history
 - Pre-built suggestions for common tasks
+- CORS-aware: works locally via a dev proxy; on the deployed web build it
+  guides users to enable CORS (browser extension / Safari Develop menu)
 
 ### 4. Comprehensive Library Support
 
@@ -84,25 +85,11 @@ Extensive support and examples for:
 - `generateTreeData()`: Hierarchical data for tree visualizations
 - `generateNetworkData()`: Network/graph data generation
 
-### 5. Tauri Desktop Application
+### 5. File Management (Web)
 
-#### Native File Operations
-- Native file open/save dialogs
-- Recent files management
-- File system integration
-- Auto-create notebooks directory in Documents
-
-#### Desktop Features
-- Standalone desktop application
-- No server required
-- Local-first architecture
-- Cross-platform (Windows, macOS, Linux)
-
-#### File Management
-- Open notebooks from anywhere
-- Save with native dialogs
-- Auto-save to last location
-- Recent files list
+- Import notebooks from `.js` / `.json` files
+- Save/export notebooks as git-friendly `.js` files
+- Debounced auto-save to localStorage (local-first)
 
 ### 6. Beautiful UI/UX Improvements
 
@@ -135,47 +122,22 @@ npm run dev
 
 Visit http://localhost:5173
 
-### Desktop Application (Tauri)
-
-```bash
-cd frontend
-npm install
-npm run tauri:dev
-```
-
-For production build:
-```bash
-npm run tauri:build
-```
-
 ## 🔧 Configuration
 
-### AI Provider Setup
+### AI Setup (Ollama Cloud)
 
-#### GitHub Copilot
 1. Click the AI Assistant icon (or press Ctrl/Cmd + /)
 2. Click the Settings icon
-3. Enter your GitHub token
-4. Click "Connect"
+3. Paste your Ollama Cloud API key (from https://ollama.com/settings/keys)
+4. Optionally set the model (default `qwen3-coder:480b-cloud`)
+5. Click "Connect"
 
-Get your GitHub token from: https://github.com/settings/tokens
+The current notebook is automatically sent to the model as context.
 
-Required scopes: `read:user`
-
-#### Claude API
-Configure in the AI settings:
-```javascript
-// In browser console or settings
-import { aiService } from './lib/utils/aiService';
-aiService.configureProvider('claude', 'your-api-key');
-aiService.setProvider('claude');
-```
-
-#### Ollama (Local)
-1. Install Ollama: https://ollama.ai
-2. Pull a code model: `ollama pull codellama`
-3. Start Ollama service
-4. Select Ollama in AI settings (no API key needed)
+Note on CORS: running locally (`npm run dev`) works out of the box because the
+dev server proxies requests. On the deployed web build, browsers block direct
+calls to `ollama.com` — enable a CORS-unblock extension (Chrome/Firefox) or use
+Safari's *Develop → Disable Cross-Origin Restrictions*.
 
 ## 📝 Library Examples
 
@@ -257,16 +219,12 @@ container;
 ## 🏗️ Architecture
 
 ### Frontend Stack
-- **Framework**: Svelte 3 with TypeScript
-- **Build Tool**: Vite 3
+- **Framework**: Svelte 5 with TypeScript
+- **Build Tool**: Vite
 - **Styling**: Tailwind CSS 4
 - **Code Editor**: Monaco Editor
 - **State**: Svelte Stores
-
-### Desktop Stack
-- **Framework**: Tauri 2
-- **Backend**: Rust
-- **Plugins**: Dialog, File System, Shell
+- **AI**: Ollama Cloud
 
 ### File Format
 - Text-based `.js` format (git-friendly)
@@ -276,9 +234,8 @@ container;
 
 ## 🔐 Security
 
-- Local-first architecture (no data sent to servers)
-- AI API keys stored locally
-- File system access through Tauri's secure APIs
+- Local-first architecture (notebooks stored in your browser)
+- AI API keys stored locally (only sent to Ollama Cloud)
 - Content Security Policy configured
 
 ## 🚧 Future Enhancements
@@ -314,6 +271,6 @@ Full documentation: https://tangent.to/docs
 
 - Monaco Editor team
 - Observable team for Plot
-- Tauri team
+- Ollama team
 - Svelte team
 - All open source contributors

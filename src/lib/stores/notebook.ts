@@ -16,7 +16,7 @@ export const selectedCellId = writable<string | null>(null);
 
 export const notebookDirty = writable(false);
 
-// Current file path (for Tauri)
+// Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 
 // Execution order counter

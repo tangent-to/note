@@ -1,6 +1,6 @@
 # Deployment Guide for Tangent Notebooks
 
-This guide covers deploying both the web version (GitHub Pages) and the desktop application.
+This guide covers deploying the web version to GitHub Pages.
 
 ## 🌐 Web Deployment (GitHub Pages)
 
@@ -166,83 +166,6 @@ jobs:
           cname: notebook.tangent.to
 ```
 
-## 🖥️ Desktop Application (Tauri)
-
-### Prerequisites
-
-Install Rust:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Development Build
-
-```bash
-npm run tauri:dev
-```
-
-### Production Build
-
-```bash
-# Build for current platform
-npm run tauri:build
-
-# Output locations:
-# Windows: src-tauri/target/release/bundle/msi/
-# macOS: src-tauri/target/release/bundle/dmg/
-# Linux: src-tauri/target/release/bundle/deb/ or .appimage
-```
-
-### Platform-Specific Notes
-
-#### Windows
-- Installer: `.msi` file in `src-tauri/target/release/bundle/msi/`
-- Portable: `.exe` in `src-tauri/target/release/`
-
-#### macOS
-- DMG: `src-tauri/target/release/bundle/dmg/`
-- App bundle: `src-tauri/target/release/bundle/macos/`
-- May need to sign for distribution (see Tauri docs)
-
-#### Linux
-- Debian/Ubuntu: `.deb` file
-- AppImage: `.AppImage` file (universal)
-- Binary: `src-tauri/target/release/tangent-notebooks`
-
-### Code Signing (Optional)
-
-For distribution to users, you should code sign:
-
-**Windows**: Configure in `tauri.conf.json`:
-```json
-"bundle": {
-  "windows": {
-    "certificateThumbprint": "YOUR_CERT_THUMBPRINT",
-    "digestAlgorithm": "sha256"
-  }
-}
-```
-
-**macOS**: Use Apple Developer account
-```bash
-# Sign the app
-codesign --deep --force --verify --verbose --sign "Developer ID" "Tangent Notebooks.app"
-
-# Notarize for macOS 10.14+
-xcrun notarytool submit tangent-notebooks.dmg --wait
-```
-
-### Distribution
-
-1. **GitHub Releases**:
-   - Tag version: `git tag v0.1.0 && git push --tags`
-   - Create release on GitHub
-   - Upload built installers
-
-2. **Auto-updater** (Future):
-   - Configure in `tauri.conf.json`
-   - Set up release server or use GitHub Releases
-
 ## 🚀 Quick Deploy Checklist
 
 ### Web (GitHub Pages)
@@ -252,13 +175,6 @@ xcrun notarytool submit tangent-notebooks.dmg --wait
 - [ ] GitHub Pages settings show "Enforce HTTPS" ✅
 - [ ] Certificate status is "issued" ✅
 - [ ] Site accessible at `https://notebook.tangent.to`
-
-### Desktop
-- [ ] Rust installed
-- [ ] `npm run tauri:build` succeeds
-- [ ] Installer tested on target platform
-- [ ] App signed (for distribution)
-- [ ] Release created with installers
 
 ## 📞 Support
 
@@ -282,9 +198,4 @@ npm run build
 
 # 4. Deploy web version
 npm run deploy
-
-# 5. Build desktop (if needed)
-npm run tauri:build
-
-# 6. Create GitHub release with new installers
 ```
