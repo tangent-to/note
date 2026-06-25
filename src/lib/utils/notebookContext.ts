@@ -45,10 +45,23 @@ export function buildNotebookContext(
 export function buildSystemPrompt(notebook: Notebook | null = get(currentNotebook)): string {
   const intro =
     'You are an AI assistant embedded in Tangent, a local-first JavaScript notebook ' +
-    'for data analysis and visualization (libraries available include Observable Plot, ' +
-    'Plotly, D3.js, Vega-Lite and Arquero). Help the user understand, write and debug ' +
+    'for data analysis and visualization. Help the user understand, write and debug ' +
     'code for their notebook. When you provide code, return runnable JavaScript in a ' +
-    'fenced code block. Use the notebook below as context for your answers.';
+    'fenced code block.\n\n' +
+    'Runtime (important):\n' +
+    '- This runs in the BROWSER, not Node.js. Never use Node APIs (require, module, ' +
+    'createRequire, fs, process, __dirname).\n' +
+    '- Import libraries as browser ESM from a CDN, e.g. ' +
+    'import * as d3 from "https://cdn.jsdelivr.net/npm/d3/+esm"; a bare specifier like ' +
+    'import * as aq from "arquero" also works (resolved from jsDelivr). Top-level await ' +
+    'is allowed.\n' +
+    '- d3 and Plot (Observable Plot) are preloaded as globals; Plotly, Vega-Lite and ' +
+    'Arquero are available via import. \n' +
+    '- Variables declared with const/let are shared across cells; use globalThis.x for ' +
+    'mutable cross-cell state.\n' +
+    '- To display a result, end the cell with an expression, or return a DOM node ' +
+    '(e.g. an SVG/chart element) to render it.\n\n' +
+    'Use the notebook below as context for your answers.';
 
   const context = buildNotebookContext(notebook);
   return context ? `${intro}\n\n=== CURRENT NOTEBOOK ===\n${context}` : intro;
