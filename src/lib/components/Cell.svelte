@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { marked } from 'marked';
   import katex from 'katex';
   import MonacoEditor from './MonacoEditor.svelte';
@@ -52,7 +52,9 @@
 
   let editorRef: MonacoEditor = $state(null as any);
   let isDragging = $state(false);
-  let isEditingMarkdown = $state(true);
+  // Markdown renders by default; empty cells open in edit mode so you can type.
+  // Capture only the initial content (untracked) — toggling is user-driven after.
+  let isEditingMarkdown = $state(untrack(() => !cell.content || !cell.content.trim()));
   let renderedMarkdown = $state('');
   let markdownTextarea: HTMLTextAreaElement = $state(null as any);
   let markdownPreview: any = $state(null);
@@ -501,6 +503,19 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
+  }
+
+  /* Keep run + cell-type always visible; reveal secondary actions on
+     hover/focus/selection to reduce per-cell clutter. */
+  .toolbar-right {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .cell-wrapper:hover .toolbar-right,
+  .cell-wrapper:focus-within .toolbar-right,
+  .cell-wrapper.selected .toolbar-right {
+    opacity: 1;
   }
 
   .drag-handle {

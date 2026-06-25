@@ -595,9 +595,9 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.35rem 0.6rem;
+    padding: 0.35rem 0.65rem;
     background-color: transparent;
-    color: #9ca3af;
+    color: #6b6b6b;
     border: 1px solid #e0e0e0;
     border-radius: 4px;
     font-size: 0.8rem;
@@ -606,12 +606,12 @@
     transition: all 0.15s ease;
   }
 
-  .reactive-toggle:hover { background-color: #f4f4f4; color: #6b6b6b; }
+  .reactive-toggle:hover { background-color: #f4f4f4; color: #1a1a1a; }
 
   .reactive-toggle.active {
-    background-color: #eef2ff;
-    color: #4f46e5;
-    border-color: #c7d2fe;
+    background-color: #1a1a1a;
+    color: #ffffff;
+    border-color: #1a1a1a;
   }
 
   .content-wrapper {
