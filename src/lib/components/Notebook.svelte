@@ -11,13 +11,18 @@
     moveCellDown,
     staleCells,
     recordCellRun,
-    recomputeStaleCells
+    recomputeStaleCells,
+    reactiveMode
   } from '../stores/notebook';
   import { JavaScriptExecutor } from '../utils/jsExecutor';
+  import { getDownstreamCells } from '../utils/dependencyGraph';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
   let jsExecutor: JavaScriptExecutor;
   let isRunningAll = false;
+  // While true, handleRunCell won't trigger a reactive cascade — used so that
+  // run-all, run-stale, and the cascade itself don't recurse.
+  let suppressCascade = false;
 
   // Drag-and-drop state
   let draggedCellId: string | null = null;
@@ -120,6 +125,31 @@
       recordCellRun(cellId, cell.content);
       recomputeStaleCells(getNotebookSnapshot());
     }
+
+    // Reactive mode: re-run everything that depends on this cell.
+    if ($reactiveMode && !suppressCascade) {
+      await cascadeFrom(cellId);
+    }
+  }
+
+  // Run the transitive downstream dependents of `originId` in document order.
+  async function cascadeFrom(originId: string) {
+    const notebook = getNotebookSnapshot();
+    if (!notebook) return;
+    const downstream = getDownstreamCells(notebook.cells, originId);
+    if (downstream.size === 0) return;
+
+    suppressCascade = true;
+    try {
+      for (const cell of notebook.cells) {
+        if (cell.type === 'code' && downstream.has(cell.id)) {
+          await handleRunCell({ cellId: cell.id });
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+      }
+    } finally {
+      suppressCascade = false;
+    }
   }
 
   async function handleRunStale() {
@@ -130,6 +160,7 @@
     if (stale.size === 0) return;
 
     isRunningAll = true;
+    suppressCascade = true;
     // Run stale code cells top-to-bottom (an approximation of dependency order).
     for (const cell of notebook.cells) {
       if (cell.type === 'code' && stale.has(cell.id)) {
@@ -137,6 +168,7 @@
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
+    suppressCascade = false;
     isRunningAll = false;
   }
 
@@ -148,6 +180,7 @@
     if (!notebook || isRunningAll) return;
 
     isRunningAll = true;
+    suppressCascade = true;
     resetExecutionCounter();
 
     for (const cell of notebook.cells) {
@@ -161,6 +194,7 @@
       }
     }
 
+    suppressCascade = false;
     isRunningAll = false;
     recomputeStaleCells(getNotebookSnapshot());
   }

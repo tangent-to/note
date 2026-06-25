@@ -40,6 +40,28 @@ export function resetStaleTracking(): void {
   staleCells.set(new Set());
 }
 
+// Reactive mode: when on, running a cell automatically re-runs its downstream
+// dependents in dependency order. Persisted across sessions.
+const REACTIVE_KEY = 'tangent-reactive-mode';
+
+function loadReactiveMode(): boolean {
+  try {
+    return localStorage.getItem(REACTIVE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export const reactiveMode = writable<boolean>(loadReactiveMode());
+
+reactiveMode.subscribe((on) => {
+  try {
+    localStorage.setItem(REACTIVE_KEY, on ? '1' : '0');
+  } catch {
+    // ignore persistence failures
+  }
+});
+
 // Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 

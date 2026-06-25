@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeCell, computeStaleCells, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
+import { analyzeCell, computeStaleCells, getDownstreamCells, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
 
 describe('analyzeCell', () => {
   it('extracts top-level definitions', () => {
@@ -104,5 +104,26 @@ describe('computeStaleCells', () => {
     const stale = computeStaleCells(cells, runInfoAt({ a: 1 }));
     expect(stale.has('b')).toBe(false);
     expect(stale.has('c')).toBe(false);
+  });
+});
+
+describe('getDownstreamCells', () => {
+  const cells: CellLike[] = [
+    { id: 'a', type: 'code', content: 'const x = 1;' },
+    { id: 'b', type: 'code', content: 'const y = x + 1;' },
+    { id: 'c', type: 'code', content: 'console.log(y);' },
+    { id: 'd', type: 'code', content: 'const z = 99;' }, // unrelated
+  ];
+
+  it('returns transitive dependents of a cell, in any order', () => {
+    const down = getDownstreamCells(cells, 'a');
+    expect(down.has('b')).toBe(true);  // reads x
+    expect(down.has('c')).toBe(true);  // reads y (transitive)
+    expect(down.has('d')).toBe(false); // unrelated
+    expect(down.has('a')).toBe(false); // not itself
+  });
+
+  it('returns empty when nothing depends on the cell', () => {
+    expect(getDownstreamCells(cells, 'd').size).toBe(0);
   });
 });

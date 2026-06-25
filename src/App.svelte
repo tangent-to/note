@@ -13,6 +13,7 @@
     markNotebookClean,
     notebookDirty,
     staleCells,
+    reactiveMode,
     addCellAfter,
     createNewCell,
     selectedCellId,
@@ -327,6 +328,18 @@
 
     <div class="header-right">
       {#if $currentNotebook}
+        <button
+          class="reactive-toggle"
+          class:active={$reactiveMode}
+          onclick={() => reactiveMode.update(v => !v)}
+          title="Reactive mode: when on, running a cell automatically re-runs the cells that depend on it"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+          </svg>
+          Reactive {$reactiveMode ? 'on' : 'off'}
+        </button>
+        <span class="header-separator">•</span>
         {#if $notebookDirty}
           <span class="unsaved-dot" title="Unsaved changes — press Ctrl/Cmd+S to checkpoint"></span>
         {/if}
@@ -573,6 +586,29 @@
 
   .run-stale-btn:hover {
     background-color: #fef3c7;
+  }
+
+  .reactive-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.6rem;
+    background-color: transparent;
+    color: #9ca3af;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .reactive-toggle:hover { background-color: #f4f4f4; color: #6b6b6b; }
+
+  .reactive-toggle.active {
+    background-color: #eef2ff;
+    color: #4f46e5;
+    border-color: #c7d2fe;
   }
 
   .content-wrapper {

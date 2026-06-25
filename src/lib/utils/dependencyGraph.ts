@@ -109,15 +109,8 @@ export function analyzeCell(code: string): CellAnalysis {
   return { defines, reads };
 }
 
-// Compute the set of cell ids that are stale: their last output no longer
-// reflects the current state, because either the cell was edited since it ran,
-// or an upstream dependency changed / ran more recently.
-export function computeStaleCells(
-  cells: CellLike[],
-  runInfo: Map<string, RunRecord>
-): Set<string> {
-  const codeCells = cells.filter((c) => c.type === 'code');
-
+// Build per-cell analyses and a name -> producer-cells index in one pass.
+function buildIndex(codeCells: CellLike[]) {
   const analyses = new Map<string, CellAnalysis>();
   const producersByName = new Map<string, string[]>();
   for (const cell of codeCells) {
@@ -129,6 +122,49 @@ export function computeStaleCells(
       producersByName.set(name, list);
     }
   }
+  return { analyses, producersByName };
+}
+
+// All cells that transitively depend on `originId` (i.e. read a name it defines,
+// directly or through a chain). Used by reactive mode to re-run dependents.
+export function getDownstreamCells(cells: CellLike[], originId: string): Set<string> {
+  const codeCells = cells.filter((c) => c.type === 'code');
+  const { analyses } = buildIndex(codeCells);
+  const origin = analyses.get(originId);
+  if (!origin) return new Set();
+
+  const downstream = new Set<string>();
+  const frontierNames = new Set(origin.defines);
+  let changed = true;
+  let guard = 0;
+  while (changed && guard++ <= codeCells.length + 1) {
+    changed = false;
+    for (const cell of codeCells) {
+      if (cell.id === originId || downstream.has(cell.id)) continue;
+      const analysis = analyses.get(cell.id)!;
+      let reads = false;
+      for (const name of frontierNames) {
+        if (analysis.reads.has(name)) { reads = true; break; }
+      }
+      if (reads) {
+        downstream.add(cell.id);
+        for (const name of analysis.defines) frontierNames.add(name);
+        changed = true;
+      }
+    }
+  }
+  return downstream;
+}
+
+// Compute the set of cell ids that are stale: their last output no longer
+// reflects the current state, because either the cell was edited since it ran,
+// or an upstream dependency changed / ran more recently.
+export function computeStaleCells(
+  cells: CellLike[],
+  runInfo: Map<string, RunRecord>
+): Set<string> {
+  const codeCells = cells.filter((c) => c.type === 'code');
+  const { analyses, producersByName } = buildIndex(codeCells);
 
   const stale = new Set<string>();
 
