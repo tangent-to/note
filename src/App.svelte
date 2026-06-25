@@ -344,7 +344,7 @@
         </button>
         <span class="header-separator">•</span>
         {#if $notebookDirty}
-          <span class="unsaved-dot" title="Unsaved changes — press Ctrl/Cmd+S to checkpoint"></span>
+          <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
         {/if}
         {#if $staleCells.size > 0}
           <button

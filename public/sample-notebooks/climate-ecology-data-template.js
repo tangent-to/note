@@ -22,7 +22,7 @@ import * as Plot from "@observablehq/plot";
 /*
 ## Load datasets with Arquero
 
-Each dataset comes from `vega-datasets` CDN, providing canonical examples for timeseries, tabular, and categorical analysis. Arquero lets you load csv and json data sets. We first need to fetch the raw data from the URLs and then parse them into Arquero tables. Cells share a scope, so variables declared with `const` or `let` are available in later cells — the same way notebooks run in Deno and the Zed IDE. For mutable state you can use `globalThis.variableName`.
+Each dataset comes from `vega-datasets` CDN, providing canonical examples for timeseries, tabular, and categorical analysis. Arquero lets you load csv and json data sets. We first need to fetch the raw data from the URLs and then parse them into Arquero tables. Cells share a scope, so variables declared with `const` or `let` are available in later cells, the same way notebooks run in Deno and the Zed IDE. For mutable state you can use `globalThis.variableName`.
 
 */
 
@@ -74,7 +74,7 @@ Plot.dot(penguins, {x: "Flipper Length (mm)", y: "Body Mass (g)", fill: "Species
 
 `ui.slider` (also `ui.number`, `ui.checkbox`, `ui.select`, `ui.text`) binds a
 notebook variable. Drag the slider and the cells that read `count` re-run
-automatically — no need for the reactive-mode toggle.
+automatically, no need for the reactive-mode toggle.
 */
 
 // %% [javascript]
