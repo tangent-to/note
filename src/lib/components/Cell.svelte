@@ -9,6 +9,7 @@
   interface Props {
     cell: NotebookCell;
     isSelected?: boolean;
+    isStale?: boolean;
     isDraggedOver?: boolean;
     dragPosition?: 'above' | 'below' | null;
     oncontentChange?: (detail: { cellId: string; content: string }) => void;
@@ -30,6 +31,7 @@
   let {
     cell,
     isSelected = false,
+    isStale = false,
     isDraggedOver = false,
     dragPosition = null,
     oncontentChange,
@@ -201,6 +203,7 @@
 
 <div
   class="cell-wrapper {isSelected ? 'selected' : ''} {isDragging ? 'dragging' : ''}"
+  class:stale={isStale}
   class:drag-above={isDraggedOver && dragPosition === 'above'}
   class:drag-below={isDraggedOver && dragPosition === 'below'}
   data-testid="cell-{cell.id}"
@@ -254,6 +257,20 @@
 
           {#if cell.type === 'code'}
             <span class="exec-order" title="Execution order">{execLabel}</span>
+          {/if}
+
+          {#if cell.type === 'code' && isStale}
+            <button
+              class="stale-badge"
+              onclick={(e) => { e.stopPropagation(); handleRun(); }}
+              title="Stale — a dependency changed since this cell last ran. Click to re-run."
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <path d="M12 9v4M12 17h.01"/>
+              </svg>
+              stale
+            </button>
           {/if}
 
           <select
@@ -511,6 +528,27 @@
     color: #9ca3af;
     min-width: 2rem;
     text-align: center;
+  }
+
+  .stale-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.1rem 0.4rem;
+    background-color: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fcd34d;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .stale-badge:hover { background-color: #fef3c7; }
+
+  .cell-wrapper.stale .cell-indicator:not(.active) {
+    background-color: #fcd34d;
   }
 
   .toolbar-btn {

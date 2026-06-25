@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
   import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter } from '../stores/notebook';
   import {
@@ -7,7 +8,10 @@
     addCellAfter,
     deleteCell,
     moveCellUp,
-    moveCellDown
+    moveCellDown,
+    staleCells,
+    recordCellRun,
+    recomputeStaleCells
   } from '../stores/notebook';
   import { JavaScriptExecutor } from '../utils/jsExecutor';
   import type { Notebook, NotebookCell } from '../types/notebook';
@@ -21,15 +25,18 @@
   let dragOverPosition: 'above' | 'below' | null = null;
 
   const handleRunAllEvent = () => handleRunAll();
+  const handleRunStaleEvent = () => handleRunStale();
 
   onMount(async () => {
     jsExecutor = new JavaScriptExecutor();
     await jsExecutor.setupCommonLibraries();
     window.addEventListener('run-all-cells', handleRunAllEvent);
+    window.addEventListener('run-stale-cells', handleRunStaleEvent);
   });
 
   onDestroy(() => {
     window.removeEventListener('run-all-cells', handleRunAllEvent);
+    window.removeEventListener('run-stale-cells', handleRunStaleEvent);
   });
 
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
@@ -37,6 +44,8 @@
       if (!notebook) return notebook;
       return updateCellContent(notebook, cellId, content);
     });
+    // Editing a cell may make it (and its dependents) stale.
+    recomputeStaleCells(getNotebookSnapshot());
   }
 
   async function handleRunCell({ cellId }: { cellId: string }) {
@@ -84,6 +93,9 @@
           )
         };
       });
+
+      recordCellRun(cellId, cell.content);
+      recomputeStaleCells(getNotebookSnapshot());
     } catch (error: any) {
       currentNotebook.update(nb => {
         if (!nb) return nb;
@@ -104,7 +116,28 @@
           )
         };
       });
+
+      recordCellRun(cellId, cell.content);
+      recomputeStaleCells(getNotebookSnapshot());
     }
+  }
+
+  async function handleRunStale() {
+    const notebook = getNotebookSnapshot();
+    if (!notebook || isRunningAll) return;
+
+    const stale = get(staleCells);
+    if (stale.size === 0) return;
+
+    isRunningAll = true;
+    // Run stale code cells top-to-bottom (an approximation of dependency order).
+    for (const cell of notebook.cells) {
+      if (cell.type === 'code' && stale.has(cell.id)) {
+        await handleRunCell({ cellId: cell.id });
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    isRunningAll = false;
   }
 
   async function handleRunAll() {
@@ -129,6 +162,7 @@
     }
 
     isRunningAll = false;
+    recomputeStaleCells(getNotebookSnapshot());
   }
 
   async function handleRunAndAdvance({ cellId }: { cellId: string }) {
@@ -379,6 +413,7 @@
         <Cell
           {cell}
           isSelected={$selectedCellId === cell.id}
+          isStale={$staleCells.has(cell.id)}
           isDraggedOver={dragOverCellId === cell.id}
           dragPosition={dragOverCellId === cell.id ? dragOverPosition : null}
           oncontentChange={handleContentChange}

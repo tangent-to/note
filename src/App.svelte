@@ -12,11 +12,13 @@
     createNewNotebook,
     markNotebookClean,
     notebookDirty,
+    staleCells,
     addCellAfter,
     createNewCell,
     selectedCellId,
     undoDeleteCell,
-    resetExecutionCounter
+    resetExecutionCounter,
+    resetStaleTracking
   } from './lib/stores/notebook';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
@@ -144,6 +146,7 @@
     guardUnsaved(() => {
       importNotebookFromFile((notebook) => {
         resetExecutionCounter();
+        resetStaleTracking();
         currentNotebook.set(notebook);
         markNotebookClean();
         console.info('Notebook imported successfully');
@@ -326,6 +329,20 @@
       {#if $currentNotebook}
         {#if $notebookDirty}
           <span class="unsaved-dot" title="Unsaved changes — press Ctrl/Cmd+S to checkpoint"></span>
+        {/if}
+        {#if $staleCells.size > 0}
+          <button
+            class="run-stale-btn"
+            onclick={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
+            title="Re-run cells whose dependencies changed"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <path d="M12 9v4M12 17h.01"/>
+            </svg>
+            Run {$staleCells.size} stale
+          </button>
+          <span class="header-separator">•</span>
         {/if}
         <span class="header-meta">Updated {new Date($currentNotebook.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
         <span class="header-separator">•</span>
@@ -537,6 +554,25 @@
 
   .run-all-header-btn:hover {
     background-color: #000000;
+  }
+
+  .run-stale-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.65rem;
+    background-color: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .run-stale-btn:hover {
+    background-color: #fef3c7;
   }
 
   .content-wrapper {
