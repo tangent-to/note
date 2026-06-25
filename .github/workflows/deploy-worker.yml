@@ -1,0 +1,31 @@
+name: Deploy Ollama proxy worker
+
+# Deploys the Cloudflare Worker in workers/ollama-proxy automatically, so you
+# never have to run wrangler locally. Requires one GitHub secret:
+#   CLOUDFLARE_API_TOKEN  (create with the "Edit Cloudflare Workers" template)
+# If your token can see more than one account, also add a CLOUDFLARE_ACCOUNT_ID
+# secret (see the commented env below).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'workers/ollama-proxy/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: workers/ollama-proxy
+        # Uncomment if the deploy fails with "more than one account":
+        # env:
+        #   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
