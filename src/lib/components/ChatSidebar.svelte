@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, type ChatMessage } from '../utils/aiService';
-  import { loadAISettings, saveAISettings } from '../utils/aiSettings';
+  import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
 
   interface Props {
@@ -29,6 +29,7 @@
   let apiKey = $state('');
   let baseUrl = $state('');
   let model = $state('');
+  let rememberKey = $state(false);
 
   // Only a concern on a deployed web build with no CORS proxy configured:
   // direct browser calls to ollama.com would be blocked by CORS.
@@ -39,6 +40,7 @@
     apiKey = config.apiKey;
     baseUrl = config.baseUrl;
     model = config.model;
+    rememberKey = config.rememberKey;
     isConfigured = aiService.isConfigured();
   });
 
@@ -47,17 +49,20 @@
       apiKey: apiKey.trim(),
       baseUrl: baseUrl.trim(),
       model: model.trim(),
-    });
+    }, rememberKey);
     apiKey = config.apiKey;
     baseUrl = config.baseUrl;
     model = config.model;
+    rememberKey = config.rememberKey;
     isConfigured = aiService.isConfigured();
     if (isConfigured) showSettings = false;
   }
 
   function handleDisconnect() {
     apiKey = '';
-    saveAISettings({ apiKey: '' });
+    rememberKey = false;
+    aiService.configure({ apiKey: '' });
+    clearStoredKey();
     isConfigured = false;
   }
 
@@ -194,6 +199,16 @@
             placeholder="Your Ollama Cloud API key"
             class="input"
           />
+          <label class="remember-row">
+            <input type="checkbox" bind:checked={rememberKey} />
+            Remember key on this device
+          </label>
+          {#if rememberKey}
+            <p class="key-warning">
+              ⚠ Stored unencrypted in this browser (localStorage). Avoid on shared
+              or public devices. Unchecked, the key is kept only until you close the tab.
+            </p>
+          {/if}
         </div>
 
         <div class="form-group">
@@ -478,6 +493,29 @@
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .remember-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: #4a4a4a;
+    cursor: pointer;
+  }
+  .remember-row input { cursor: pointer; }
+
+  .key-warning {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.5rem;
+    background-color: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #92400e;
   }
 
   .help-text { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; }
