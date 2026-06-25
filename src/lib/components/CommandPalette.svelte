@@ -184,8 +184,19 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if visible}
-  <div class="palette-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true">
-    <div class="palette-container">
+  <div
+    class="palette-backdrop"
+    role="presentation"
+    onclick={handleBackdropClick}
+    onkeydown={(e) => { if (e.key === 'Escape') close(); }}
+  >
+    <div
+      class="palette-container"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      tabindex="-1"
+    >
       <div class="search-container">
         <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8"/>

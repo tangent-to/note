@@ -209,6 +209,8 @@
   class:drag-above={isDraggedOver && dragPosition === 'above'}
   class:drag-below={isDraggedOver && dragPosition === 'below'}
   data-testid="cell-{cell.id}"
+  role="group"
+  aria-label="Notebook cell"
   ondragover={onDragOver}
   ondrop={onDrop}
 >
@@ -230,6 +232,9 @@
           <span
             class="drag-handle"
             draggable="true"
+            role="button"
+            tabindex="-1"
+            aria-label="Drag to reorder cell (or use the move up/down buttons)"
             ondragstart={onDragStart}
             ondragend={onDragEnd}
             title="Drag to reorder"
