@@ -211,6 +211,9 @@
       case 'run-all':
         runAllCells();
         break;
+      case 'toggle-reactive':
+        reactiveMode.update(v => !v);
+        break;
       case 'add-code-cell':
         addNewCell('code');
         break;
