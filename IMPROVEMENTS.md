@@ -44,8 +44,8 @@ Powered by **Ollama Cloud** (the only supported provider).
 - Insert generated code directly into notebooks
 - Contextual conversations with chat history
 - Pre-built suggestions for common tasks
-- CORS-aware: works locally via a dev proxy; on the deployed web build it
-  guides users to enable CORS (browser extension / Safari Develop menu)
+- CORS-aware: works locally via the Vite dev proxy; deployed web routes through
+  a bundled Cloudflare Worker proxy (no browser extension needed)
 
 ### 4. Comprehensive Library Support
 
@@ -135,9 +135,9 @@ Visit http://localhost:5173
 The current notebook is automatically sent to the model as context.
 
 Note on CORS: running locally (`npm run dev`) works out of the box because the
-dev server proxies requests. On the deployed web build, browsers block direct
-calls to `ollama.com` — enable a CORS-unblock extension (Chrome/Firefox) or use
-Safari's *Develop → Disable Cross-Origin Restrictions*.
+dev server proxies requests. For the deployed web build, deploy the bundled
+Cloudflare Worker proxy and set `VITE_OLLAMA_PROXY_URL` — see
+`workers/ollama-proxy/README.md`.
 
 ## 📝 Library Examples
 

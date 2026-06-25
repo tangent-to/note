@@ -60,20 +60,18 @@ Default model: `qwen3-coder:480b-cloud` (any Ollama Cloud model works, e.g.
 
 #### CORS and the browser
 
-Ollama Cloud is called directly from your browser, and browsers block such
-cross-origin requests by default (CORS):
+Ollama Cloud doesn't send CORS headers, so a browser can't call it directly.
+This project handles that with a small proxy — no browser extensions needed:
 
-- **Running locally (`npm run dev`)** — works out of the box. The dev server
-  proxies requests to `ollama.com`, so there's nothing to configure.
-- **Deployed web build (e.g. notebook.tangent.to)** — the app will detect this
-  and show a notice. To make it work you need to relax CORS in your browser:
-  - **Chrome / Firefox**: install a CORS-unblock extension (e.g. "CORS Unblock"
-    or "Allow CORS") and enable it for the site.
-  - **Safari**: enable the Develop menu, then check
-    *Develop → Disable Cross-Origin Restrictions*.
-
-  Only enable these while using the app — leaving CORS disabled globally is a
-  security risk.
+- **Running locally (`npm run dev`)** — works out of the box. The Vite dev
+  server proxies requests to `ollama.com`, so there's nothing to configure.
+- **Deployed web build (e.g. notebook.tangent.to)** — deploy the bundled
+  **Cloudflare Worker** proxy once and point the app at it. The worker forwards
+  requests to `ollama.com` and adds CORS headers; each user still uses their own
+  API key (it just passes through — the worker never stores it). See
+  [`workers/ollama-proxy/README.md`](workers/ollama-proxy/README.md), then build
+  with `VITE_OLLAMA_PROXY_URL` set to the worker URL. Without it configured, the
+  app shows a notice and AI calls will be blocked by the browser.
 
 ### Examples
 

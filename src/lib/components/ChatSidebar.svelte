@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { aiService, CorsLikelyError, isWebDeployment, type ChatMessage } from '../utils/aiService';
+  import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, type ChatMessage } from '../utils/aiService';
   import { loadAISettings, saveAISettings } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
 
@@ -30,9 +30,9 @@
   let baseUrl = $state('');
   let model = $state('');
 
-  // On the deployed web build, browser calls to ollama.com may be blocked by
-  // CORS. We surface guidance (use the desktop app or a CORS browser extension).
-  const webDeployment = isWebDeployment();
+  // Only a concern on a deployed web build with no CORS proxy configured:
+  // direct browser calls to ollama.com would be blocked by CORS.
+  const showCorsNotice = isWebDeployment() && !corsProxyConfigured();
 
   onMount(() => {
     const config = loadAISettings();
@@ -160,20 +160,17 @@
         </p>
       </div>
 
-      {#if webDeployment}
+      {#if showCorsNotice}
         <div class="warn-box">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <path d="M12 9v4M12 17h.01"/>
           </svg>
           <p>
-            Browsers block direct calls to Ollama Cloud (CORS). To use it here:
-            on <strong>Chrome/Firefox</strong> install a CORS-unblock extension
-            (e.g. “CORS Unblock” / “Allow CORS”) and enable it for this site; on
-            <strong>Safari</strong> use Develop → “Disable Cross-Origin
-            Restrictions”. Only enable it while using this app — leaving CORS off
-            everywhere is a security risk. Running the app locally avoids this
-            entirely (the dev server proxies requests).
+            This deployment has no Ollama proxy configured, so the browser will
+            block calls to Ollama Cloud (CORS). Run the app locally (the dev server
+            proxies requests), or deploy the bundled Cloudflare proxy and set
+            <code>VITE_OLLAMA_PROXY_URL</code> (see <code>workers/ollama-proxy</code>).
           </p>
         </div>
       {/if}
@@ -435,6 +432,13 @@
 
   .warn-box svg { flex-shrink: 0; margin-top: 0.125rem; }
   .warn-box p { margin: 0; }
+  .warn-box code {
+    background-color: #fef3c7;
+    padding: 0.0625rem 0.25rem;
+    border-radius: 3px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem;
+  }
 
   .status-connected {
     display: flex;

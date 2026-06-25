@@ -27,6 +27,46 @@
   let showExportDialog = $state(false);
   let showCommandPalette = $state(false);
 
+  // Pending destructive navigation (New / Import) awaiting an unsaved-changes
+  // decision. When set, the confirmation modal is shown.
+  let pendingNav: { run: () => void; label: string } | null = $state(null);
+  let savingPending = $state(false);
+
+  // Run `action` immediately if there's nothing to lose, otherwise ask the user
+  // whether to save first. `label` describes what's about to happen.
+  function guardUnsaved(action: () => void, label: string) {
+    if (get(notebookDirty)) {
+      pendingNav = { run: action, label };
+    } else {
+      action();
+    }
+  }
+
+  function cancelPending() {
+    pendingNav = null;
+  }
+
+  function discardAndContinue() {
+    const action = pendingNav?.run;
+    pendingNav = null;
+    action?.();
+  }
+
+  async function saveAndContinue() {
+    if (!pendingNav) return;
+    savingPending = true;
+    try {
+      await performSaveShortcut();
+      const action = pendingNav.run;
+      pendingNav = null;
+      action();
+    } catch (err) {
+      console.error('Save before continuing failed', err);
+    } finally {
+      savingPending = false;
+    }
+  }
+
   export function runAllCells() {
     window.dispatchEvent(new CustomEvent('run-all-cells'));
   }
@@ -51,8 +91,18 @@
       }
     });
 
+    // Warn before closing/reloading the tab if there are unsaved changes.
+    const beforeUnload = (e: BeforeUnloadEvent) => {
+      if (get(notebookDirty)) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnload);
+
     return () => {
       unsubscribe();
+      window.removeEventListener('beforeunload', beforeUnload);
     };
   });
 
@@ -81,20 +131,24 @@
   }
 
   function handleNewNotebook() {
-    const newNotebook = createNewNotebook();
-    resetExecutionCounter();
-    currentNotebook.set(newNotebook);
-    markNotebookClean();
-    console.info('New notebook created');
+    guardUnsaved(() => {
+      const newNotebook = createNewNotebook();
+      resetExecutionCounter();
+      currentNotebook.set(newNotebook);
+      markNotebookClean();
+      console.info('New notebook created');
+    }, 'create a new notebook');
   }
 
   function handleImportNotebook() {
-    importNotebookFromFile((notebook) => {
-      resetExecutionCounter();
-      currentNotebook.set(notebook);
-      markNotebookClean();
-      console.info('Notebook imported successfully');
-    });
+    guardUnsaved(() => {
+      importNotebookFromFile((notebook) => {
+        resetExecutionCounter();
+        currentNotebook.set(notebook);
+        markNotebookClean();
+        console.info('Notebook imported successfully');
+      });
+    }, 'import another notebook');
   }
 
   function handleExportNotebook() {
@@ -337,6 +391,29 @@
   {#if showExportDialog}
     <ExportDialog onclose={() => showExportDialog = false} />
   {/if}
+
+  {#if pendingNav}
+    <div
+      class="unsaved-overlay"
+      role="presentation"
+      onclick={(e) => { if (e.target === e.currentTarget) cancelPending(); }}
+    >
+      <div class="unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
+        <h3 id="unsaved-title">Unsaved changes</h3>
+        <p>
+          You have unsaved changes. Save them before you {pendingNav.label}?
+          Discarding will permanently lose your current work.
+        </p>
+        <div class="unsaved-actions">
+          <button class="btn-ghost" onclick={cancelPending} disabled={savingPending}>Cancel</button>
+          <button class="btn-danger" onclick={discardAndContinue} disabled={savingPending}>Discard</button>
+          <button class="btn-confirm" onclick={saveAndContinue} disabled={savingPending}>
+            {savingPending ? 'Saving…' : 'Save & continue'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -501,4 +578,64 @@
       box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
     }
   }
+
+  .unsaved-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .unsaved-modal {
+    background: #ffffff;
+    border-radius: 0.5rem;
+    width: 90%;
+    max-width: 420px;
+    padding: 1.5rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+  }
+
+  .unsaved-modal h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+
+  .unsaved-modal p {
+    margin: 0 0 1.25rem 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: #4a4a4a;
+  }
+
+  .unsaved-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .unsaved-actions button {
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .unsaved-actions button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .btn-ghost { background: transparent; color: #4a4a4a; border-color: #d1d5db; }
+  .btn-ghost:hover:not(:disabled) { background: #f3f4f6; }
+
+  .btn-danger { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .btn-danger:hover:not(:disabled) { background: #fee2e2; }
+
+  .btn-confirm { background: #1a1a1a; color: #ffffff; }
+  .btn-confirm:hover:not(:disabled) { background: #000000; }
 </style>

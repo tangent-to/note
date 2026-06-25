@@ -47,21 +47,39 @@ export interface AIGenerationResponse {
 
 export const DEFAULT_MODEL = 'qwen3-coder:480b-cloud';
 
-// In dev, hit the Vite proxy (`/ollama` -> https://ollama.com) so the browser
-// never makes a cross-origin request. In production, call ollama.com directly.
-export function defaultBaseUrl(): string {
-  // import.meta.env.DEV is true under `vite dev`.
-  const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
-  return isDev ? '/ollama/api' : 'https://ollama.com/api';
+function viteEnv(): any {
+  return typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 }
 
-// True when running as the deployed static web build (i.e. not the Vite dev
-// server, which proxies requests to ollama.com for us). In a deployed build,
-// calls go straight from the browser and may be blocked by CORS.
+// A CORS-friendly proxy to ollama.com (e.g. a Cloudflare Worker), set at build
+// time via VITE_OLLAMA_PROXY_URL. When present, the deployed web build routes
+// requests through it so the browser never makes a blocked cross-origin call.
+function proxyBase(): string | undefined {
+  const url = viteEnv()?.VITE_OLLAMA_PROXY_URL;
+  return url ? String(url).replace(/\/+$/, '') : undefined;
+}
+
+// Resolve the default base URL:
+//  - dev:        the Vite proxy (`/ollama` -> https://ollama.com)
+//  - prod+proxy: the configured Cloudflare proxy
+//  - prod only:  ollama.com directly (subject to browser CORS)
+export function defaultBaseUrl(): string {
+  if (viteEnv()?.DEV) return '/ollama/api';
+  const proxy = proxyBase();
+  if (proxy) return `${proxy}/api`;
+  return 'https://ollama.com/api';
+}
+
+// True when requests avoid browser CORS — either the dev proxy or a configured
+// Cloudflare proxy is in play.
+export function corsProxyConfigured(): boolean {
+  return Boolean(viteEnv()?.DEV || proxyBase());
+}
+
+// True when running as the deployed static web build (not the Vite dev server).
 export function isWebDeployment(): boolean {
   if (typeof window === 'undefined') return false;
-  const isDev = typeof import.meta !== 'undefined' && (import.meta as any).env?.DEV;
-  return !isDev;
+  return !viteEnv()?.DEV;
 }
 
 /** Raised when a request most likely failed because of a CORS/network block. */
@@ -139,8 +157,8 @@ export class AIService {
       // request was blocked before a response came back — usually CORS.
       throw new CorsLikelyError(
         'Could not reach Ollama Cloud. This is usually a CORS restriction in the ' +
-          'browser. Enable a CORS-unblocking browser extension for this site, or run ' +
-          'the app locally (the dev server proxies requests for you). ' +
+          'browser. This deployment should route through the Ollama proxy; if it ' +
+          'is not configured, run the app locally (the dev server proxies requests). ' +
           `(${error?.message ?? 'network error'})`
       );
     }
