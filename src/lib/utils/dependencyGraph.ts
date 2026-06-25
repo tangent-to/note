@@ -103,6 +103,12 @@ export function analyzeCell(code: string): CellAnalysis {
   const noMembers = clean.replace(/\.\s*[A-Za-z_$][\w$]*/g, ' ');
   for (const m of noMembers.matchAll(/[A-Za-z_$][\w$]*/g)) reads.add(m[0]);
 
+  // Reactive input bindings: `ui.slider("name", ...)` defines `name`. Scan the
+  // ORIGINAL code (not `clean`) because the bound name is a string literal.
+  for (const m of code.matchAll(/\bui\s*\.\s*(?:slider|number|checkbox|select|text)\s*\(\s*["']([A-Za-z_$][\w$]*)["']/g)) {
+    defines.add(m[1]);
+  }
+
   // A cell never depends on itself.
   for (const name of defines) reads.delete(name);
 
@@ -125,22 +131,22 @@ function buildIndex(codeCells: CellLike[]) {
   return { analyses, producersByName };
 }
 
-// All cells that transitively depend on `originId` (i.e. read a name it defines,
-// directly or through a chain). Used by reactive mode to re-run dependents.
-export function getDownstreamCells(cells: CellLike[], originId: string): Set<string> {
-  const codeCells = cells.filter((c) => c.type === 'code');
-  const { analyses } = buildIndex(codeCells);
-  const origin = analyses.get(originId);
-  if (!origin) return new Set();
-
+// Transitively collect cells that read any name in `seedNames` (following the
+// dependency chain), optionally excluding one cell id.
+function collectDownstream(
+  codeCells: CellLike[],
+  analyses: Map<string, CellAnalysis>,
+  seedNames: Iterable<string>,
+  excludeId?: string
+): Set<string> {
   const downstream = new Set<string>();
-  const frontierNames = new Set(origin.defines);
+  const frontierNames = new Set(seedNames);
   let changed = true;
   let guard = 0;
   while (changed && guard++ <= codeCells.length + 1) {
     changed = false;
     for (const cell of codeCells) {
-      if (cell.id === originId || downstream.has(cell.id)) continue;
+      if (cell.id === excludeId || downstream.has(cell.id)) continue;
       const analysis = analyses.get(cell.id)!;
       let reads = false;
       for (const name of frontierNames) {
@@ -154,6 +160,24 @@ export function getDownstreamCells(cells: CellLike[], originId: string): Set<str
     }
   }
   return downstream;
+}
+
+// All cells that transitively depend on `originId` (i.e. read a name it defines,
+// directly or through a chain). Used by reactive mode to re-run dependents.
+export function getDownstreamCells(cells: CellLike[], originId: string): Set<string> {
+  const codeCells = cells.filter((c) => c.type === 'code');
+  const { analyses } = buildIndex(codeCells);
+  const origin = analyses.get(originId);
+  if (!origin) return new Set();
+  return collectDownstream(codeCells, analyses, origin.defines, originId);
+}
+
+// All cells that transitively depend on a single variable `name`. Used when a
+// reactive input (e.g. a slider) changes its bound value.
+export function getDependentsOfName(cells: CellLike[], name: string): Set<string> {
+  const codeCells = cells.filter((c) => c.type === 'code');
+  const { analyses } = buildIndex(codeCells);
+  return collectDownstream(codeCells, analyses, [name]);
 }
 
 // Compute the set of cell ids that are stale: their last output no longer

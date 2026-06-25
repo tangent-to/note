@@ -15,7 +15,7 @@
     reactiveMode
   } from '../stores/notebook';
   import { JavaScriptExecutor } from '../utils/jsExecutor';
-  import { getDownstreamCells } from '../utils/dependencyGraph';
+  import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
   let jsExecutor: JavaScriptExecutor;
@@ -31,18 +31,47 @@
 
   const handleRunAllEvent = () => handleRunAll();
   const handleRunStaleEvent = () => handleRunStale();
+  const handleInputChangeEvent = (e: Event) => {
+    const name = (e as CustomEvent).detail?.name;
+    if (name) runDependentsOfName(name);
+  };
 
   onMount(async () => {
     jsExecutor = new JavaScriptExecutor();
     await jsExecutor.setupCommonLibraries();
     window.addEventListener('run-all-cells', handleRunAllEvent);
     window.addEventListener('run-stale-cells', handleRunStaleEvent);
+    window.addEventListener('tangent-input-change', handleInputChangeEvent);
   });
 
   onDestroy(() => {
     window.removeEventListener('run-all-cells', handleRunAllEvent);
     window.removeEventListener('run-stale-cells', handleRunStaleEvent);
+    window.removeEventListener('tangent-input-change', handleInputChangeEvent);
   });
+
+  // A reactive input (e.g. a slider) changed: re-run the cells that read its
+  // bound variable, in document order. Inputs drive their dependents regardless
+  // of the reactive-mode toggle — that's the point of an interactive control.
+  async function runDependentsOfName(name: string) {
+    if (suppressCascade) return;
+    const notebook = getNotebookSnapshot();
+    if (!notebook) return;
+    const dependents = getDependentsOfName(notebook.cells, name);
+    if (dependents.size === 0) return;
+
+    suppressCascade = true;
+    try {
+      for (const cell of notebook.cells) {
+        if (cell.type === 'code' && dependents.has(cell.id)) {
+          await handleRunCell({ cellId: cell.id });
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+      }
+    } finally {
+      suppressCascade = false;
+    }
+  }
 
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
     currentNotebook.update(notebook => {

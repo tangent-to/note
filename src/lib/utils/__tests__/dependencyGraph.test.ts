@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeCell, computeStaleCells, getDownstreamCells, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
+import { analyzeCell, computeStaleCells, getDownstreamCells, getDependentsOfName, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
 
 describe('analyzeCell', () => {
   it('extracts top-level definitions', () => {
@@ -37,6 +37,11 @@ describe('analyzeCell', () => {
   it('treats imported bindings as definitions', () => {
     const { defines } = analyzeCell('import * as aq from "arquero";\nimport Plot from "@observablehq/plot";\nimport { mean, sum as total } from "d3";');
     expect([...defines].sort()).toEqual(['Plot', 'aq', 'mean', 'total']);
+  });
+
+  it('treats reactive input bindings as definitions', () => {
+    const { defines } = analyzeCell('ui.slider("threshold", { min: 0, max: 100 })');
+    expect(defines.has('threshold')).toBe(true);
   });
 
   it('ignores identifiers inside strings and comments', () => {
@@ -125,5 +130,21 @@ describe('getDownstreamCells', () => {
 
   it('returns empty when nothing depends on the cell', () => {
     expect(getDownstreamCells(cells, 'd').size).toBe(0);
+  });
+});
+
+describe('getDependentsOfName', () => {
+  it('finds cells that transitively read a bound variable (e.g. a slider)', () => {
+    const cells: CellLike[] = [
+      { id: 's', type: 'code', content: 'ui.slider("threshold", { min: 0, max: 100 })' },
+      { id: 'use', type: 'code', content: 'const big = data.filter(d => d > threshold);' },
+      { id: 'show', type: 'code', content: 'big.length;' },
+      { id: 'other', type: 'code', content: 'const w = 1;' },
+    ];
+    const dep = getDependentsOfName(cells, 'threshold');
+    expect(dep.has('use')).toBe(true);   // reads threshold
+    expect(dep.has('show')).toBe(true);  // reads big (transitive)
+    expect(dep.has('other')).toBe(false);
+    expect(dep.has('s')).toBe(false);    // the input cell itself
   });
 });

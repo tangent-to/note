@@ -68,3 +68,17 @@ Draw a relation between flipper length and body mass of penguins.
 
 // %% [javascript]
 Plot.dot(penguins, {x: "Flipper Length (mm)", y: "Body Mass (g)", fill: "Species"}).plot({ grid: true })
+// %% [markdown]
+/*
+## Reactive inputs
+
+`ui.slider` (also `ui.number`, `ui.checkbox`, `ui.select`, `ui.text`) binds a
+notebook variable. Drag the slider and the cells that read `count` re-run
+automatically — no need for the reactive-mode toggle.
+*/
+
+// %% [javascript]
+ui.slider("count", { min: 1, max: 20, value: 5, label: "How many?" })
+
+// %% [javascript]
+Array.from({ length: count }, (_, i) => i * i)

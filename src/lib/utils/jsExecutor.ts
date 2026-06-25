@@ -35,9 +35,119 @@ export class JavaScriptExecutor {
     // `const { x } = nb` or `nb.x`.
     (window as any).__tangent_scope = this.scope;
     (window as any).nb = this.scope;
+    // Reactive input widgets (sliders, etc.) available to cells as `ui.*`.
+    this.setupInputs();
     // Install the AMD guard so dynamically injected scripts don't conflict
     // with Monaco Editor's RequireJS loader.
     this.installAmdGuard();
+  }
+
+  /**
+   * Reactive HTML inputs, exposed to cells as `ui` (e.g. `ui.slider("x", {...})`).
+   *
+   * An input binds a notebook variable by name: it writes the current value into
+   * the shared scope and, on change, dispatches `tangent-input-change` so the
+   * notebook can re-run the cells that depend on that variable. The call returns
+   * the DOM element, so a cell ending in `ui.slider(...)` displays the control.
+   *
+   * Browser-only by nature (like Observable's inputs) — these don't run under
+   * plain Deno/Zed, but the notebook file is still valid JavaScript.
+   */
+  private setupInputs() {
+    const scope = this.scope;
+
+    const bind = (name: string, value: any) => {
+      scope[name] = value;
+    };
+
+    // Debounced notification so dragging a slider doesn't spam re-runs.
+    const timers: Record<string, any> = {};
+    const notify = (name: string) => {
+      clearTimeout(timers[name]);
+      timers[name] = setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('tangent-input-change', { detail: { name } }));
+      }, 120);
+    };
+
+    const wrap = (name: string, labelText: string, control: HTMLElement, valueEl?: HTMLElement) => {
+      const el = document.createElement('div');
+      el.className = 'tangent-input';
+      el.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font:13px/1.4 system-ui,sans-serif;padding:0.25rem 0;';
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      label.style.cssText = 'min-width:6rem;color:#4a4a4a;font-weight:500;';
+      el.append(label, control);
+      if (valueEl) el.append(valueEl);
+      return el;
+    };
+
+    const ui = {
+      slider(name: string, opts: any = {}) {
+        const { min = 0, max = 100, step = 1, value = min, label = name } = opts;
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = String(min); input.max = String(max); input.step = String(step);
+        input.value = String(value);
+        input.style.flex = '1';
+        const out = document.createElement('span');
+        out.style.cssText = 'min-width:3rem;font-family:monospace;color:#1a1a1a;';
+        out.textContent = String(value);
+        bind(name, Number(value));
+        input.addEventListener('input', () => {
+          const v = Number(input.value);
+          out.textContent = String(v);
+          bind(name, v);
+          notify(name);
+        });
+        return wrap(name, label, input, out);
+      },
+      number(name: string, opts: any = {}) {
+        const { min, max, step = 1, value = 0, label = name } = opts;
+        const input = document.createElement('input');
+        input.type = 'number';
+        if (min !== undefined) input.min = String(min);
+        if (max !== undefined) input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        bind(name, Number(value));
+        input.addEventListener('input', () => { bind(name, Number(input.value)); notify(name); });
+        return wrap(name, label, input);
+      },
+      checkbox(name: string, opts: any = {}) {
+        const { value = false, label = name } = opts;
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(value);
+        bind(name, Boolean(value));
+        input.addEventListener('change', () => { bind(name, input.checked); notify(name); });
+        return wrap(name, label, input);
+      },
+      select(name: string, opts: any = {}) {
+        const { options = [], value, label = name } = opts;
+        const sel = document.createElement('select');
+        for (const opt of options) {
+          const o = document.createElement('option');
+          o.value = String(opt); o.textContent = String(opt);
+          if (value !== undefined && String(opt) === String(value)) o.selected = true;
+          sel.append(o);
+        }
+        bind(name, value !== undefined ? value : (options[0] ?? ''));
+        sel.addEventListener('change', () => { bind(name, sel.value); notify(name); });
+        return wrap(name, label, sel);
+      },
+      text(name: string, opts: any = {}) {
+        const { value = '', label = name, placeholder = '' } = opts;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = String(value); input.placeholder = placeholder;
+        input.style.flex = '1';
+        bind(name, String(value));
+        input.addEventListener('input', () => { bind(name, input.value); notify(name); });
+        return wrap(name, label, input);
+      },
+    };
+
+    (window as any).ui = ui;
   }
 
   /**
