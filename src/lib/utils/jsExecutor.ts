@@ -56,6 +56,10 @@ export class JavaScriptExecutor {
   private setupInputs() {
     const scope = this.scope;
 
+    // Degrade gracefully outside a browser (Deno, Zed, headless): no DOM, so
+    // each input just binds and returns its value instead of building an element.
+    const hasDOM = typeof document !== 'undefined' && typeof window !== 'undefined';
+
     const bind = (name: string, value: any) => {
       scope[name] = value;
     };
@@ -84,6 +88,8 @@ export class JavaScriptExecutor {
     const ui = {
       slider(name: string, opts: any = {}) {
         const { min = 0, max = 100, step = 1, value = min, label = name } = opts;
+        bind(name, Number(value));
+        if (!hasDOM) return Number(value);
         const input = document.createElement('input');
         input.type = 'range';
         input.min = String(min); input.max = String(max); input.step = String(step);
@@ -92,7 +98,6 @@ export class JavaScriptExecutor {
         const out = document.createElement('span');
         out.style.cssText = 'min-width:3rem;font-family:monospace;color:#1a1a1a;';
         out.textContent = String(value);
-        bind(name, Number(value));
         input.addEventListener('input', () => {
           const v = Number(input.value);
           out.textContent = String(v);
@@ -103,27 +108,32 @@ export class JavaScriptExecutor {
       },
       number(name: string, opts: any = {}) {
         const { min, max, step = 1, value = 0, label = name } = opts;
+        bind(name, Number(value));
+        if (!hasDOM) return Number(value);
         const input = document.createElement('input');
         input.type = 'number';
         if (min !== undefined) input.min = String(min);
         if (max !== undefined) input.max = String(max);
         input.step = String(step);
         input.value = String(value);
-        bind(name, Number(value));
         input.addEventListener('input', () => { bind(name, Number(input.value)); notify(name); });
         return wrap(name, label, input);
       },
       checkbox(name: string, opts: any = {}) {
         const { value = false, label = name } = opts;
+        bind(name, Boolean(value));
+        if (!hasDOM) return Boolean(value);
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = Boolean(value);
-        bind(name, Boolean(value));
         input.addEventListener('change', () => { bind(name, input.checked); notify(name); });
         return wrap(name, label, input);
       },
       select(name: string, opts: any = {}) {
         const { options = [], value, label = name } = opts;
+        const resolved = value !== undefined ? value : (options[0] ?? '');
+        bind(name, resolved);
+        if (!hasDOM) return resolved;
         const sel = document.createElement('select');
         for (const opt of options) {
           const o = document.createElement('option');
@@ -131,17 +141,17 @@ export class JavaScriptExecutor {
           if (value !== undefined && String(opt) === String(value)) o.selected = true;
           sel.append(o);
         }
-        bind(name, value !== undefined ? value : (options[0] ?? ''));
         sel.addEventListener('change', () => { bind(name, sel.value); notify(name); });
         return wrap(name, label, sel);
       },
       text(name: string, opts: any = {}) {
         const { value = '', label = name, placeholder = '' } = opts;
+        bind(name, String(value));
+        if (!hasDOM) return String(value);
         const input = document.createElement('input');
         input.type = 'text';
         input.value = String(value); input.placeholder = placeholder;
         input.style.flex = '1';
-        bind(name, String(value));
         input.addEventListener('input', () => { bind(name, input.value); notify(name); });
         return wrap(name, label, input);
       },

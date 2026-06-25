@@ -547,8 +547,9 @@
 
   .stale-badge:hover { background-color: #fef3c7; }
 
-  .cell-wrapper.stale .cell-indicator:not(.active) {
-    background-color: #fcd34d;
+  /* Stale cells get a black border so they stand out at a glance. */
+  .cell-wrapper.stale .cell-container {
+    border-color: #1a1a1a;
   }
 
   .toolbar-btn {
