@@ -313,19 +313,19 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M8 3v10M3 8h10"/>
         </svg>
-        New
+        <span class="btn-label">New</span>
       </button>
       <button class="notebooks-btn" onclick={handleImportNotebook} title="Import Notebook (Ctrl+O)">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 2v9M5 8l3 3 3-3"/>
         </svg>
-        Import
+        <span class="btn-label">Import</span>
       </button>
       <button class="notebooks-btn" onclick={handleExportNotebook} title="Export Notebook">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 11V3M5 6l3-3 3 3"/>
         </svg>
-        Export
+        <span class="btn-label">Export</span>
       </button>
     </div>
 
@@ -340,7 +340,7 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
             <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
           </svg>
-          Reactive {$reactiveMode ? 'on' : 'off'}
+          <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
         </button>
         <span class="header-separator">•</span>
         {#if $notebookDirty}
@@ -356,7 +356,7 @@
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
               <path d="M12 9v4M12 17h.01"/>
             </svg>
-            Run {$staleCells.size} stale
+            <span class="btn-label">Run {$staleCells.size} stale</span>
           </button>
           <span class="header-separator">•</span>
         {/if}
@@ -372,7 +372,7 @@
           <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
             <path d="M3 2l9 5-9 5V2z"/>
           </svg>
-          Run All
+          <span class="btn-label">Run All</span>
         </button>
         <span class="header-separator">•</span>
       {/if}
@@ -612,6 +612,21 @@
     background-color: #1a1a1a;
     color: #ffffff;
     border-color: #1a1a1a;
+  }
+
+  /* Mobile: collapse the header to icons so it fits narrow screens. */
+  @media (max-width: 640px) {
+    .app-header { padding: 0.4rem 0.5rem; }
+    .header-left,
+    .header-right { gap: 0.1rem; }
+    .btn-label,
+    .header-meta,
+    .header-separator,
+    .kbd-hint { display: none; }
+    .notebooks-btn,
+    .run-all-header-btn,
+    .run-stale-btn,
+    .reactive-toggle { padding: 0.4rem 0.45rem; gap: 0; }
   }
 
   .content-wrapper {
