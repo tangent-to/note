@@ -97,3 +97,9 @@ html {
     scroll-behavior: auto !important;
   }
 }
+
+/* Monaco renders a large "show keyboard" button on iOS/touch that overlaps the
+   code. We focus the editor on tap anyway, so hide it. */
+.monaco-editor .iPadShowKeyboard {
+  display: none !important;
+}

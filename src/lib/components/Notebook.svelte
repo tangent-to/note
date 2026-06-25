@@ -524,6 +524,12 @@
     padding: 1.5rem 1.5rem 2.5rem;
   }
 
+  @media (max-width: 640px) {
+    .notebook-container { padding: 1rem 0.75rem 2rem; }
+    .notebook-title { font-size: 1.6rem; }
+    .notebook-header { margin-bottom: 1.25rem; }
+  }
+
   .notebook-header {
     margin-bottom: 1.75rem;
   }
