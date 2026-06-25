@@ -9,9 +9,10 @@
 // in the Authorization header exactly as the browser sent it. The Worker only
 // proxies the Ollama API surface, so it cannot be used as a generic open relay.
 //
-// Optional binding (wrangler.toml [vars]):
-//   ALLOWED_ORIGIN  Lock CORS to a single origin (e.g. https://notebook.tangent.to).
-//                   Defaults to "*" (any origin) for easy setup.
+// Binding (wrangler.toml [vars]):
+//   ALLOWED_ORIGIN  Origin allowed by CORS. Set to "https://notebook.tangent.to"
+//                   in wrangler.toml by default; use "*" to allow any origin.
+//                   Falls back to "*" if the binding is removed entirely.
 
 const UPSTREAM = 'https://ollama.com';
 

@@ -20,8 +20,9 @@ npx wrangler deploy
 Wrangler prints the deployed URL, e.g. `https://ollama-proxy.<account>.workers.dev`
 (or a custom domain you configure in the Cloudflare dashboard).
 
-Optionally lock CORS to your site by uncommenting `ALLOWED_ORIGIN` in
-`wrangler.toml` before deploying.
+CORS is locked to `https://notebook.tangent.to` by default (via `ALLOWED_ORIGIN`
+in `wrangler.toml`). Change it to your own domain before deploying, or set it to
+`"*"` to allow any origin (less secure).
 
 ## Point the app at it
 

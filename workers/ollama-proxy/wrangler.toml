@@ -2,6 +2,7 @@ name = "ollama-proxy"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
-# Optional: restrict CORS to your site's origin instead of allowing any origin.
-# [vars]
-# ALLOWED_ORIGIN = "https://notebook.tangent.to"
+# CORS is restricted to this origin. Change it to your own domain, or set it to
+# "*" to allow any origin (less secure).
+[vars]
+ALLOWED_ORIGIN = "https://notebook.tangent.to"
