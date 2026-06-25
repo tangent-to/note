@@ -103,3 +103,18 @@ html {
 .monaco-editor .iPadShowKeyboard {
   display: none !important;
 }
+
+/* iOS Safari zooms in when a focused field has font-size < 16px. Bump editable
+   fields to 16px on small screens to stop the jarring auto-zoom. For Monaco we
+   only enlarge its hidden input (.inputarea), so the rendered code size is
+   unchanged. */
+@media (max-width: 640px) {
+  input:not([type="range"]):not([type="checkbox"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  .monaco-editor .inputarea {
+    font-size: 16px !important;
+  }
+}
