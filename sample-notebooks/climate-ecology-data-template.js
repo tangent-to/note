@@ -22,13 +22,13 @@ import * as Plot from "@observablehq/plot";
 /*
 ## Load datasets with Arquero
 
-Each dataset comes from `vega-datasets` CDN, providing canonical examples for timeseries, tabular, and categorical analysis. Arquero lets you load csv and json data sets. We first need to fetch the raw data from the URLs and then parse them into Arquero tables. Variables declared with `let` or `const` won't cross the cells. Variables declared without `const` or `let` will be global and reusable between cells - or you can use `globalThis.variableName` to be explicit.
+Each dataset comes from `vega-datasets` CDN, providing canonical examples for timeseries, tabular, and categorical analysis. Arquero lets you load csv and json data sets. We first need to fetch the raw data from the URLs and then parse them into Arquero tables. Cells share a scope, so variables declared with `const` or `let` are available in later cells, the same way notebooks run in Deno and the Zed IDE. For mutable state you can use `globalThis.variableName`.
 
 */
 
 // %% [javascript]
-temp = aq.fromCSV(await fetch("https://cdn.jsdelivr.net/npm/vega-datasets@3.2.1/data/global-temp.csv").then(r => r.text()));
-penguins = aq.fromJSON(await fetch("https://cdn.jsdelivr.net/npm/vega-datasets@3.2.1/data/penguins.json").then(r => r.json()));
+const temp = aq.fromCSV(await fetch("https://cdn.jsdelivr.net/npm/vega-datasets@3.2.1/data/global-temp.csv").then(r => r.text()));
+const penguins = aq.fromJSON(await fetch("https://cdn.jsdelivr.net/npm/vega-datasets@3.2.1/data/penguins.json").then(r => r.json()));
 
 // %% [markdown]
 /*
@@ -68,3 +68,17 @@ Draw a relation between flipper length and body mass of penguins.
 
 // %% [javascript]
 Plot.dot(penguins, {x: "Flipper Length (mm)", y: "Body Mass (g)", fill: "Species"}).plot({ grid: true })
+// %% [markdown]
+/*
+## Reactive inputs
+
+`ui.slider` (also `ui.number`, `ui.checkbox`, `ui.select`, `ui.text`) binds a
+notebook variable. Drag the slider and the cells that read `count` re-run
+automatically, no need for the reactive-mode toggle.
+*/
+
+// %% [javascript]
+ui.slider("count", { min: 1, max: 20, value: 5, label: "How many?" })
+
+// %% [javascript]
+Array.from({ length: count }, (_, i) => i * i)
