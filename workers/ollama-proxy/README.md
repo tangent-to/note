@@ -26,16 +26,21 @@ in `wrangler.toml`). Change it to your own domain before deploying, or set it to
 
 ## Point the app at it
 
-Set the proxy URL when building the web app (no trailing slash, no `/api`):
+The GitHub Pages deploy (`.github/workflows/deploy.yml`) already reads a
+repository **Variable** named `VITE_OLLAMA_PROXY_URL` at build time. To turn on
+hosted AI:
 
-```bash
-VITE_OLLAMA_PROXY_URL="https://ollama-proxy.<account>.workers.dev" npm run build
-```
+1. In the repo: **Settings -> Secrets and variables -> Actions -> Variables ->
+   New repository variable**.
+2. Name `VITE_OLLAMA_PROXY_URL`, value the worker URL with no trailing slash and
+   no `/api`, e.g. `https://ollama-proxy.<account>.workers.dev`.
+3. Re-run the deploy (push to `main`, or run the workflow manually).
 
-In CI (GitHub Actions), add `VITE_OLLAMA_PROXY_URL` as a build environment
-variable. When it's set, the deployed app sends Ollama requests through the
-proxy and the in-app CORS notice disappears — it "just works" with no browser
-extension required.
+When it's set, the deployed app routes Ollama requests through the proxy and the
+in-app CORS notice disappears. When empty, the app calls `ollama.com` directly
+(blocked by browser CORS on the live site). This is a Variable, not a Secret:
+the worker URL is not sensitive, and no Cloudflare token is involved.
 
-Local development (`npm run dev`) doesn't need this: the Vite dev server already
-proxies `ollama.com` for you.
+To build locally with the proxy: `VITE_OLLAMA_PROXY_URL="https://..." npm run build`.
+Plain `npm run dev` doesn't need any of this — the Vite dev server proxies
+`ollama.com` for you.

@@ -28,6 +28,12 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Set this as a repository Variable (Settings -> Secrets and variables
+          # -> Actions -> Variables) to the deployed Ollama proxy worker URL,
+          # e.g. https://ollama-proxy.<account>.workers.dev. When empty, the app
+          # calls ollama.com directly (blocked by browser CORS on the live site).
+          VITE_OLLAMA_PROXY_URL: ${{ vars.VITE_OLLAMA_PROXY_URL }}
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
