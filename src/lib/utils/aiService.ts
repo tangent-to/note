@@ -121,7 +121,12 @@ export class AIService {
   }
 
   private endpoint(path: string): string {
-    return this.config.baseUrl.replace(/\/+$/, '') + path;
+    // The Ollama API lives under /api. Tolerate a base URL given with or
+    // without it (e.g. a proxy root like https://…workers.dev) so requests
+    // always hit /api/chat rather than /chat.
+    let base = this.config.baseUrl.replace(/\/+$/, '');
+    if (!/\/api$/.test(base)) base += '/api';
+    return base + path;
   }
 
   private headers(): Record<string, string> {
