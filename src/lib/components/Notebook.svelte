@@ -2,13 +2,11 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
-  import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter } from '../stores/notebook';
+  import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter, createNewNotebook, markNotebookClean } from '../stores/notebook';
   import {
     updateCellContent,
     addCellAfter,
     deleteCell,
-    moveCellUp,
-    moveCellDown,
     staleCells,
     recordCellRun,
     recomputeStaleCells,
@@ -246,6 +244,14 @@
     selectedCellId.set(cellId);
   }
 
+  function startNewNotebook() {
+    resetExecutionCounter();
+    const nb = createNewNotebook();
+    currentNotebook.set(nb);
+    markNotebookClean();
+    selectedCellId.set(nb.cells[0]?.id ?? null);
+  }
+
   const UNTITLED = 'Untitled Notebook';
 
   function getNotebookSnapshot(): Notebook | null {
@@ -286,10 +292,10 @@
     }
   }
 
-  function handleAddCell({ afterCellId }: { afterCellId: string }) {
+  function handleAddCell({ afterCellId, type = 'code' }: { afterCellId: string; type?: 'code' | 'markdown' }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
-      const updatedNotebook = addCellAfter(notebook, afterCellId);
+      const updatedNotebook = addCellAfter(notebook, afterCellId, type);
       const newCell = updatedNotebook.cells.find((cell: NotebookCell) =>
         !notebook.cells.some((oldCell: NotebookCell) => oldCell.id === cell.id)
       );
@@ -307,20 +313,6 @@
     });
 
     selectedCellId.update(selected => selected === cellId ? null : selected);
-  }
-
-  function handleMoveUp({ cellId }: { cellId: string }) {
-    currentNotebook.update(notebook => {
-      if (!notebook) return notebook;
-      return moveCellUp(notebook, cellId);
-    });
-  }
-
-  function handleMoveDown({ cellId }: { cellId: string }) {
-    currentNotebook.update(notebook => {
-      if (!notebook) return notebook;
-      return moveCellDown(notebook, cellId);
-    });
   }
 
   function handleCellTypeChange({ cellId, type }: { cellId: string; type: 'code' | 'markdown' }) {
@@ -485,8 +477,6 @@
           onselect={handleSelectCell}
           onaddCell={handleAddCell}
           ondeleteCell={handleDeleteCell}
-          onmoveUp={handleMoveUp}
-          onmoveDown={handleMoveDown}
           ontypeChange={handleCellTypeChange}
           ontoggleCollapse={handleToggleCollapse}
           ontoggleOutputCollapse={handleToggleOutputCollapse}
@@ -500,19 +490,36 @@
     <div class="notebook-footer">
       <button
         class="add-cell-btn"
-        onclick={() => handleAddCell({ afterCellId: $currentNotebook!.cells[$currentNotebook!.cells.length - 1].id })}
+        onclick={() => handleAddCell({ afterCellId: $currentNotebook!.cells[$currentNotebook!.cells.length - 1].id, type: 'code' })}
         data-testid="add-cell-btn"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        Add Cell
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v12M2 8h12"/></svg>
+        Code
+      </button>
+      <button
+        class="add-cell-btn"
+        onclick={() => handleAddCell({ afterCellId: $currentNotebook!.cells[$currentNotebook!.cells.length - 1].id, type: 'markdown' })}
+        data-testid="add-text-cell-btn"
+      >
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v12M2 8h12"/></svg>
+        Text
       </button>
     </div>
   {:else}
     <div class="empty-state">
-      <h2>No notebook loaded</h2>
-      <p>Create a new notebook or open an existing one to get started.</p>
+      <h2>Start a notebook</h2>
+      <p>A blank notebook gives you one code cell to run. Import a <code>.js</code> file to pick up where you left off.</p>
+      <div class="empty-actions">
+        <button class="empty-primary" onclick={startNewNotebook}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3v10M3 8h10" stroke-linecap="round"/>
+          </svg>
+          New notebook
+        </button>
+        <button class="empty-secondary" onclick={() => window.dispatchEvent(new CustomEvent('request-import-notebook'))}>
+          Import a file
+        </button>
+      </div>
     </div>
   {/if}
 </div>
@@ -535,19 +542,21 @@
   }
 
   .notebook-title {
+    font-family: var(--font-serif);
     font-size: 2.2rem;
     font-weight: 700;
-    color: #1a1a1a;
+    color: var(--heading);
     margin: 0 0 0.5rem 0;
     outline: none;
     line-height: 1.15;
     letter-spacing: -0.01em;
+    text-wrap: balance;
   }
 
   .notebook-title:focus {
-    background-color: #fff5d6;
+    background-color: var(--accent-weak-bg);
     padding: 0.125rem 0.35rem;
-    border-radius: 4px;
+    border-radius: var(--radius-input);
   }
 
   .cells-container {
@@ -557,6 +566,7 @@
   .notebook-footer {
     display: flex;
     justify-content: center;
+    gap: 0.6rem;
     padding-top: 1.5rem;
   }
 
@@ -566,9 +576,9 @@
     gap: 0.4rem;
     padding: 0.5rem 1rem;
     background-color: transparent;
-    color: #5a5a5a;
-    border: 1px solid #c8c8c8;
-    border-radius: 5px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
@@ -576,9 +586,9 @@
   }
 
   .add-cell-btn:hover {
-    background-color: #f4f4f4;
-    border-color: #9c9c9c;
-    color: #1a1a1a;
+    background-color: var(--surface-hover);
+    border-color: var(--accent);
+    color: var(--heading);
   }
 
   .empty-state {
@@ -593,12 +603,64 @@
   .empty-state h2 {
     font-size: 1.5rem;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--heading);
     margin-bottom: 0.5rem;
   }
 
   .empty-state p {
-    color: #6b6b6b;
+    color: var(--text-muted);
     font-size: 0.9375rem;
+    max-width: 38ch;
+    text-wrap: pretty;
+  }
+
+  .empty-state code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--surface-2);
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-input);
+  }
+
+  .empty-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+  }
+
+  .empty-primary,
+  .empty-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .empty-primary {
+    background: var(--accent-solid);
+    color: var(--accent-on-solid);
+    border: 1px solid var(--accent-solid);
+  }
+
+  .empty-primary:hover {
+    background: var(--accent-solid-hover);
+    border-color: var(--accent-solid-hover);
+  }
+
+  .empty-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+
+  .empty-secondary:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent);
+    color: var(--heading);
   }
 </style>

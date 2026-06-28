@@ -67,7 +67,7 @@
               observer.disconnect();
               node.innerHTML = '';
               const warning = document.createElement('pre');
-              warning.style.color = '#dc2626';
+              warning.style.color = 'var(--danger-fg)';
               warning.textContent = `Output exceeded ${MAX_CHILDREN} DOM nodes and was truncated to prevent browser freeze.`;
               node.appendChild(warning);
               return;
@@ -165,8 +165,8 @@
       <div class="error-output">
         <div class="error-header">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <circle cx="8" cy="8" r="7" fill="#fee2e2"/>
-            <path d="M8 4v5M8 11v1" stroke="#dc2626" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="8" cy="8" r="7" fill="var(--danger-bg)"/>
+            <path d="M8 4v5M8 11v1" stroke="var(--danger-fg)" stroke-width="2" stroke-linecap="round"/>
           </svg>
           <span class="error-label">Render Error</span>
           <button class="copy-btn" onclick={handleCopy}>{copyLabel}</button>
@@ -188,8 +188,8 @@
         <div class="error-output">
           <div class="error-header">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <circle cx="8" cy="8" r="7" fill="#fee2e2"/>
-              <path d="M8 4v5M8 11v1" stroke="#dc2626" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="8" cy="8" r="7" fill="var(--danger-bg)"/>
+              <path d="M8 4v5M8 11v1" stroke="var(--danger-fg)" stroke-width="2" stroke-linecap="round"/>
             </svg>
             <span class="error-label">Error</span>
             <button class="copy-btn" onclick={handleCopy}>{copyLabel}</button>
@@ -244,22 +244,22 @@
   .output-content :global(.tangent-table-output) {
     width: 100%;
     border-collapse: collapse;
-    font-family: 'Fira Code', 'Fira Sans', sans-serif;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
     line-height: 1.45;
-    color: #2d2d2d;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
     overflow: hidden;
   }
 
   .output-content :global(.tangent-table-output thead) {
-    background-color: #f4f5f7;
+    background-color: var(--surface-2);
   }
 
   .output-content :global(.tangent-table-output th),
   .output-content :global(.tangent-table-output td) {
-    border: 1px solid #eceef1;
+    border: 1px solid var(--border);
     padding: 0.35rem 0.6rem;
     text-align: right;
     white-space: nowrap;
@@ -267,18 +267,18 @@
 
   .output-content :global(.tangent-table-output th) {
     font-weight: 600;
-    color: #1f2933;
+    color: var(--heading);
     letter-spacing: 0.01em;
   }
 
   .output-content :global(.tangent-table-output tbody tr:nth-child(even)) {
-    background-color: #fafbfc;
+    background-color: var(--surface-2);
   }
 
   .json-output,
   .text-output {
     font-size: 0.825rem;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-mono);
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;
@@ -290,12 +290,12 @@
   }
 
   .json-output {
-    color: #7c3aed;
+    color: var(--accent);
   }
 
   .json-tree {
     font-size: 0.825rem;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-mono);
     background-color: transparent;
     border-radius: 0;
     border: none;
@@ -327,34 +327,34 @@
   }
 
   .json-tree :global(.json-formatter-row > a.json-formatter-key) {
-    color: #2563eb;
+    color: var(--accent);
     text-decoration: none;
   }
 
   .json-tree :global(.json-formatter-row .json-formatter-number) {
-    color: #16a34a;
+    color: var(--accent);
   }
 
   .json-tree :global(.json-formatter-row .json-formatter-string) {
-    color: #d97706;
+    color: var(--warn-fg);
   }
 
   .json-tree :global(.json-formatter-row .json-formatter-boolean) {
-    color: #9333ea;
+    color: var(--accent);
   }
 
   .json-tree :global(.json-formatter-row .json-formatter-null) {
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   .text-output {
-    color: #1a1a1a;
+    color: var(--heading);
   }
 
   .error-output {
-    background-color: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 6px;
+    background-color: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-input);
     padding: 0.75rem 1rem;
   }
 
@@ -368,13 +368,13 @@
   .error-label {
     font-size: 0.875rem;
     font-weight: 600;
-    color: #dc2626;
+    color: var(--danger-fg);
   }
 
   .error-message {
     font-size: 0.875rem;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    color: #991b1b;
+    font-family: var(--font-mono);
+    color: var(--danger-fg);
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
@@ -393,7 +393,7 @@
     transition: opacity 0.15s ease;
     pointer-events: none;
     z-index: 1;
-    background: linear-gradient(to right, transparent, rgba(255,255,255,0.9) 20%);
+    background: linear-gradient(to right, transparent, var(--surface) 20%);
   }
 
   .output-container:hover .output-footer {
@@ -402,7 +402,7 @@
 
   .output-timestamp {
     font-size: 0.7rem;
-    color: #c0c0c0;
+    color: var(--text-faint);
   }
 
   .copy-btn {
@@ -412,16 +412,16 @@
     padding: 0.1rem 0.35rem;
     background: transparent;
     border: none;
-    border-radius: 3px;
+    border-radius: var(--radius-pill);
     font-size: 0.68rem;
-    color: #c0c0c0;
+    color: var(--text-faint);
     cursor: pointer;
     transition: color 0.15s ease;
     font-family: inherit;
   }
 
   .copy-btn:hover {
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   .error-header .copy-btn {
@@ -429,7 +429,7 @@
   }
 
   .output-content code {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.875rem;
   }
 

@@ -1,5 +1,6 @@
 import type { Notebook } from '../types/notebook';
 import { ExportService } from './exportService';
+import { toast } from './toast';
 
 const exportService = new ExportService();
 
@@ -168,14 +169,14 @@ export function importNotebookFromFile(callback: (notebook: any) => void) {
       }
 
       if (!notebook.id || !notebook.cells || !Array.isArray(notebook.cells)) {
-        alert('Invalid notebook file format');
+        toast('That file isn’t a valid notebook.', 'error');
         return;
       }
 
       callback(notebook);
     } catch (err: any) {
       console.error('Import failed:', err);
-      alert('Failed to import notebook: ' + err.message);
+      toast('Couldn’t import the notebook: ' + err.message, 'error');
     }
   };
   input.click();

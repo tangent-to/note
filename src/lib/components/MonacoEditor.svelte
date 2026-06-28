@@ -3,6 +3,7 @@
   import loader from '@monaco-editor/loader';
   import { aiService } from '../utils/aiService';
   import { buildNotebookContext } from '../utils/notebookContext';
+  import { toast } from '../utils/toast';
 
   interface Props {
     value?: string;
@@ -243,9 +244,16 @@
         folding: false,
         lineDecorationsWidth: 0,
         lineNumbersMinChars: 4,
+        // Kill the decorations that draw marks at the editor's top-right edge,
+        // where they collide with the cell's overflow menu on line 1: the
+        // active-line border box and the overview-ruler border/lane.
+        renderLineHighlight: 'none',
+        overviewRulerLanes: 0,
+        overviewRulerBorder: false,
+        hideCursorInOverviewRuler: true,
         automaticLayout: true,
         fontSize: 12,
-        fontFamily: '"Fira Code", Monaco, Menlo, "Ubuntu Mono", monospace',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
         tabSize: 2,
         insertSpaces: true,
         contextmenu: true,
@@ -442,7 +450,7 @@
       }
     } catch (error: any) {
       console.error('AI generation failed:', error);
-      alert(`AI generation failed: ${error.message}`);
+      toast(`AI generation failed: ${error.message}`, 'error');
     }
   }
 
@@ -541,7 +549,7 @@
     transition: height 0.1s ease;
   }
   :global(.monaco-editor) {
-    border-radius: 0.375rem;
+    border-radius: var(--radius-input);
   }
 
   /* Increase spacing between line numbers and code */

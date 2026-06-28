@@ -261,7 +261,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: var(--overlay);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: flex-start;
@@ -279,9 +279,9 @@
   .palette-container {
     width: 90%;
     max-width: 640px;
-    background-color: #ffffff;
-    border-radius: 12px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    background-color: var(--surface);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
     animation: slideDown 0.2s ease;
   }
@@ -295,22 +295,22 @@
     display: flex;
     align-items: center;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
     gap: 0.75rem;
   }
 
-  .search-icon { color: #9ca3af; flex-shrink: 0; }
+  .search-icon { color: var(--text-faint); flex-shrink: 0; }
 
   .search-input {
     flex: 1;
     border: none;
     outline: none;
     font-size: 1rem;
-    color: #1a1a1a;
+    color: var(--heading);
     background: transparent;
   }
 
-  .search-input::placeholder { color: #9ca3af; }
+  .search-input::placeholder { color: var(--text-faint); }
 
   .commands-container { max-height: 400px; overflow-y: auto; }
 
@@ -327,8 +327,8 @@
     transition: background-color 0.1s;
   }
 
-  .command-item:hover,
-  .command-item.selected { background-color: #f3f4f6; }
+  .command-item:hover { background-color: var(--surface-hover); }
+  .command-item.selected { background-color: var(--accent-weak-bg); }
 
   .command-icon {
     flex-shrink: 0;
@@ -337,36 +337,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
-    background-color: #f9fafb;
-    color: #6b7280;
+    border-radius: var(--radius-input);
+    background-color: var(--surface-2);
+    color: var(--text-muted);
   }
 
-  .command-item.selected .command-icon { background-color: #1a1a1a; color: #ffffff; }
+  .command-item.selected .command-icon { background-color: var(--accent-solid); color: var(--accent-on-solid); }
 
   .command-details { flex: 1; min-width: 0; }
 
-  .command-name { font-size: 0.875rem; font-weight: 500; color: #1a1a1a; margin-bottom: 0.125rem; }
-  .command-description { font-size: 0.75rem; color: #6b7280; }
+  .command-name { font-size: 0.875rem; font-weight: 500; color: var(--heading); margin-bottom: 0.125rem; }
+  .command-description { font-size: 0.75rem; color: var(--text-muted); }
 
   .command-shortcut {
     flex-shrink: 0;
     padding: 0.25rem 0.5rem;
-    background-color: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
     font-size: 0.75rem;
-    font-family: 'Fira Code', monospace;
-    color: #6b7280;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
   }
 
-  .no-results { padding: 3rem 1.5rem; text-align: center; color: #9ca3af; }
+  .no-results { padding: 3rem 1.5rem; text-align: center; color: var(--text-faint); }
   .no-results p { font-size: 0.875rem; margin: 0; }
 
   .palette-footer {
     padding: 0.75rem 1.25rem;
-    border-top: 1px solid #e5e7eb;
-    background-color: #f9fafb;
+    border-top: 1px solid var(--border);
+    background-color: var(--surface-2);
   }
 
   .footer-hint {
@@ -374,17 +374,17 @@
     align-items: center;
     gap: 1rem;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   kbd {
     padding: 0.125rem 0.375rem;
-    background-color: #ffffff;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    font-family: 'Fira Code', monospace;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: #1a1a1a;
+    color: var(--heading);
     margin-left: 0.25rem;
     margin-right: 0.25rem;
   }

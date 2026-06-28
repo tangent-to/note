@@ -166,7 +166,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #e8e8e8;
+    border-bottom: 1px solid var(--border);
   }
 
   .tab-bar { display: flex; gap: 0; }
@@ -177,29 +177,29 @@
     padding: 0.4rem 0.65rem;
     font-size: 0.8rem;
     font-weight: 500;
-    color: #6b6b6b;
+    color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     transition: all 0.15s ease;
   }
 
-  .tab-btn:hover { color: #1a1a1a; background-color: #f5f5f5; }
-  .tab-btn.active { color: #1a1a1a; background-color: #e8e8e8; }
+  .tab-btn:hover { color: var(--heading); background-color: var(--surface-hover); }
+  .tab-btn.active { color: var(--heading); background-color: var(--surface-2); }
 
   .close-btn {
     background: transparent;
     border: none;
     padding: 0.25rem;
-    color: #6b6b6b;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     transition: all 0.15s ease;
   }
 
-  .close-btn:hover { background-color: #f0f0f0; color: #1a1a1a; }
+  .close-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
   .sidebar-content { padding: 1rem; overflow-y: auto; flex: 1; }
 
@@ -207,19 +207,19 @@
 
   .info-label {
     font-size: 0.75rem;
-    color: #6b6b6b;
+    color: var(--text-muted);
     margin-bottom: 0.25rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
 
-  .info-value { font-size: 0.875rem; color: #1a1a1a; font-weight: 500; }
+  .info-value { font-size: 0.875rem; color: var(--heading); font-weight: 500; }
 
-  .divider { height: 1px; background-color: #e8e8e8; margin: 1.1rem 0; }
+  .divider { height: 1px; background-color: var(--border); margin: 1.1rem 0; }
 
   .shortcuts-section { margin-top: 0.5rem; }
 
-  .section-title { font-size: 0.85rem; font-weight: 600; color: #1a1a1a; margin: 0 0 0.75rem 0; }
+  .section-title { font-size: 0.85rem; font-weight: 600; color: var(--heading); margin: 0 0 0.75rem 0; }
 
   .shortcut-item {
     display: flex;
@@ -230,15 +230,15 @@
 
   .shortcut-key {
     font-size: 0.72rem;
-    color: #6b6b6b;
-    background-color: #f7f7f7;
+    color: var(--text-muted);
+    background-color: var(--surface-2);
     padding: 0.2rem 0.45rem;
-    border-radius: 4px;
-    border: 1px solid #e0e0e0;
-    font-family: monospace;
+    border-radius: var(--radius-input);
+    border: 1px solid var(--border);
+    font-family: var(--font-mono);
   }
 
-  .shortcut-desc { font-size: 0.8125rem; color: #4a4a4a; }
+  .shortcut-desc { font-size: 0.8125rem; color: var(--text); }
 
   .variables-header {
     display: flex;
@@ -251,32 +251,32 @@
     background: transparent;
     border: none;
     padding: 0.25rem;
-    color: #6b6b6b;
+    color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     display: flex;
     align-items: center;
     transition: all 0.15s ease;
   }
 
-  .refresh-btn:hover { background-color: #f0f0f0; color: #1a1a1a; }
+  .refresh-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
-  .empty-vars { font-size: 0.8rem; color: #9ca3af; padding: 1rem 0; text-align: center; }
+  .empty-vars { font-size: 0.8rem; color: var(--text-faint); padding: 1rem 0; text-align: center; }
 
   .variables-list { display: flex; flex-direction: column; gap: 0.5rem; }
 
   .var-item {
     padding: 0.5rem;
-    background-color: #f9f9f9;
-    border: 1px solid #e8e8e8;
-    border-radius: 5px;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
   }
 
   .var-name {
-    font-family: 'Fira Code', monospace;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
     font-weight: 600;
-    color: #2563eb;
+    color: var(--accent);
     margin-bottom: 0.2rem;
   }
 
@@ -284,16 +284,16 @@
 
   .var-type {
     font-size: 0.65rem;
-    color: #9ca3af;
+    color: var(--text-faint);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     flex-shrink: 0;
   }
 
   .var-value {
-    font-family: 'Fira Code', monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: #4a4a4a;
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

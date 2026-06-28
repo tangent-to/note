@@ -4,17 +4,34 @@
         <meta charset="UTF-8" />
         <meta content="width=device-width, initial-scale=1.0" name="viewport" />
         <title>Tangent Notebook</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Fira+Code:wght@300;400;500;600;700&display=swap"
-            rel="stylesheet"
+        <meta
+            name="description"
+            content="A local-first JavaScript notebook that runs in the browser. Write, run, and visualize data in reactive cells."
         />
         <link
             rel="icon"
             type="image/svg+xml"
             href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📓%3C/text%3E%3C/svg%3E"
         />
+        <script>
+            // Apply the saved/system theme before first paint to avoid a flash.
+            (function () {
+                try {
+                    var stored = localStorage.getItem("tangent-theme");
+                    var theme =
+                        stored === "light" || stored === "dark"
+                            ? stored
+                            : window.matchMedia &&
+                                window.matchMedia("(prefers-color-scheme: dark)")
+                                    .matches
+                              ? "dark"
+                              : "light";
+                    document.documentElement.setAttribute("data-theme", theme);
+                } catch (e) {
+                    document.documentElement.setAttribute("data-theme", "light");
+                }
+            })();
+        </script>
     </head>
     <body>
         <div id="app"></div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { currentNotebook } from '../stores/notebook';
   import { ExportService } from '../utils/exportService';
+  import { toast } from '../utils/toast';
   import type { Notebook } from '../types/notebook';
 
   interface Props {
@@ -100,7 +101,7 @@
       }
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please check the console for details.');
+      toast('Couldn’t export the notebook. See the console for details.', 'error');
       return;
     }
 
@@ -163,7 +164,7 @@
   .export-modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -171,11 +172,11 @@
   }
 
   .export-content {
-    background: white;
-    border-radius: 0.5rem;
+    background: var(--surface);
+    border-radius: var(--radius-card);
     width: 90%;
     max-width: 540px;
-    box-shadow: 0 20px 35px -15px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
   }
 
@@ -184,7 +185,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
   }
 
   .export-header h3 { margin: 0; font-size: 1.15rem; font-weight: 600; }
@@ -194,7 +195,7 @@
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #6b7280;
+    color: var(--text-muted);
     padding: 0;
     width: 2rem;
     height: 2rem;
@@ -203,21 +204,21 @@
     justify-content: center;
   }
 
-  .close-btn:hover { color: #374151; }
+  .close-btn:hover { color: var(--text); }
 
   .export-body { padding: 1.5rem; }
 
   .notebook-info {
     margin-bottom: 1.75rem;
     padding: 0.85rem 1rem;
-    background: #f9fafb;
-    border-radius: 0.4rem;
+    background: var(--surface-2);
+    border-radius: var(--radius-input);
   }
 
   .notebook-info h4 { margin: 0 0 0.25rem 0; font-size: 1rem; font-weight: 600; }
-  .notebook-info p { margin: 0; font-size: 0.85rem; color: #6b7280; }
+  .notebook-info p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
 
-  .option-group h5 { margin: 0 0 0.75rem 0; font-size: 0.85rem; font-weight: 600; color: #374151; }
+  .option-group h5 { margin: 0 0 0.75rem 0; font-size: 0.85rem; font-weight: 600; color: var(--text); }
 
   .radio-group { display: flex; flex-direction: column; gap: 0.5rem; }
 
@@ -227,15 +228,15 @@
     gap: 0.6rem;
     cursor: pointer;
     padding: 0.55rem 0.6rem;
-    border-radius: 0.4rem;
+    border-radius: var(--radius-input);
     transition: background-color 0.2s ease;
   }
 
-  .radio-group label:hover { background: #f4f5f7; }
+  .radio-group label:hover { background: var(--surface-hover); }
 
   .radio-label { display: flex; flex-direction: column; gap: 0.15rem; }
-  .radio-label strong { font-weight: 600; color: #1f2933; }
-  .radio-label small { font-size: 0.78rem; color: #64748b; }
+  .radio-label strong { font-weight: 600; color: var(--heading); }
+  .radio-label small { font-size: 0.78rem; color: var(--text-muted); }
 
   input[type="radio"] { margin: 0; margin-top: 0.2rem; }
 
@@ -244,12 +245,12 @@
     justify-content: flex-end;
     gap: 0.75rem;
     padding: 1.25rem 1.5rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--border);
   }
 
   .cancel-btn, .export-btn {
     padding: 0.55rem 1.1rem;
-    border-radius: 0.4rem;
+    border-radius: var(--radius-pill);
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
@@ -257,8 +258,8 @@
     border: 1px solid transparent;
   }
 
-  .cancel-btn { background: white; color: #374151; border-color: #d1d5db; }
-  .cancel-btn:hover { background: #f3f4f6; }
-  .export-btn { background: #1a1a1a; color: #ffffff; border-color: #1a1a1a; }
-  .export-btn:hover { background: #111827; }
+  .cancel-btn { background: transparent; color: var(--text); border-color: var(--border-strong); }
+  .cancel-btn:hover { background: var(--surface-hover); }
+  .export-btn { background: var(--accent-solid); color: var(--accent-on-solid); border-color: var(--accent-solid); }
+  .export-btn:hover { background: var(--accent-solid-hover); }
 </style>
