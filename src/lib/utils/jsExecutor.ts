@@ -76,10 +76,10 @@ export class JavaScriptExecutor {
     const wrap = (name: string, labelText: string, control: HTMLElement, valueEl?: HTMLElement) => {
       const el = document.createElement('div');
       el.className = 'tangent-input';
-      el.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font:13px/1.4 system-ui,sans-serif;padding:0.25rem 0;';
+      el.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font:13px/1.4 var(--font-sans, system-ui),sans-serif;padding:0.25rem 0;';
       const label = document.createElement('label');
       label.textContent = labelText;
-      label.style.cssText = 'min-width:6rem;color:#4a4a4a;font-weight:500;';
+      label.style.cssText = 'min-width:6rem;color:var(--text-muted, #4a4a4a);font-weight:500;';
       el.append(label, control);
       if (valueEl) el.append(valueEl);
       return el;
@@ -96,7 +96,7 @@ export class JavaScriptExecutor {
         input.value = String(value);
         input.style.flex = '1';
         const out = document.createElement('span');
-        out.style.cssText = 'min-width:3rem;font-family:monospace;color:#1a1a1a;';
+        out.style.cssText = 'min-width:3rem;font-family:var(--font-mono, monospace);color:var(--heading, #1a1a1a);';
         out.textContent = String(value);
         input.addEventListener('input', () => {
           const v = Number(input.value);

@@ -21,6 +21,7 @@
     resetExecutionCounter,
     resetStaleTracking
   } from './lib/stores/notebook';
+  import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
@@ -29,6 +30,30 @@
   let chatSidebarOpen = $state(false);
   let showExportDialog = $state(false);
   let showCommandPalette = $state(false);
+  let showShortcuts = $state(false);
+
+  // Transient status message (e.g. a failed save), shown as a dismissible toast
+  // instead of a blocking window.alert.
+  let toast: { message: string; tone: 'error' | 'info' } | null = $state(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showToast(message: string, tone: 'error' | 'info' = 'info') {
+    toast = { message, tone };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast = null; }, 5000);
+  }
+
+  const SHORTCUTS: { keys: string; action: string }[] = [
+    { keys: '⌘/Ctrl + K', action: 'Command palette' },
+    { keys: '⌘/Ctrl + /', action: 'Toggle AI chat' },
+    { keys: '⌘/Ctrl + S', action: 'Save notebook' },
+    { keys: '⌘/Ctrl + N', action: 'New notebook' },
+    { keys: '⌘/Ctrl + O', action: 'Open notebook' },
+    { keys: '⌘/Ctrl + Enter', action: 'Run cell' },
+    { keys: 'Shift + Enter', action: 'Run cell, select next' },
+    { keys: 'Alt + Enter', action: 'Run cell, insert below' },
+    { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
+  ];
 
   // Pending destructive navigation (New / Import) awaiting an unsaved-changes
   // decision. When set, the confirmation modal is shown.
@@ -103,9 +128,22 @@
     };
     window.addEventListener('beforeunload', beforeUnload);
 
+    const onImportRequest = () => handleImportNotebook();
+    window.addEventListener('request-import-notebook', onImportRequest);
+
+    // Any component can surface a toast instead of a blocking alert().
+    const onToast = (e: Event) => {
+      const detail = (e as CustomEvent).detail ?? {};
+      if (detail.message) showToast(detail.message, detail.tone === 'error' ? 'error' : 'info');
+    };
+    window.addEventListener('tangent-toast', onToast);
+
     return () => {
       unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('request-import-notebook', onImportRequest);
+      window.removeEventListener('tangent-toast', onToast);
+      clearTimeout(toastTimer);
     };
   });
 
@@ -183,7 +221,7 @@
       console.info('Notebook checkpoint exported as .js');
     } catch (err) {
       console.error('Save failed', err);
-      alert('Failed to export notebook. See console for details.');
+      showToast('Couldn’t export the notebook. See the console for details.', 'error');
     }
   }
 
@@ -227,16 +265,7 @@
         clearAllOutputs();
         break;
       case 'keyboard-shortcuts':
-        alert('Keyboard Shortcuts:\n\n' +
-          'Ctrl/Cmd+K - Command Palette\n' +
-          'Ctrl/Cmd+/ - Toggle AI Chat\n' +
-          'Ctrl/Cmd+S - Save Notebook\n' +
-          'Ctrl/Cmd+N - New Notebook\n' +
-          'Ctrl/Cmd+O - Open Notebook\n' +
-          'Ctrl/Cmd+Enter - Run Cell\n' +
-          'Shift+Enter - Run Cell and Select Next\n' +
-          'Alt+Enter - Run Cell and Insert Below\n' +
-          'Ctrl/Cmd+Z - Undo Cell Delete');
+        showShortcuts = true;
         break;
     }
   }
@@ -331,21 +360,6 @@
 
     <div class="header-right">
       {#if $currentNotebook}
-        <button
-          class="reactive-toggle"
-          class:active={$reactiveMode}
-          onclick={() => reactiveMode.update(v => !v)}
-          title="Reactive mode: when on, running a cell automatically re-runs the cells that depend on it"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
-          </svg>
-          <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
-        </button>
-        <span class="header-separator">•</span>
-        {#if $notebookDirty}
-          <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
-        {/if}
         {#if $staleCells.size > 0}
           <button
             class="run-stale-btn"
@@ -358,12 +372,24 @@
             </svg>
             <span class="btn-label">Run {$staleCells.size} stale</span>
           </button>
-          <span class="header-separator">•</span>
         {/if}
-        <span class="header-meta">Updated {new Date($currentNotebook.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-        <span class="header-separator">•</span>
-        <span class="header-meta">{$currentNotebook.cells.length} cells</span>
-        <span class="header-separator">•</span>
+        <button
+          class="reactive-toggle"
+          class:active={$reactiveMode}
+          onclick={() => reactiveMode.update(v => !v)}
+          title="Reactive mode: when on, running a cell automatically re-runs the cells that depend on it"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+          </svg>
+          <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
+        </button>
+        <span class="header-meta">
+          {#if $notebookDirty}
+            <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
+          {/if}
+          {$currentNotebook.cells.length} {$currentNotebook.cells.length === 1 ? 'cell' : 'cells'}
+        </span>
         <button
           class="run-all-header-btn"
           onclick={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
@@ -374,7 +400,7 @@
           </svg>
           <span class="btn-label">Run All</span>
         </button>
-        <span class="header-separator">•</span>
+        <span class="header-divider" aria-hidden="true"></span>
       {/if}
       <button
         class="icon-btn"
@@ -385,6 +411,23 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>
         </svg>
+      </button>
+      <button
+        class="icon-btn"
+        onclick={toggleTheme}
+        title={$theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        aria-label={$theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {#if $theme === 'dark'}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/>
+          </svg>
+        {:else}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+        {/if}
       </button>
       <button class="icon-btn" onclick={toggleRightSidebar} title="Info">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
@@ -447,6 +490,44 @@
       </div>
     </div>
   {/if}
+
+  {#if showShortcuts}
+    <div
+      class="unsaved-overlay"
+      role="presentation"
+      onclick={(e) => { if (e.target === e.currentTarget) showShortcuts = false; }}
+    >
+      <div class="shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+        <div class="shortcuts-head">
+          <h3 id="shortcuts-title">Keyboard shortcuts</h3>
+          <button class="shortcuts-close" onclick={() => showShortcuts = false} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3l8 8M11 3l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <ul class="shortcuts-list">
+          {#each SHORTCUTS as s}
+            <li>
+              <span class="shortcuts-action">{s.action}</span>
+              <kbd class="shortcuts-keys">{s.keys}</kbd>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
+
+  {#if toast}
+    <div class="toast {toast.tone}" role="status" aria-live="polite">
+      <span>{toast.message}</span>
+      <button class="toast-close" onclick={() => toast = null} aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 3l8 8M11 3l-8 8"/>
+        </svg>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -454,7 +535,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background-color: #ffffff;
+    background-color: var(--bg);
   }
 
   .app-header {
@@ -462,8 +543,8 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.4rem 1.25rem;
-    background-color: #ffffff;
-    border-bottom: 1px solid #e8e8e8;
+    background-color: var(--surface);
+    border-bottom: 1px solid var(--border);
     height: 44px;
     position: relative;
     z-index: 50;
@@ -481,9 +562,9 @@
     border: none;
     padding: 0.4rem 0.65rem;
     font-size: 0.8125rem;
-    color: #6b6b6b;
+    color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     transition: all 0.15s ease;
     font-weight: 500;
     display: flex;
@@ -492,18 +573,18 @@
   }
 
   .notebooks-btn:hover {
-    background-color: #f5f5f5;
-    color: #1a1a1a;
+    background-color: var(--surface-hover);
+    color: var(--heading);
   }
 
   .kbd-hint {
     padding: 0.125rem 0.375rem;
-    background-color: #f3f4f6;
-    border: 1px solid #d1d5db;
-    border-radius: 3px;
-    font-family: 'Fira Code', monospace;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    font-family: var(--font-mono);
     font-size: 0.625rem;
-    color: #6b7280;
+    color: var(--text-muted);
     margin-left: 0.25rem;
   }
 
@@ -511,9 +592,9 @@
     background: transparent;
     border: none;
     padding: 0.35rem;
-    color: #6b6b6b;
+    color: var(--text-muted);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -521,35 +602,40 @@
   }
 
   .icon-btn:hover {
-    background-color: #f5f5f5;
-    color: #1a1a1a;
+    background-color: var(--surface-hover);
+    color: var(--heading);
   }
 
   .icon-btn.active {
-    background-color: #1a1a1a;
-    color: #ffffff;
+    background-color: var(--accent-solid);
+    color: var(--accent-on-solid);
   }
 
   .icon-btn.active:hover {
-    background-color: #000000;
+    background-color: var(--accent-solid-hover);
   }
 
   .header-meta {
+    display: inline-flex;
+    align-items: center;
     font-size: 0.8125rem;
-    color: #666666;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
 
-  .header-separator {
-    color: #d0d0d0;
-    font-size: 0.8125rem;
+  .header-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 0.15rem;
   }
 
   .unsaved-dot {
     width: 8px;
     height: 8px;
-    border-radius: 9999px;
-    background: #ef4444;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius-pill);
+    background: var(--danger-solid);
+    box-shadow: 0 0 0 2px var(--danger-bg);
     margin-right: 0.45rem;
   }
 
@@ -557,11 +643,11 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.35rem 0.65rem;
-    background-color: #1a1a1a;
-    color: white;
+    padding: 0.35rem 0.7rem;
+    background-color: var(--accent-solid);
+    color: var(--accent-on-solid);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
@@ -569,18 +655,18 @@
   }
 
   .run-all-header-btn:hover {
-    background-color: #000000;
+    background-color: var(--accent-solid-hover);
   }
 
   .run-stale-btn {
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.35rem 0.65rem;
-    background-color: #fffbeb;
-    color: #b45309;
-    border: 1px solid #fcd34d;
-    border-radius: 4px;
+    padding: 0.35rem 0.7rem;
+    background-color: var(--warn-bg);
+    color: var(--warn-fg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-pill);
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
@@ -588,30 +674,30 @@
   }
 
   .run-stale-btn:hover {
-    background-color: #fef3c7;
+    filter: brightness(0.97);
   }
 
   .reactive-toggle {
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.35rem 0.65rem;
+    padding: 0.35rem 0.7rem;
     background-color: transparent;
-    color: #6b6b6b;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
     font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
-  .reactive-toggle:hover { background-color: #f4f4f4; color: #1a1a1a; }
+  .reactive-toggle:hover { background-color: var(--surface-hover); color: var(--heading); }
 
   .reactive-toggle.active {
-    background-color: #1a1a1a;
-    color: #ffffff;
-    border-color: #1a1a1a;
+    background-color: var(--accent-solid);
+    color: var(--accent-on-solid);
+    border-color: var(--accent-solid);
   }
 
   /* Mobile: collapse the header to icons so it fits narrow screens. */
@@ -621,7 +707,6 @@
     .header-right { gap: 0.1rem; }
     .btn-label,
     .header-meta,
-    .header-separator,
     .kbd-hint { display: none; }
     .notebooks-btn,
     .run-all-header-btn,
@@ -643,8 +728,8 @@
 
   .chat-sidebar-container {
     width: 380px;
-    border-left: 1px solid #e8e8e8;
-    background-color: #fafafa;
+    border-left: 1px solid var(--border);
+    background-color: var(--bg);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -652,8 +737,8 @@
 
   .right-sidebar-container {
     width: 280px;
-    border-left: 1px solid #e8e8e8;
-    background-color: #fafafa;
+    border-left: 1px solid var(--border);
+    background-color: var(--bg);
     overflow-y: auto;
   }
 
@@ -665,14 +750,14 @@
       top: 48px;
       bottom: 0;
       z-index: 30;
-      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+      box-shadow: var(--shadow-md);
     }
   }
 
   .unsaved-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--overlay);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -680,26 +765,27 @@
   }
 
   .unsaved-modal {
-    background: #ffffff;
-    border-radius: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
     width: 90%;
     max-width: 420px;
     padding: 1.5rem;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg);
   }
 
   .unsaved-modal h3 {
     margin: 0 0 0.5rem 0;
     font-size: 1.05rem;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--heading);
   }
 
   .unsaved-modal p {
     margin: 0 0 1.25rem 0;
     font-size: 0.875rem;
     line-height: 1.5;
-    color: #4a4a4a;
+    color: var(--text);
   }
 
   .unsaved-actions {
@@ -710,7 +796,7 @@
 
   .unsaved-actions button {
     padding: 0.5rem 0.9rem;
-    border-radius: 0.375rem;
+    border-radius: var(--radius-pill);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -720,12 +806,120 @@
 
   .unsaved-actions button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .btn-ghost { background: transparent; color: #4a4a4a; border-color: #d1d5db; }
-  .btn-ghost:hover:not(:disabled) { background: #f3f4f6; }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); }
 
-  .btn-danger { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
-  .btn-danger:hover:not(:disabled) { background: #fee2e2; }
+  .btn-danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+  .btn-danger:hover:not(:disabled) { filter: brightness(0.97); }
 
-  .btn-confirm { background: #1a1a1a; color: #ffffff; }
-  .btn-confirm:hover:not(:disabled) { background: #000000; }
+  .btn-confirm { background: var(--accent-solid); color: var(--accent-on-solid); }
+  .btn-confirm:hover:not(:disabled) { background: var(--accent-solid-hover); }
+
+  .shortcuts-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    width: 90%;
+    max-width: 440px;
+    padding: 1.25rem 1.5rem 1.5rem;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .shortcuts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .shortcuts-head h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .shortcuts-close {
+    display: flex;
+    padding: 0.3rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .shortcuts-close:hover { background: var(--surface-hover); color: var(--heading); }
+
+  .shortcuts-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .shortcuts-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .shortcuts-action {
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+
+  .shortcuts-keys {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    padding: 0.15rem 0.45rem;
+    white-space: nowrap;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: min(90vw, 420px);
+    padding: 0.65rem 0.75rem 0.65rem 1rem;
+    border-radius: var(--radius-input);
+    font-size: 0.85rem;
+    box-shadow: var(--shadow-md);
+    z-index: 1100;
+  }
+
+  .toast.error {
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+    border: 1px solid var(--danger-border);
+  }
+
+  .toast.info {
+    background: var(--heading);
+    color: var(--bg);
+    border: 1px solid var(--heading);
+  }
+
+  .toast-close {
+    display: flex;
+    padding: 0.2rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-pill);
+    color: currentColor;
+    opacity: 0.7;
+    cursor: pointer;
+  }
+
+  .toast-close:hover { opacity: 1; }
 </style>

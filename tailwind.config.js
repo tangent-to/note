@@ -4,11 +4,20 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Lora", "serif"],
-        serif: ["Lora", "serif"],
+        // Chrome is sans by default; prose opts into serif.
+        sans: ["var(--font-sans)"],
+        serif: ["var(--font-serif)"],
+        mono: ["var(--font-mono)"],
       },
       fontSize: {
         base: "14px",
+      },
+      colors: {
+        accent: {
+          DEFAULT: "var(--accent)",
+          hover: "var(--accent-hover)",
+          weak: "var(--accent-weak)",
+        },
       },
     },
   },

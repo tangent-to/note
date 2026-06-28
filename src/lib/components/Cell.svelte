@@ -4,6 +4,7 @@
   import katex from 'katex';
   import MonacoEditor from './MonacoEditor.svelte';
   import CellOutput from './CellOutput.svelte';
+  import { theme, monacoTheme } from '../utils/theme';
   import type { NotebookCell } from '../types/notebook';
 
   interface Props {
@@ -16,10 +17,8 @@
     onrun?: (detail: { cellId: string }) => void;
     onrunAndAdvance?: (detail: { cellId: string }) => void;
     onselect?: (detail: { cellId: string }) => void;
-    onaddCell?: (detail: { afterCellId: string }) => void;
+    onaddCell?: (detail: { afterCellId: string; type?: 'code' | 'markdown' }) => void;
     ondeleteCell?: (detail: { cellId: string }) => void;
-    onmoveUp?: (detail: { cellId: string }) => void;
-    onmoveDown?: (detail: { cellId: string }) => void;
     ontypeChange?: (detail: { cellId: string; type: 'code' | 'markdown' }) => void;
     ontoggleCollapse?: (detail: { cellId: string }) => void;
     ontoggleOutputCollapse?: (detail: { cellId: string }) => void;
@@ -40,8 +39,6 @@
     onselect,
     onaddCell,
     ondeleteCell,
-    onmoveUp,
-    onmoveDown,
     ontypeChange,
     ontoggleCollapse,
     ontoggleOutputCollapse,
@@ -61,6 +58,35 @@
 
   let execLabel = $derived(cell.executionOrder ? `[${cell.executionOrder}]` : '[ ]');
 
+  // Single overflow menu replaces the old row of toolbar icons (move/add/
+  // collapse/delete). Keeps the resting cell quiet, Observable-style.
+  let menuOpen = $state(false);
+  let menuEl: HTMLDivElement = $state(null as any);
+
+  function toggleMenu(e: MouseEvent) {
+    e.stopPropagation();
+    menuOpen = !menuOpen;
+  }
+
+  // Close the menu on outside click or Escape while it's open.
+  $effect(() => {
+    if (!menuOpen) return;
+    const onPointer = (ev: Event) => {
+      if (menuEl && !menuEl.contains(ev.target as Node)) menuOpen = false;
+    };
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') menuOpen = false; };
+    window.addEventListener('pointerdown', onPointer, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointer, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  });
+
+  function runMenu(fn: () => void) {
+    return (e: MouseEvent) => { e.stopPropagation(); fn(); menuOpen = false; };
+  }
+
   function handleRun() {
     if (cell.type === 'markdown') {
       isEditingMarkdown = false;
@@ -78,6 +104,9 @@
   function handleEditMarkdown() {
     isEditingMarkdown = true;
     onselect?.({ cellId: cell.id });
+    // Move the caret into the textarea we just revealed. The selection effect
+    // only re-runs on isSelected changes, not on this toggle, so focus here.
+    tick().then(() => markdownTextarea?.focus());
   }
 
   function handleCellClick() {
@@ -86,10 +115,16 @@
 
   function handleCellMouseDown(event: MouseEvent) {
     const target = event.target as HTMLElement;
-    if (target && target.closest('.jmon-music-player-container')) {
-      return;
-    }
-    if (target && (target.closest('select') || target.tagName === 'SELECT')) {
+    // Leave focus alone when the user is interacting with output widgets
+    // (sliders, inputs, buttons, links) or the music player. Stealing focus to
+    // the Monaco editor mid-press breaks native interactions like dragging a
+    // range slider, so we don't even select the cell in that case.
+    if (
+      target &&
+      target.closest(
+        '.output-container, .tangent-input, .jmon-music-player-container, input, select, textarea, button, a, [contenteditable]'
+      )
+    ) {
       return;
     }
     onselect?.({ cellId: cell.id });
@@ -127,6 +162,10 @@
     if (isSelected) {
       tick().then(() => {
         if (!isSelected) return;
+        // Don't yank focus away from an output widget the user is using
+        // (e.g. mid-drag on a slider that just selected the cell).
+        const active = typeof document !== 'undefined' ? document.activeElement as HTMLElement | null : null;
+        if (active && active.closest('.output-container, .tangent-input')) return;
         if (cell.type === 'code' && editorRef) {
           editorRef.focus();
         } else if (cell.type === 'markdown') {
@@ -150,13 +189,13 @@
           try {
             return katex.renderToString(expr, { throwOnError: false, displayMode: true });
           } catch (e: any) {
-            return `<pre style="color: #dc2626;">${e.message}</pre>`;
+            return `<pre style="color: var(--danger-fg);">${e.message}</pre>`;
           }
         });
 
         renderedMarkdown = (marked(md) as string) || '';
       } catch (e: any) {
-        renderedMarkdown = `<pre style="color: #dc2626;">Markdown render error: ${e && e.message ? e.message : String(e)}</pre>`;
+        renderedMarkdown = `<pre style="color: var(--danger-fg);">Markdown render error: ${e && e.message ? e.message : String(e)}</pre>`;
       }
     } else if (cell.type === 'markdown') {
       renderedMarkdown = '';
@@ -214,9 +253,6 @@
   ondragover={onDragOver}
   ondrop={onDrop}
 >
-  <!-- Left indicator bar (Observable style) -->
-  <div class="cell-indicator {isSelected ? 'active' : ''}"></div>
-
   <div
     class="cell-container"
     onmousedown={handleCellMouseDown}
@@ -225,169 +261,70 @@
     tabindex="0"
     onkeydown={(e) => e.key === 'Enter' && handleCellClick()}
   >
-    <!-- Cell toolbar -->
-    <div class="cell-toolbar" data-testid="cell-toolbar">
-        <div class="toolbar-left">
-          <!-- Drag handle -->
-          <span
-            class="drag-handle"
-            draggable="true"
-            role="button"
-            tabindex="-1"
-            aria-label="Drag to reorder cell (or use the move up/down buttons)"
-            ondragstart={onDragStart}
-            ondragend={onDragEnd}
-            title="Drag to reorder"
-          >
-            <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
-              <circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/>
-              <circle cx="3" cy="7" r="1.5"/><circle cx="9" cy="7" r="1.5"/>
-              <circle cx="3" cy="11" r="1.5"/><circle cx="9" cy="11" r="1.5"/>
-            </svg>
-          </span>
-
-          <button
-            onclick={(e) => { e.stopPropagation(); handleRun(); }}
-            class="toolbar-btn run-btn"
-            disabled={cell.isRunning}
-            title="Run cell (Shift+Enter)"
-            data-testid="run-cell-btn"
-          >
-            {#if cell.isRunning}
-              <span class="loading-spinner"></span>
-            {:else}
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <path d="M3 2l9 5-9 5V2z"/>
-              </svg>
-            {/if}
-          </button>
-
-          {#if cell.type === 'code'}
-            <span class="exec-order" title="Execution order">{execLabel}</span>
-          {/if}
-
-          {#if cell.type === 'code' && isStale}
-            <button
-              class="stale-badge"
-              onclick={(e) => { e.stopPropagation(); handleRun(); }}
-              title="Stale: a dependency changed since this cell last ran. Click to re-run."
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                <path d="M12 9v4M12 17h.01"/>
-              </svg>
-              stale
-            </button>
-          {/if}
-
-          <select
-            value={cell.type}
-            onchange={(e) => { e.stopPropagation(); ontypeChange?.({ cellId: cell.id, type: (e.target as HTMLSelectElement).value as 'code' | 'markdown' }); }}
-            onclick={(e) => e.stopPropagation()}
-            onmousedown={(e) => e.stopPropagation()}
-            class="cell-type-select"
-            data-testid="cell-type-select"
-          >
-            <option value="code">Code</option>
-            <option value="markdown">Markdown</option>
-          </select>
-        </div>
-
-        <div class="toolbar-right">
-          <!-- Collapse toggle -->
-          <button
-            onclick={(e) => { e.stopPropagation(); ontoggleCollapse?.({ cellId: cell.id }); }}
-            class="toolbar-btn"
-            title={cell.collapsed ? 'Expand cell' : 'Collapse cell'}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              {#if cell.collapsed}
-                <path d="M4 6l3 3 3-3"/>
-              {:else}
-                <path d="M4 8l3-3 3 3"/>
-              {/if}
-            </svg>
-          </button>
-
-          {#if cell.output}
-            <button
-              onclick={(e) => { e.stopPropagation(); ontoggleOutputCollapse?.({ cellId: cell.id }); }}
-              class="toolbar-btn"
-              title={cell.outputCollapsed ? 'Show output' : 'Hide output'}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-                {#if cell.outputCollapsed}
-                  <path d="M2 7h10M7 2v10"/>
-                {:else}
-                  <path d="M2 7h10"/>
-                {/if}
-              </svg>
-            </button>
-          {/if}
-
-          <button
-            onclick={(e) => { e.stopPropagation(); onmoveUp?.({ cellId: cell.id }); }}
-            class="toolbar-btn"
-            title="Move up"
-            data-testid="move-up-btn"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M7 11V3M4 6l3-3 3 3"/>
-            </svg>
-          </button>
-
-          <button
-            onclick={(e) => { e.stopPropagation(); onmoveDown?.({ cellId: cell.id }); }}
-            class="toolbar-btn"
-            title="Move down"
-            data-testid="move-down-btn"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M7 3v8M10 8l-3 3-3-3"/>
-            </svg>
-          </button>
-
-          <button
-            onclick={(e) => { e.stopPropagation(); onaddCell?.({ afterCellId: cell.id }); }}
-            class="toolbar-btn"
-            title="Add cell below"
-            data-testid="add-cell-below-btn"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M7 3v8M3 7h8"/>
-            </svg>
-          </button>
-
-          <button
-            onclick={(e) => { e.stopPropagation(); ondeleteCell?.({ cellId: cell.id }); }}
-            class="toolbar-btn delete-btn"
-            title="Delete cell (Ctrl+Z to undo)"
-            data-testid="delete-cell-btn"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M3 3l8 8M11 3l-8 8"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-
-    <!-- Cell content (collapsible) -->
-    {#if !cell.collapsed}
-      <div class="cell-content">
-        {#if cell.type === 'code'}
-          <MonacoEditor
-            bind:this={editorRef}
-            value={cell.content}
-            language="javascript"
-            height="auto"
-            onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
-            onrun={handleRun}
-            onrunAndAdvance={handleRunAndAdvance}
-            oneditorFocus={handleEditorFocus}
-            onfocus={handleEditorFocus}
-          />
+    <!-- Left gutter: run + execution count (Jupyter/Marimo idiom). The drag
+         handle reveals on hover. No reserved top toolbar row, so content fills
+         the cell from the top. -->
+    <div class="cell-gutter">
+      <button
+        onclick={(e) => { e.stopPropagation(); handleRun(); }}
+        class="run-btn"
+        disabled={cell.isRunning}
+        title="Run cell (Shift+Enter)"
+        data-testid="run-cell-btn"
+      >
+        {#if cell.isRunning}
+          <span class="loading-spinner"></span>
         {:else}
-          <div class="markdown-wrapper">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5V2z"/></svg>
+        {/if}
+      </button>
+
+      {#if cell.type === 'code'}
+        <span
+          class="exec-order"
+          class:stale={isStale}
+          title={isStale ? 'Stale: a dependency changed since this ran. Run to refresh.' : 'Execution order'}
+        >{execLabel}</span>
+      {/if}
+
+      <span
+        class="drag-handle"
+        draggable="true"
+        role="button"
+        tabindex="-1"
+        aria-label="Drag to reorder cell"
+        ondragstart={onDragStart}
+        ondragend={onDragEnd}
+        title="Drag to reorder"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 14" fill="currentColor">
+          <circle cx="3" cy="3" r="1.5"/><circle cx="9" cy="3" r="1.5"/>
+          <circle cx="3" cy="7" r="1.5"/><circle cx="9" cy="7" r="1.5"/>
+          <circle cx="3" cy="11" r="1.5"/><circle cx="9" cy="11" r="1.5"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- Main column: content + output -->
+    <div class="cell-main">
+      {#if !cell.collapsed}
+        {#if cell.type === 'code'}
+          <div class="cell-content">
+            <MonacoEditor
+              bind:this={editorRef}
+              value={cell.content}
+              language="javascript"
+              theme={monacoTheme($theme)}
+              height="auto"
+              onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
+              onrun={handleRun}
+              onrunAndAdvance={handleRunAndAdvance}
+              oneditorFocus={handleEditorFocus}
+              onfocus={handleEditorFocus}
+            />
+          </div>
+        {:else}
+          <div class="cell-content markdown-wrapper">
             {#if isEditingMarkdown}
               <textarea
                 bind:this={markdownTextarea}
@@ -399,7 +336,7 @@
                 }}
                 onfocus={handleEditorFocus}
                 class="markdown-editor"
-                placeholder="Enter markdown..."
+                placeholder="Write Markdown..."
                 data-testid="markdown-editor"
               ></textarea>
             {:else}
@@ -417,24 +354,74 @@
             {/if}
           </div>
         {/if}
-      </div>
-    {:else}
-      <div class="collapsed-indicator">
-        <span class="collapsed-text">
-          {cell.type === 'code' ? cell.content.split('\n')[0]?.substring(0, 80) || 'Empty cell' : 'Markdown cell'}
-          {#if cell.content.split('\n').length > 1}...{/if}
-        </span>
-      </div>
-    {/if}
+      {:else}
+        <div class="collapsed-indicator">
+          <span class="collapsed-text">
+            {cell.type === 'code' ? cell.content.split('\n')[0]?.substring(0, 80) || 'Empty cell' : 'Markdown cell'}
+            {#if cell.content.split('\n').length > 1}...{/if}
+          </span>
+        </div>
+      {/if}
 
-    <!-- Cell output (collapsible) -->
-    {#if cell.output && !cell.outputCollapsed}
-      <CellOutput output={cell.output} />
-    {:else if cell.output && cell.outputCollapsed}
-      <div class="collapsed-output-indicator">
-        <span>Output hidden ({cell.output.type})</span>
-      </div>
-    {/if}
+      {#if cell.output && !cell.outputCollapsed}
+        <CellOutput output={cell.output} />
+      {:else if cell.output && cell.outputCollapsed}
+        <div class="collapsed-output-indicator">
+          <span>Output hidden ({cell.output.type})</span>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Overflow menu, tucked into the top-right corner, revealed on hover. -->
+    <div class="cell-menu" bind:this={menuEl}>
+      <button
+        onclick={toggleMenu}
+        class="menu-trigger"
+        class:open={menuOpen}
+        title="Cell actions"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        data-testid="cell-menu-btn"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <circle cx="7" cy="2.5" r="1.3"/><circle cx="7" cy="7" r="1.3"/><circle cx="7" cy="11.5" r="1.3"/>
+        </svg>
+      </button>
+
+      {#if menuOpen}
+        <div class="cell-menu-popup" role="menu">
+          <button role="menuitem" class="menu-item" data-testid="add-cell-below-btn" onclick={runMenu(() => onaddCell?.({ afterCellId: cell.id, type: 'code' }))}>Add code cell below</button>
+          <button role="menuitem" class="menu-item" onclick={runMenu(() => onaddCell?.({ afterCellId: cell.id, type: 'markdown' }))}>Add text cell below</button>
+          <div class="menu-sep"></div>
+          <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleCollapse?.({ cellId: cell.id }))}>{cell.collapsed ? 'Expand cell' : 'Collapse cell'}</button>
+          {#if cell.output}
+            <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleOutputCollapse?.({ cellId: cell.id }))}>{cell.outputCollapsed ? 'Show output' : 'Hide output'}</button>
+          {/if}
+          <div class="menu-sep"></div>
+          <button
+            role="menuitem"
+            class="menu-item menu-subtle"
+            data-testid="cell-type-toggle"
+            onclick={runMenu(() => ontypeChange?.({ cellId: cell.id, type: cell.type === 'code' ? 'markdown' : 'code' }))}
+          >
+            Convert to {cell.type === 'code' ? 'Markdown' : 'Code'}
+          </button>
+          <button role="menuitem" class="menu-item menu-danger" data-testid="delete-cell-btn" onclick={runMenu(() => ondeleteCell?.({ cellId: cell.id }))}>Delete cell</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Add a cell in the gap, revealed on hover. Inserts exactly where it sits. -->
+  <div class="cell-insert">
+    <button
+      class="cell-insert-btn"
+      onclick={(e) => { e.stopPropagation(); onaddCell?.({ afterCellId: cell.id, type: 'code' }); }}
+      title="Add cell"
+      tabindex="-1"
+    >
+      <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3v8M3 7h8" stroke-linecap="round"/></svg>
+    </button>
   </div>
 </div>
 
@@ -446,205 +433,261 @@
     transition: all 0.2s ease;
   }
 
+  /* Insert a code or text cell in the gap between cells, revealed on hover. */
+  .cell-insert {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1.05rem;
+    height: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 6;
+  }
+
+  .cell-insert::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .cell-wrapper:hover .cell-insert,
+  .cell-insert:focus-within {
+    opacity: 1;
+  }
+
+  /* Bare plus glyph sitting over the hairline. No pill/circle, no accent fill. */
+  .cell-insert-btn {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.45rem;
+    background: var(--bg);
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+
+  .cell-insert-btn:hover {
+    color: var(--text);
+  }
+
+  @media (max-width: 640px) {
+    .cell-insert { display: none; }
+  }
+
   .cell-wrapper.dragging {
     opacity: 0.5;
   }
 
   .cell-wrapper.drag-above {
-    border-top: 3px solid #3b82f6;
+    border-top: 2px solid var(--accent);
     padding-top: 0;
   }
 
   .cell-wrapper.drag-below {
-    border-bottom: 3px solid #3b82f6;
+    border-bottom: 2px solid var(--accent);
     padding-bottom: 0;
   }
 
-  .cell-indicator {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background-color: transparent;
-    border-radius: 2px;
-    transition: all 0.2s ease;
-  }
-
-  .cell-indicator.active {
-    background-color: #1a1a1a;
-  }
-
-  .cell-wrapper:hover .cell-indicator:not(.active) {
-    background-color: #d0d0d0;
-  }
-
+  /* A persistent hairline gives every cell a solid edge; selection is shown by
+     an accent border (no separate indicator line that collides with the gutter). */
   .cell-container {
-    background-color: #ffffff;
-    border-radius: 6px;
-    transition: all 0.2s ease;
+    display: flex;
+    align-items: stretch;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    transition: border-color 0.15s ease;
     position: relative;
-    border: 1px solid transparent;
   }
 
-  .cell-wrapper:hover .cell-container {
-    background-color: #f9f9f9;
-  }
+  .cell-wrapper:hover .cell-container { border-color: var(--border-strong); }
+  .cell-wrapper.selected .cell-container { border-color: var(--accent); }
+  .cell-wrapper.stale .cell-container { border-color: var(--warn-border); }
 
-  .cell-wrapper.selected .cell-container {
-    background-color: #f7f7f7;
-    border-color: #e0e0e0;
-  }
-
-  .cell-toolbar {
+  /* Left gutter: a fixed column for run + execution count + drag, so content
+     fills the cell from the top with no reserved toolbar row. */
+  .cell-gutter {
+    flex: 0 0 auto;
+    width: 1.9rem;
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    padding: 0.3rem 0.6rem 0.2rem;
+    gap: 0.15rem;
+    padding: 0.45rem 0 0.5rem;
   }
 
-  .toolbar-left,
-  .toolbar-right {
+  .cell-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.45rem 0.7rem 0.5rem 0.15rem;
+  }
+
+  .run-btn {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    justify-content: center;
+    width: 1.45rem;
+    height: 1.45rem;
+    background-color: transparent;
+    color: var(--text-faint);
+    border: none;
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
-  /* Keep run + cell-type always visible; reveal secondary actions on
-     hover/focus/selection to reduce per-cell clutter. */
-  .toolbar-right {
-    opacity: 0;
-    transition: opacity 0.15s ease;
+  .run-btn:hover:not(:disabled) {
+    background-color: var(--surface-hover);
+    color: var(--accent);
   }
 
-  .cell-wrapper:hover .toolbar-right,
-  .cell-wrapper:focus-within .toolbar-right,
-  .cell-wrapper.selected .toolbar-right {
-    opacity: 1;
+  .run-btn:active:not(:disabled) { transform: translateY(0.5px); }
+  .run-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+
+  .exec-order {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    line-height: 1;
   }
+
+  .exec-order.stale { color: var(--warn-fg); }
 
   .drag-handle {
     display: flex;
     align-items: center;
+    justify-content: center;
+    /* Sit at the bottom of the gutter (bottom-left of the cell), away from the
+       run button and the top-right overflow menu. */
+    margin-top: auto;
     cursor: grab;
-    color: #c0c0c0;
-    padding: 0.2rem;
-    border-radius: 3px;
-    transition: color 0.15s ease;
+    color: var(--text-faint);
+    padding: 0.15rem;
+    border-radius: var(--radius-input);
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
   }
 
-  .drag-handle:hover {
-    color: #6b6b6b;
-    background-color: #f0f0f0;
+  .cell-wrapper:hover .drag-handle,
+  .cell-wrapper:focus-within .drag-handle,
+  .cell-wrapper.selected .drag-handle { opacity: 1; }
+
+  .drag-handle:hover { color: var(--text-muted); }
+  .drag-handle:active { cursor: grabbing; }
+
+  @media (max-width: 640px) {
+    .drag-handle { display: none; }
   }
 
-  .drag-handle:active {
-    cursor: grabbing;
+  /* Overflow menu tucked into the top-right corner, revealed on hover. */
+  .cell-menu {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    z-index: 7;
   }
 
-  .exec-order {
-    font-family: 'Fira Code', monospace;
-    font-size: 0.7rem;
-    color: #9ca3af;
-    min-width: 2rem;
-    text-align: center;
-  }
-
-  .stale-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.2rem;
-    padding: 0.1rem 0.4rem;
-    background-color: #fffbeb;
-    color: #b45309;
-    border: 1px solid #fcd34d;
-    border-radius: 999px;
-    font-size: 0.68rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-  }
-
-  .stale-badge:hover { background-color: #fef3c7; }
-
-  /* Stale cells get a black border so they stand out at a glance. */
-  .cell-wrapper.stale .cell-container {
-    border-color: #1a1a1a;
-  }
-
-  .toolbar-btn {
+  .menu-trigger {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0.3rem;
+    width: 1.45rem;
+    height: 1.45rem;
     background-color: transparent;
-    color: #6b6b6b;
+    color: var(--text-faint);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-pill);
     cursor: pointer;
-    transition: all 0.15s ease;
+    opacity: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   }
 
-  .toolbar-btn:hover {
-    background-color: #e8e8e8;
-    color: #1a1a1a;
+  .cell-wrapper:hover .menu-trigger,
+  .cell-wrapper:focus-within .menu-trigger,
+  .cell-wrapper.selected .menu-trigger,
+  .menu-trigger.open { opacity: 1; }
+
+  .menu-trigger:hover,
+  .menu-trigger.open {
+    background-color: var(--surface-hover);
+    color: var(--heading);
   }
 
-  .toolbar-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .cell-menu-popup {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    min-width: 170px;
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    box-shadow: var(--shadow-md);
   }
 
-  .run-btn {
-    background-color: #1a1a1a;
-    color: white;
-    padding: 0.3rem 0.5rem;
-    border-radius: 4px;
-  }
-
-  .run-btn:hover:not(:disabled) {
-    background-color: #000000;
-  }
-
-  .delete-btn:hover {
-    background-color: #fee2e2;
-    color: #dc2626;
-  }
-
-  .cell-type-select {
-    font-size: 0.75rem;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    padding: 0.2rem 0.45rem;
-    background-color: white;
-    color: #4a4a4a;
+  .menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-input);
+    font-size: 0.8rem;
+    color: var(--text);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.12s ease, color 0.12s ease;
   }
 
-  .cell-type-select:hover {
-    border-color: #a0a0a0;
+  .menu-item:hover {
+    background-color: var(--surface-hover);
+    color: var(--heading);
   }
 
-  .cell-type-select:focus {
-    outline: none;
-    border-color: #1a1a1a;
+  .menu-subtle { color: var(--text-muted); font-size: 0.78rem; }
+
+  .menu-danger { color: var(--danger-fg); }
+  .menu-danger:hover { background-color: var(--danger-bg); color: var(--danger-fg); }
+
+  .menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 0.25rem 0.3rem;
   }
 
+  /* Padding now lives on .cell-main; content sits flush inside it. */
   .cell-content {
-    padding: 0.3rem 0.65rem 0.15rem;
+    padding: 0;
     min-height: 0;
   }
 
   .collapsed-indicator {
-    padding: 0.4rem 0.65rem;
+    padding: 0.1rem 0;
     cursor: pointer;
   }
 
   .collapsed-text {
-    font-family: 'Fira Code', monospace;
+    font-family: var(--font-mono);
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: var(--text-muted);
     font-style: italic;
     white-space: nowrap;
     overflow: hidden;
@@ -655,37 +698,37 @@
   .collapsed-output-indicator {
     padding: 0.3rem 0.65rem;
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--text-faint);
     cursor: pointer;
-    border-top: 1px solid #ededed;
+    border-top: 1px solid var(--border);
   }
 
   .collapsed-output-indicator:hover {
-    color: #6b6b6b;
-    background-color: #f9f9f9;
+    color: var(--text-muted);
+    background-color: var(--surface-hover);
   }
 
   .markdown-editor {
     width: 100%;
     min-height: 48px;
     padding: 0.6rem 0.7rem;
-    border: 1px solid #e8e8e8;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
     resize: vertical;
     overflow: auto;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9rem;
     line-height: 1.5;
-    color: #1a1a1a;
-    background-color: #fafafa;
+    color: var(--text);
+    background-color: var(--surface-2);
     transition: all 0.15s ease;
     height: auto;
   }
 
   .markdown-editor:focus {
     outline: none;
-    border-color: #1a1a1a;
-    background-color: white;
+    border-color: var(--accent);
+    background-color: var(--surface);
   }
 
   .markdown-wrapper {
@@ -695,28 +738,24 @@
   }
 
   .markdown-preview {
-    border: 1px solid #e8e8e8;
-    border-radius: 6px;
+    font-family: var(--font-serif);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
     padding: 0.6rem 0.7rem;
-    background: #ffffff;
-    color: #1a1a1a;
+    background: var(--surface);
+    color: var(--text);
     min-height: 0;
     max-height: 600px;
     overflow: auto;
   }
 
   .markdown-preview.rendered {
-    cursor: pointer;
+    cursor: text;
     border: none;
-    padding: 0.75rem;
+    padding: 0.15rem 0;
     min-height: auto;
     max-height: none;
     background: transparent;
-  }
-
-  .markdown-preview.rendered:hover {
-    background: #f5f5f5;
-    border-radius: 6px;
   }
 
   .markdown-preview :global(h1) {
@@ -724,7 +763,7 @@
     font-weight: 700;
     margin-top: 1.5rem;
     margin-bottom: 0.75rem;
-    color: #1a1a1a;
+    color: var(--heading);
   }
 
   .markdown-preview :global(h2) {
@@ -732,7 +771,7 @@
     font-weight: 600;
     margin-top: 1.25rem;
     margin-bottom: 0.5rem;
-    color: #1a1a1a;
+    color: var(--heading);
   }
 
   .markdown-preview :global(h3) {
@@ -740,13 +779,13 @@
     font-weight: 600;
     margin-top: 1rem;
     margin-bottom: 0.5rem;
-    color: #1a1a1a;
+    color: var(--heading);
   }
 
   .markdown-preview :global(p) {
     margin-bottom: 1rem;
     line-height: 1.7;
-    color: #4a4a4a;
+    color: var(--text);
   }
 
   .markdown-preview :global(ul),
@@ -761,18 +800,18 @@
   }
 
   .markdown-preview :global(code) {
-    background: #f5f5f5;
+    background: var(--surface-2);
     padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    font-family: monospace;
+    border-radius: var(--radius-input);
+    font-family: var(--font-mono);
     font-size: 0.875rem;
-    color: #e11d48;
+    color: var(--accent);
   }
 
   .markdown-preview :global(pre) {
-    background: #f5f5f5;
+    background: var(--surface-2);
     padding: 1rem;
-    border-radius: 6px;
+    border-radius: var(--radius-input);
     overflow-x: auto;
     margin-bottom: 1rem;
   }
@@ -780,16 +819,16 @@
   .markdown-preview :global(pre code) {
     background: transparent;
     padding: 0;
-    color: #1a1a1a;
+    color: var(--text);
   }
 
   .loading-spinner {
     display: inline-block;
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
-    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    border-radius: var(--radius-pill);
     animation: spin 0.8s linear infinite;
   }
 
