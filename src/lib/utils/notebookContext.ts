@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { currentNotebook } from '../stores/notebook';
+import { loadAIContext } from './aiContext';
 import type { Notebook } from '../types/notebook';
 
 // Build a textual snapshot of a notebook so it can be handed to the AI as a
@@ -63,6 +64,11 @@ export function buildSystemPrompt(notebook: Notebook | null = get(currentNoteboo
     '(e.g. an SVG/chart element) to render it.\n\n' +
     'Use the notebook below as context for your answers.';
 
+  const reference = loadAIContext().trim();
   const context = buildNotebookContext(notebook);
-  return context ? `${intro}\n\n=== CURRENT NOTEBOOK ===\n${context}` : intro;
+
+  let prompt = intro;
+  if (reference) prompt += `\n\n=== REFERENCE ===\n${reference}`;
+  if (context) prompt += `\n\n=== CURRENT NOTEBOOK ===\n${context}`;
+  return prompt;
 }

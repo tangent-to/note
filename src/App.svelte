@@ -313,16 +313,39 @@
     });
   }
 
+  // Pull runnable code out of an AI chat reply. If the reply contains fenced
+  // ```code blocks```, use their contents (joined); otherwise treat the whole
+  // message as code. This keeps prose/explanations out of the inserted cell.
+  function extractCodeFromMessage(message: string): string {
+    const fence = /```[^\n]*\n([\s\S]*?)```/g;
+    const blocks: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = fence.exec(message)) !== null) {
+      blocks.push(match[1].replace(/\s+$/, ''));
+    }
+    return blocks.length > 0 ? blocks.join('\n\n') : message.trim();
+  }
+
   function handleInsertCode({ code }: { code: string }) {
     const notebook = get(currentNotebook);
     if (!notebook) return;
 
-    const lastCell = notebook.cells[notebook.cells.length - 1];
-    const updatedNotebook = addCellAfter(notebook, lastCell.id, 'code');
+    const cellCode = extractCodeFromMessage(code);
 
-    updatedNotebook.cells[updatedNotebook.cells.length - 1].content = code;
+    // Insert after the selected cell so the new cell lands where you're
+    // working; fall back to the end of the notebook if nothing is selected.
+    const selectedId = get(selectedCellId);
+    const anchor =
+      notebook.cells.find(c => c.id === selectedId) ??
+      notebook.cells[notebook.cells.length - 1];
+
+    const updatedNotebook = addCellAfter(notebook, anchor.id, 'code');
+    const anchorIdx = updatedNotebook.cells.findIndex(c => c.id === anchor.id);
+    const newCell = updatedNotebook.cells[anchorIdx + 1];
+    newCell.content = cellCode;
 
     currentNotebook.set(updatedNotebook);
+    selectedCellId.set(newCell.id);
   }
 </script>
 
