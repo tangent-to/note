@@ -16,6 +16,7 @@
  */
 
 import type { CellOutput } from "../types/notebook";
+import { getDataset, listDatasetNames } from "./dataStore";
 
 export class JavaScriptExecutor {
   private outputElement: HTMLElement | null = null;
@@ -37,9 +38,57 @@ export class JavaScriptExecutor {
     (window as any).nb = this.scope;
     // Reactive input widgets (sliders, etc.) available to cells as `ui.*`.
     this.setupInputs();
+    // `data(name)` accessor for files dropped into the Data panel.
+    this.setupDataAccess();
     // Install the AMD guard so dynamically injected scripts don't conflict
     // with Monaco Editor's RequireJS loader.
     this.installAmdGuard();
+  }
+
+  /**
+   * Expose `data(name)` to cells: reads a file cached in IndexedDB (dropped into
+   * the Data panel) and parses it by extension. `.csv`/`.tsv` use d3 with type
+   * coercion, `.json` uses JSON.parse, anything else falls back to raw text.
+   * Use `data.text(name)` for the raw string and `data.list()` for the names.
+   *
+   * Lives on `window` (not the shared scope) so it survives scope clears and
+   * stays out of the Variables panel.
+   */
+  private setupDataAccess(): void {
+    const ensureD3 = async (): Promise<any> => {
+      if (!(window as any).d3) {
+        try { await this.setupCommonLibraries(); } catch { /* ignore */ }
+      }
+      return (window as any).d3;
+    };
+
+    const parse = async (name: string, text: string): Promise<any> => {
+      const lower = name.toLowerCase();
+      if (lower.endsWith(".json") || lower.endsWith(".ndjson")) return JSON.parse(text);
+      if (lower.endsWith(".tsv")) {
+        const d3 = await ensureD3();
+        return d3 ? d3.tsvParse(text, d3.autoType) : text;
+      }
+      if (lower.endsWith(".csv")) {
+        const d3 = await ensureD3();
+        return d3 ? d3.csvParse(text, d3.autoType) : text;
+      }
+      try { return JSON.parse(text); } catch { return text; }
+    };
+
+    const readText = async (name: string): Promise<string> => {
+      const rec = await getDataset(name);
+      if (!rec) {
+        throw new Error(`No dataset "${name}". Drop the file into the Data panel (right sidebar) first.`);
+      }
+      return rec.text;
+    };
+
+    const data: any = async (name: string) => parse(name, await readText(name));
+    data.text = readText;
+    data.list = () => listDatasetNames();
+
+    (window as any).data = data;
   }
 
   /**

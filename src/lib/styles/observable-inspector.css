@@ -1,0 +1,98 @@
+/* Vendored from @observablehq/inspector (src/style.css). The package's exports
+   map blocks importing its CSS subpath, so we keep a themed copy here.
+
+   Two changes from upstream: the base text color (--syntax_normal) and comment
+   color are wired to the app's theme tokens so the inspector reads correctly in
+   both light and dark mode; the mono font uses the app stack. The syntax accent
+   colors are Observable's originals. */
+
+.observablehq--inspect {
+  --syntax_normal: var(--text);
+  --syntax_comment: var(--text-faint);
+  --syntax_number: #20a5ba;
+  --syntax_keyword: #c30771;
+  --syntax_atom: #10a778;
+  --syntax_string: #008ec4;
+  --syntax_key: #8b5cf6;
+  font: 0.8rem/1.6 var(--font-mono);
+  display: block;
+  white-space: pre;
+}
+
+.observablehq--expanded,
+.observablehq--collapsed,
+.observablehq--function,
+.observablehq--import,
+.observablehq--string:before,
+.observablehq--string:after,
+.observablehq--gray {
+  color: var(--syntax_normal);
+}
+
+.observablehq--collapsed,
+.observablehq--inspect a {
+  cursor: pointer;
+}
+
+.observablehq--field {
+  text-indent: -1em;
+  margin-left: 1em;
+}
+
+.observablehq--empty {
+  color: var(--syntax_comment);
+  font-style: oblique;
+}
+
+.observablehq--keyword,
+.observablehq--blue {
+  color: #3182bd;
+}
+
+.observablehq--forbidden,
+.observablehq--pink {
+  color: #e377c2;
+}
+
+.observablehq--orange {
+  color: #e6550d;
+}
+
+.observablehq--null,
+.observablehq--undefined,
+.observablehq--boolean {
+  color: var(--syntax_atom);
+}
+
+.observablehq--number,
+.observablehq--bigint,
+.observablehq--date,
+.observablehq--regexp,
+.observablehq--symbol,
+.observablehq--green {
+  color: var(--syntax_number);
+}
+
+.observablehq--index,
+.observablehq--key {
+  color: var(--syntax_key);
+}
+
+.observablehq--prototype-key {
+  color: var(--text-faint);
+}
+
+.observablehq--string,
+.observablehq--purple {
+  color: var(--syntax_string);
+}
+
+.observablehq--error,
+.observablehq--red {
+  color: var(--danger-fg);
+}
+
+.observablehq--error .observablehq--inspect {
+  word-break: break-all;
+  white-space: pre-wrap;
+}

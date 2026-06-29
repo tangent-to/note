@@ -93,6 +93,14 @@
       action: () => oncommand?.({ id: 'toggle-chat' })
     },
     {
+      id: 'open-data',
+      name: 'Open Data Panel',
+      description: 'Drag-and-drop CSV, TSV or JSON to use in cells',
+      shortcut: 'Ctrl+Shift+D',
+      icon: 'database',
+      action: () => oncommand?.({ id: 'open-data' })
+    },
+    {
       id: 'clear-outputs',
       name: 'Clear All Outputs',
       description: 'Remove all cell outputs',
@@ -177,7 +185,8 @@
     'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z',
     'x-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM15 9l-6 6M9 9l6 6',
     'help-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01',
-    'zap': 'M13 2L3 14h7l-1 8 10-12h-7l1-8z'
+    'zap': 'M13 2L3 14h7l-1 8 10-12h-7l1-8z',
+    'database': 'M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3'
   };
 </script>
 

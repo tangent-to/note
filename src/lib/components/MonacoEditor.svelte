@@ -110,12 +110,11 @@
             return synthetic;
           }
         }
-        if (doc.body) {
-          const synthetic = doc.createRange();
-          synthetic.setStart(doc.body, 0);
-          synthetic.collapse(true);
-          return synthetic;
-        }
+        // No position at this point (e.g. a click on empty editor space below
+        // the last line). Return null, as native caretRangeFromPoint does.
+        // The previous `document.body` offset-0 fallback made Monaco map the
+        // click to the FIRST editor on the page, so clicking blank space in one
+        // cell would move the caret into another cell.
       } catch {
         // ignore and fall through
       }
@@ -213,6 +212,12 @@
         };
         /** Shared notebook scope. Write: \`nb.x = 42\`  Read: \`const { x } = nb\` */
         declare const nb: Record<string, any>;
+        /** Read a file cached via the Data panel. Parses .csv/.tsv/.json by
+         *  extension; use data.text(name) for the raw string. */
+        declare const data: ((name: string) => Promise<any>) & {
+          text(name: string): Promise<string>;
+          list(): Promise<string[]>;
+        };
       `, 'global.d.ts');
     }
 
@@ -508,7 +513,10 @@
           return { items: [] };
         }
       },
-      freeInlineCompletions: () => {}
+      // Monaco renamed this hook: older builds call `freeInlineCompletions`,
+      // newer ones `disposeInlineCompletions`. Provide both so neither throws.
+      freeInlineCompletions: () => {},
+      disposeInlineCompletions: () => {}
     });
   }
 

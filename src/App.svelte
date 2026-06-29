@@ -27,6 +27,7 @@
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
 
   let rightSidebarOpen = $state(false);
+  let rightSidebarTab = $state<'info' | 'variables' | 'data'>('info');
   let chatSidebarOpen = $state(false);
   let showExportDialog = $state(false);
   let showCommandPalette = $state(false);
@@ -197,14 +198,21 @@
     showExportDialog = true;
   }
 
-  function toggleRightSidebar() {
-    rightSidebarOpen = !rightSidebarOpen;
+  // Open the right sidebar on the Data tab; toggle it closed if already there.
+  function toggleDataPanel() {
+    if (rightSidebarOpen && rightSidebarTab === 'data') {
+      rightSidebarOpen = false;
+    } else {
+      rightSidebarTab = 'data';
+      rightSidebarOpen = true;
+    }
   }
 
   function onKeydown(event: KeyboardEvent) {
     handleGlobalKeydown(event, {
       showCommandPalette: () => { showCommandPalette = !showCommandPalette; },
       toggleChat: () => { chatSidebarOpen = !chatSidebarOpen; },
+      toggleData: () => toggleDataPanel(),
       save: () => performSaveShortcut(),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
@@ -261,6 +269,9 @@
       case 'toggle-chat':
         chatSidebarOpen = !chatSidebarOpen;
         break;
+      case 'open-data':
+        toggleDataPanel();
+        break;
       case 'clear-outputs':
         clearAllOutputs();
         break;
@@ -313,16 +324,39 @@
     });
   }
 
+  // Pull runnable code out of an AI chat reply. If the reply contains fenced
+  // ```code blocks```, use their contents (joined); otherwise treat the whole
+  // message as code. This keeps prose/explanations out of the inserted cell.
+  function extractCodeFromMessage(message: string): string {
+    const fence = /```[^\n]*\n([\s\S]*?)```/g;
+    const blocks: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = fence.exec(message)) !== null) {
+      blocks.push(match[1].replace(/\s+$/, ''));
+    }
+    return blocks.length > 0 ? blocks.join('\n\n') : message.trim();
+  }
+
   function handleInsertCode({ code }: { code: string }) {
     const notebook = get(currentNotebook);
     if (!notebook) return;
 
-    const lastCell = notebook.cells[notebook.cells.length - 1];
-    const updatedNotebook = addCellAfter(notebook, lastCell.id, 'code');
+    const cellCode = extractCodeFromMessage(code);
 
-    updatedNotebook.cells[updatedNotebook.cells.length - 1].content = code;
+    // Insert after the selected cell so the new cell lands where you're
+    // working; fall back to the end of the notebook if nothing is selected.
+    const selectedId = get(selectedCellId);
+    const anchor =
+      notebook.cells.find(c => c.id === selectedId) ??
+      notebook.cells[notebook.cells.length - 1];
+
+    const updatedNotebook = addCellAfter(notebook, anchor.id, 'code');
+    const anchorIdx = updatedNotebook.cells.findIndex(c => c.id === anchor.id);
+    const newCell = updatedNotebook.cells[anchorIdx + 1];
+    newCell.content = cellCode;
 
     currentNotebook.set(updatedNotebook);
+    selectedCellId.set(newCell.id);
   }
 </script>
 
@@ -429,10 +463,15 @@
           </svg>
         {/if}
       </button>
-      <button class="icon-btn" onclick={toggleRightSidebar} title="Info">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="10" cy="10" r="8"/>
-          <path d="M10 14v-4M10 6v.5"/>
+      <button
+        class="icon-btn"
+        class:active={rightSidebarOpen && rightSidebarTab === 'data'}
+        onclick={toggleDataPanel}
+        title="Data (Ctrl+Shift+D)"
+        aria-label="Data panel"
+      >
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
         </svg>
       </button>
     </div>
@@ -454,7 +493,7 @@
 
     {#if rightSidebarOpen}
       <aside class="right-sidebar-container">
-        <RightSidebar onclose={() => rightSidebarOpen = false} />
+        <RightSidebar bind:activeTab={rightSidebarTab} onclose={() => rightSidebarOpen = false} />
       </aside>
     {/if}
   </div>

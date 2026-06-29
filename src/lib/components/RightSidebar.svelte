@@ -1,16 +1,59 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { currentNotebook } from '../stores/notebook';
+  import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import { toast } from '../utils/toast';
 
   interface Props {
     onclose?: () => void;
+    activeTab?: 'info' | 'variables' | 'data';
   }
 
-  let { onclose }: Props = $props();
+  let { onclose, activeTab = $bindable('info') }: Props = $props();
 
-  let activeTab: 'info' | 'variables' = $state('info');
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
+
+  // Data panel: drag-and-drop file cache.
+  let dragActive = $state(false);
+  let fileInput: HTMLInputElement = $state(null as any);
+
+  async function ingest(files: FileList | File[] | null | undefined) {
+    const list = files ? Array.from(files) : [];
+    if (list.length === 0) return;
+    const added = await addFiles(list);
+    if (added.length) {
+      toast(`Loaded ${added.length} file${added.length > 1 ? 's' : ''}`, 'info');
+    } else {
+      toast('Could not read the dropped file(s)', 'error');
+    }
+  }
+
+  function onDrop(event: DragEvent) {
+    event.preventDefault();
+    dragActive = false;
+    ingest(event.dataTransfer?.files);
+  }
+
+  function onDragOver(event: DragEvent) {
+    event.preventDefault();
+    dragActive = true;
+  }
+
+  function onDragLeave() {
+    dragActive = false;
+  }
+
+  async function removeDataset(name: string) {
+    await deleteDataset(name);
+    toast(`Removed ${name}`, 'info');
+  }
+
+  function copyUsage(name: string) {
+    const snippet = `const rows = await data(${JSON.stringify(name)})`;
+    navigator.clipboard?.writeText(snippet);
+    toast('Copied snippet to clipboard', 'info');
+  }
 
   function refreshVariables() {
     const scope = (window as any).__tangent_scope;
@@ -55,7 +98,14 @@
 
   onMount(() => {
     refreshVariables();
+    refreshDatasets();
     refreshTimer = window.setInterval(refreshVariables, 2000);
+  });
+
+  // Refresh when the tab changes (e.g. opened to Data via the keyboard shortcut).
+  $effect(() => {
+    if (activeTab === 'data') refreshDatasets();
+    else if (activeTab === 'variables') refreshVariables();
   });
 
   onDestroy(() => {
@@ -70,6 +120,7 @@
     <div class="tab-bar">
       <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'}>Info</button>
       <button class="tab-btn" class:active={activeTab === 'variables'} onclick={() => { activeTab = 'variables'; refreshVariables(); }}>Variables</button>
+      <button class="tab-btn" class:active={activeTab === 'data'} onclick={() => { activeTab = 'data'; refreshDatasets(); }}>Data</button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -122,12 +173,77 @@
             <span class="shortcut-desc">Command palette</span>
           </div>
           <div class="shortcut-item">
+            <span class="shortcut-key">Ctrl+/</span>
+            <span class="shortcut-desc">AI chat</span>
+          </div>
+          <div class="shortcut-item">
+            <span class="shortcut-key">Ctrl+Shift+D</span>
+            <span class="shortcut-desc">Data panel</span>
+          </div>
+          <div class="shortcut-item">
             <span class="shortcut-key">Ctrl+Z</span>
             <span class="shortcut-desc">Undo cell delete</span>
           </div>
         </div>
       </div>
     {/if}
+  {:else if activeTab === 'data'}
+    <div class="sidebar-content">
+      <!-- Files are read in the browser and cached in IndexedDB. Nothing is
+           uploaded or served publicly. -->
+      <div
+        class="dropzone"
+        class:active={dragActive}
+        role="button"
+        tabindex="0"
+        ondragover={onDragOver}
+        ondragleave={onDragLeave}
+        ondrop={onDrop}
+        onclick={() => fileInput?.click()}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        <p class="dropzone-text">Drop CSV, TSV or JSON here</p>
+        <p class="dropzone-hint">or click to browse. Stays in your browser.</p>
+      </div>
+      <input
+        bind:this={fileInput}
+        type="file"
+        multiple
+        accept=".csv,.tsv,.json,.ndjson,.txt"
+        class="hidden-input"
+        onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
+      />
+
+      {#if $datasets.length === 0}
+        <div class="empty-vars">No data yet. Drop a file, then read it in a cell with <code>await data("name")</code>.</div>
+      {:else}
+        <div class="dataset-list">
+          {#each $datasets as ds (ds.name)}
+            <div class="dataset-item">
+              <div class="dataset-main">
+                <div class="dataset-name" title={ds.name}>{ds.name}</div>
+                <div class="dataset-meta">{formatBytes(ds.size)}</div>
+              </div>
+              <div class="dataset-actions">
+                <button class="ds-btn" title="Copy usage snippet" onclick={() => copyUsage(ds.name)} aria-label="Copy snippet">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+                <button class="ds-btn ds-danger" title="Remove" onclick={() => removeDataset(ds.name)} aria-label="Remove dataset">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
   {:else}
     <div class="sidebar-content">
       <div class="variables-header">
@@ -262,6 +378,85 @@
   .refresh-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
   .empty-vars { font-size: 0.8rem; color: var(--text-faint); padding: 1rem 0; text-align: center; }
+  .empty-vars code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--accent);
+  }
+
+  /* Data panel */
+  .dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 1.5rem 1rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-card);
+    color: var(--text-faint);
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .dropzone:hover { color: var(--text-muted); border-color: var(--accent); }
+
+  .dropzone.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background-color: var(--surface-hover);
+  }
+
+  .dropzone-text { font-size: 0.82rem; font-weight: 500; color: var(--text); margin: 0.25rem 0 0; }
+  .dropzone-hint { font-size: 0.72rem; margin: 0; }
+
+  .hidden-input { display: none; }
+
+  .dataset-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1rem; }
+
+  .dataset-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+  }
+
+  .dataset-main { min-width: 0; }
+
+  .dataset-name {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dataset-meta { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.1rem; }
+
+  .dataset-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
+
+  .ds-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem;
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    border-radius: var(--radius-input);
+    transition: background-color 0.12s ease, color 0.12s ease;
+  }
+
+  .ds-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
+  .ds-danger:hover { color: var(--danger-fg); background-color: var(--danger-bg); }
 
   .variables-list { display: flex; flex-direction: column; gap: 0.5rem; }
 

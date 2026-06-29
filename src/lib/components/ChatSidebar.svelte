@@ -3,6 +3,8 @@
   import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, type ChatMessage } from '../utils/aiService';
   import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
+  import { chatMessages, clearChatHistory, type Message } from '../stores/chat';
+  import { loadAIContext, saveAIContext, resetAIContext, DEFAULT_AI_CONTEXT } from '../utils/aiContext';
 
   interface Props {
     onclose?: () => void;
@@ -11,14 +13,9 @@
 
   let { onclose, oninsertCode }: Props = $props();
 
-  interface Message {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: number;
-  }
-
-  let messages: Message[] = $state([]);
+  // Chat history is held in a persisted module store (src/lib/stores/chat),
+  // accessed below as $chatMessages, so it survives closing/reopening the
+  // sidebar and a page reload.
   let inputValue = $state('');
   let isLoading = $state(false);
   let messagesContainer: HTMLDivElement = $state(null as any);
@@ -31,6 +28,10 @@
   let model = $state('');
   let rememberKey = $state(false);
 
+  // User-editable reference text appended to the assistant's system prompt.
+  let aiContext = $state('');
+  let contextSaved = $state(false);
+
   // Only a concern on a deployed web build with no CORS proxy configured:
   // direct browser calls to ollama.com would be blocked by CORS.
   const showCorsNotice = isWebDeployment() && !corsProxyConfigured();
@@ -42,7 +43,20 @@
     model = config.model;
     rememberKey = config.rememberKey;
     isConfigured = aiService.isConfigured();
+    aiContext = loadAIContext();
   });
+
+  function handleContextSave() {
+    saveAIContext(aiContext);
+    contextSaved = true;
+    setTimeout(() => (contextSaved = false), 1500);
+  }
+
+  function handleContextReset() {
+    resetAIContext();
+    aiContext = DEFAULT_AI_CONTEXT;
+    saveAIContext(aiContext);
+  }
 
   function handleSettingsSave() {
     const config = saveAISettings({
@@ -76,7 +90,7 @@
       timestamp: Date.now()
     };
 
-    messages = [...messages, userMessage];
+    $chatMessages = [...$chatMessages, userMessage];
     inputValue = '';
     isLoading = true;
 
@@ -85,7 +99,7 @@
     try {
       // Send the recent conversation, with the current notebook injected as the
       // system prompt so the assistant can reason about the user's cells.
-      const conversation: ChatMessage[] = messages
+      const conversation: ChatMessage[] = $chatMessages
         .slice(-10)
         .map(m => ({ role: m.role, content: m.content }));
 
@@ -98,7 +112,7 @@
         timestamp: Date.now()
       };
 
-      messages = [...messages, assistantMessage];
+      $chatMessages = [...$chatMessages, assistantMessage];
     } catch (error: any) {
       const hint = error instanceof CorsLikelyError ? error.message : `Error: ${error.message}`;
       const errorMessage: Message = {
@@ -107,7 +121,7 @@
         content: hint,
         timestamp: Date.now()
       };
-      messages = [...messages, errorMessage];
+      $chatMessages = [...$chatMessages, errorMessage];
     } finally {
       isLoading = false;
       setTimeout(scrollToBottom, 0);
@@ -128,7 +142,7 @@
   }
 
   function clearChat() {
-    messages = [];
+    clearChatHistory();
   }
 </script>
 
@@ -240,6 +254,25 @@
           <button class="btn-secondary" onclick={() => showSettings = false}>Cancel</button>
         </div>
       {/if}
+
+      <div class="form-group context-group">
+        <label for="ai-context">Assistant context</label>
+        <p class="help-text">
+          Appended to the system prompt on every chat. Defaults to a Tangent,
+          Observable Plot and Arquero cheatsheet. Edit to fit your work.
+        </p>
+        <textarea
+          id="ai-context"
+          bind:value={aiContext}
+          rows="8"
+          class="input context-textarea"
+          placeholder="Reference notes for the assistant..."
+        ></textarea>
+        <div class="settings-actions">
+          <button class="btn-primary" onclick={handleContextSave}>{contextSaved ? 'Saved' : 'Save context'}</button>
+          <button class="btn-secondary" onclick={handleContextReset}>Reset to default</button>
+        </div>
+      </div>
     </div>
   {/if}
 
@@ -255,7 +288,7 @@
   {:else if isConfigured}
     <div class="chat-content">
       <div class="messages-container" bind:this={messagesContainer}>
-        {#if messages.length === 0}
+        {#if $chatMessages.length === 0}
           <div class="empty-chat">
             <p>Start a conversation with the AI assistant</p>
             <div class="suggestions">
@@ -272,7 +305,7 @@
           </div>
         {/if}
 
-        {#each messages as message (message.id)}
+        {#each $chatMessages as message (message.id)}
           <div class="message message-{message.role}">
             <div class="message-avatar">
               {#if message.role === 'user'}
@@ -323,7 +356,7 @@
       </div>
 
       <div class="chat-input-container">
-        {#if messages.length > 0}
+        {#if $chatMessages.length > 0}
           <button class="clear-btn" onclick={clearChat} title="Clear chat">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -488,6 +521,22 @@
   }
 
   input.input { font-family: var(--font-mono); }
+
+  /* The editable assistant-context field sits in its own section, divided from
+     the connection settings above it. */
+  .context-group {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .context-textarea {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    min-height: 9rem;
+    resize: vertical;
+  }
 
   .input:focus {
     outline: none;
