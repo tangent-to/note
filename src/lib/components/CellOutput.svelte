@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CellOutput } from '../types/notebook';
-  import JSONFormatter from 'json-formatter-js';
+  import { Inspector } from '@observablehq/inspector';
+  import '../styles/observable-inspector.css';
 
   let { output }: { output: CellOutput } = $props();
 
@@ -17,14 +18,6 @@
       return true;
     } catch {
       return false;
-    }
-  }
-
-  function formatJSON(str: string): string {
-    try {
-      return JSON.stringify(JSON.parse(str), null, 2);
-    } catch {
-      return str;
     }
   }
 
@@ -104,57 +97,42 @@
     };
   }
 
-  function renderJson(node: HTMLElement, value: string | object | null | undefined) {
-    let formatterEl: HTMLElement | null = null;
-
+  // Render a value with Observable's inspector: expandable, syntax-colored,
+  // and robust for large arrays/objects. Cell output arrives as a JSON string,
+  // so we parse it back to a value; a non-JSON string falls through to a <pre>.
+  function renderInspector(node: HTMLElement, value: string | object | null | undefined) {
     const render = (next: typeof value) => {
       node.innerHTML = '';
-      formatterEl = null;
-
-      if (next === undefined || next === null) {
-        return;
-      }
+      if (next === undefined || next === null) return;
 
       let parsed: any = next;
       if (typeof next === 'string') {
         try {
           parsed = JSON.parse(next);
         } catch {
-          parsed = null;
-        }
-      }
-
-      if (parsed !== null) {
-        try {
-          const formatter = new JSONFormatter(parsed, 1, {
-            hoverPreviewEnabled: true
-          });
-          formatterEl = formatter.render();
-          node.appendChild(formatterEl);
+          const pre = document.createElement('pre');
+          pre.className = 'json-output';
+          pre.textContent = next;
+          node.appendChild(pre);
           return;
-        } catch {
-          formatterEl = null;
         }
       }
 
-      const pre = document.createElement('pre');
-      pre.className = 'json-output';
-      pre.textContent = typeof next === 'string'
-        ? formatJSON(next)
-        : JSON.stringify(next, null, 2);
-      node.appendChild(pre);
+      try {
+        new Inspector(node).fulfilled(parsed);
+      } catch {
+        const pre = document.createElement('pre');
+        pre.className = 'json-output';
+        pre.textContent = typeof next === 'string' ? next : JSON.stringify(next, null, 2);
+        node.appendChild(pre);
+      }
     };
 
     render(value);
 
     return {
-      update(next: typeof value) {
-        render(next);
-      },
-      destroy() {
-        node.innerHTML = '';
-        formatterEl = null;
-      }
+      update(next: typeof value) { render(next); },
+      destroy() { node.innerHTML = ''; }
     };
   }
 </script>
@@ -183,7 +161,7 @@
           {@html output.content}
         </div>
       {:else if output.type === 'json' || isValidJSON(String(output.content))}
-        <div class="json-tree" use:renderJson={output.content}></div>
+        <div class="inspect-output" use:renderInspector={output.content}></div>
       {:else if output.type === 'error'}
         <div class="error-output">
           <div class="error-header">
@@ -293,58 +271,12 @@
     color: var(--accent);
   }
 
-  .json-tree {
-    font-size: 0.825rem;
-    font-family: var(--font-mono);
-    background-color: transparent;
-    border-radius: 0;
-    border: none;
+  /* The Observable inspector renders its own markup and colors (see
+     styles/observable-inspector.css). We only pad and scroll-cap the container. */
+  .inspect-output {
     padding: 0.4rem 0.85rem;
-    overflow-x: auto;
-  }
-
-  .json-tree :global(.json-formatter-row) {
-    font-family: inherit;
-    line-height: 1.4;
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-toggler) {
-    cursor: pointer;
-    display: inline-block;
-    user-select: none;
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-toggler:before) {
-    content: "▸";
-    display: inline-block;
-    transform: rotate(0deg);
-    transition: transform 0.1s ease;
-    margin-right: 4px;
-  }
-
-  .json-tree :global(.json-formatter-row.json-formatter-open .json-formatter-toggler:before) {
-    transform: rotate(90deg);
-  }
-
-  .json-tree :global(.json-formatter-row > a.json-formatter-key) {
-    color: var(--accent);
-    text-decoration: none;
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-number) {
-    color: var(--accent);
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-string) {
-    color: var(--warn-fg);
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-boolean) {
-    color: var(--accent);
-  }
-
-  .json-tree :global(.json-formatter-row .json-formatter-null) {
-    color: var(--text-muted);
+    overflow: auto;
+    max-height: 420px;
   }
 
   .text-output {
