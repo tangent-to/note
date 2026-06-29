@@ -110,12 +110,11 @@
             return synthetic;
           }
         }
-        if (doc.body) {
-          const synthetic = doc.createRange();
-          synthetic.setStart(doc.body, 0);
-          synthetic.collapse(true);
-          return synthetic;
-        }
+        // No position at this point (e.g. a click on empty editor space below
+        // the last line). Return null, as native caretRangeFromPoint does.
+        // The previous `document.body` offset-0 fallback made Monaco map the
+        // click to the FIRST editor on the page, so clicking blank space in one
+        // cell would move the caret into another cell.
       } catch {
         // ignore and fall through
       }
