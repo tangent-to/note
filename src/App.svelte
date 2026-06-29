@@ -467,7 +467,18 @@
           </svg>
         {/if}
       </button>
-      <button class="icon-btn" onclick={toggleRightSidebar} title="Info, Variables & Data">
+      <button
+        class="icon-btn"
+        class:active={rightSidebarOpen && rightSidebarTab === 'data'}
+        onclick={toggleDataPanel}
+        title="Data (Ctrl+Shift+D)"
+        aria-label="Data panel"
+      >
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+        </svg>
+      </button>
+      <button class="icon-btn" onclick={toggleRightSidebar} title="Info & variables">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="10" cy="10" r="8"/>
           <path d="M10 14v-4M10 6v.5"/>
