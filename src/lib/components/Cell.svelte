@@ -758,6 +758,13 @@
     background: transparent;
   }
 
+  /* Drop the leading top margin the browser/prose adds to the first block
+     (e.g. a paragraph's default 1em), so the first line aligns with the run
+     button in the gutter, matching code cells. */
+  .markdown-preview.rendered > :global(:first-child) {
+    margin-top: 0;
+  }
+
   .markdown-preview :global(h1) {
     font-size: 2rem;
     font-weight: 700;
