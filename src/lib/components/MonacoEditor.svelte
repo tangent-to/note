@@ -213,6 +213,12 @@
         };
         /** Shared notebook scope. Write: \`nb.x = 42\`  Read: \`const { x } = nb\` */
         declare const nb: Record<string, any>;
+        /** Read a file cached via the Data panel. Parses .csv/.tsv/.json by
+         *  extension; use data.text(name) for the raw string. */
+        declare const data: ((name: string) => Promise<any>) & {
+          text(name: string): Promise<string>;
+          list(): Promise<string[]>;
+        };
       `, 'global.d.ts');
     }
 
