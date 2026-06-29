@@ -1,6 +1,7 @@
 export interface ShortcutHandler {
   showCommandPalette: () => void;
   toggleChat: () => void;
+  toggleData: () => void;
   save: () => void;
   newNotebook: () => void;
   importNotebook: () => void;
@@ -19,6 +20,13 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
   if ((event.metaKey || event.ctrlKey) && event.key === '/') {
     event.preventDefault();
     handlers.toggleChat();
+    return true;
+  }
+
+  // Toggle Data panel: Ctrl/Cmd + Shift + D
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    handlers.toggleData();
     return true;
   }
 

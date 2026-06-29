@@ -27,6 +27,7 @@
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
 
   let rightSidebarOpen = $state(false);
+  let rightSidebarTab = $state<'info' | 'variables' | 'data'>('info');
   let chatSidebarOpen = $state(false);
   let showExportDialog = $state(false);
   let showCommandPalette = $state(false);
@@ -201,10 +202,21 @@
     rightSidebarOpen = !rightSidebarOpen;
   }
 
+  // Open the right sidebar on the Data tab; toggle it closed if already there.
+  function toggleDataPanel() {
+    if (rightSidebarOpen && rightSidebarTab === 'data') {
+      rightSidebarOpen = false;
+    } else {
+      rightSidebarTab = 'data';
+      rightSidebarOpen = true;
+    }
+  }
+
   function onKeydown(event: KeyboardEvent) {
     handleGlobalKeydown(event, {
       showCommandPalette: () => { showCommandPalette = !showCommandPalette; },
       toggleChat: () => { chatSidebarOpen = !chatSidebarOpen; },
+      toggleData: () => toggleDataPanel(),
       save: () => performSaveShortcut(),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
@@ -260,6 +272,9 @@
         break;
       case 'toggle-chat':
         chatSidebarOpen = !chatSidebarOpen;
+        break;
+      case 'open-data':
+        toggleDataPanel();
         break;
       case 'clear-outputs':
         clearAllOutputs();
@@ -452,7 +467,7 @@
           </svg>
         {/if}
       </button>
-      <button class="icon-btn" onclick={toggleRightSidebar} title="Info">
+      <button class="icon-btn" onclick={toggleRightSidebar} title="Info, Variables & Data">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="10" cy="10" r="8"/>
           <path d="M10 14v-4M10 6v.5"/>
@@ -477,7 +492,7 @@
 
     {#if rightSidebarOpen}
       <aside class="right-sidebar-container">
-        <RightSidebar onclose={() => rightSidebarOpen = false} />
+        <RightSidebar bind:activeTab={rightSidebarTab} onclose={() => rightSidebarOpen = false} />
       </aside>
     {/if}
   </div>

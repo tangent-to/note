@@ -17,6 +17,7 @@ function makeHandlers() {
   return {
     showCommandPalette: vi.fn(),
     toggleChat: vi.fn(),
+    toggleData: vi.fn(),
     save: vi.fn(),
     newNotebook: vi.fn(),
     importNotebook: vi.fn(),
@@ -48,6 +49,14 @@ describe('handleGlobalKeydown', () => {
     const handled = handleGlobalKeydown(event, handlers);
     expect(handled).toBe(true);
     expect(handlers.toggleChat).toHaveBeenCalledOnce();
+  });
+
+  it('triggers toggle data panel on Ctrl+Shift+D', () => {
+    const handlers = makeHandlers();
+    const event = makeEvent({ ctrlKey: true, shiftKey: true, key: 'D' });
+    const handled = handleGlobalKeydown(event, handlers);
+    expect(handled).toBe(true);
+    expect(handlers.toggleData).toHaveBeenCalledOnce();
   });
 
   it('triggers new notebook on Ctrl+N', () => {

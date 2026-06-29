@@ -6,11 +6,11 @@
 
   interface Props {
     onclose?: () => void;
+    activeTab?: 'info' | 'variables' | 'data';
   }
 
-  let { onclose }: Props = $props();
+  let { onclose, activeTab = $bindable('info') }: Props = $props();
 
-  let activeTab: 'info' | 'variables' | 'data' = $state('info');
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
 
@@ -102,6 +102,12 @@
     refreshTimer = window.setInterval(refreshVariables, 2000);
   });
 
+  // Refresh when the tab changes (e.g. opened to Data via the keyboard shortcut).
+  $effect(() => {
+    if (activeTab === 'data') refreshDatasets();
+    else if (activeTab === 'variables') refreshVariables();
+  });
+
   onDestroy(() => {
     if (refreshTimer) clearInterval(refreshTimer);
   });
@@ -165,6 +171,14 @@
           <div class="shortcut-item">
             <span class="shortcut-key">Ctrl+K</span>
             <span class="shortcut-desc">Command palette</span>
+          </div>
+          <div class="shortcut-item">
+            <span class="shortcut-key">Ctrl+/</span>
+            <span class="shortcut-desc">AI chat</span>
+          </div>
+          <div class="shortcut-item">
+            <span class="shortcut-key">Ctrl+Shift+D</span>
+            <span class="shortcut-desc">Data panel</span>
           </div>
           <div class="shortcut-item">
             <span class="shortcut-key">Ctrl+Z</span>
