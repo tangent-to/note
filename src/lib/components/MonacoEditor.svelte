@@ -514,7 +514,10 @@
           return { items: [] };
         }
       },
-      freeInlineCompletions: () => {}
+      // Monaco renamed this hook: older builds call `freeInlineCompletions`,
+      // newer ones `disposeInlineCompletions`. Provide both so neither throws.
+      freeInlineCompletions: () => {},
+      disposeInlineCompletions: () => {}
     });
   }
 
