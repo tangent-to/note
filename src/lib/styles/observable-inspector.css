@@ -15,7 +15,6 @@
   --syntax_string: #008ec4;
   --syntax_key: #8b5cf6;
   font: 0.8rem/1.6 var(--font-mono);
-  overflow-x: auto;
   display: block;
   white-space: pre;
 }

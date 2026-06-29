@@ -272,11 +272,25 @@
   }
 
   /* The Observable inspector renders its own markup and colors (see
-     styles/observable-inspector.css). We only pad and scroll-cap the container. */
+     styles/observable-inspector.css). This is the single scroll container: the
+     inspector itself no longer sets overflow, so there is one (thin) scrollbar.
+     The extra bottom padding keeps the horizontal scrollbar clear of the text
+     on a short, one-line output, so it never masks the expand toggle. */
   .inspect-output {
-    padding: 0.4rem 0.85rem;
+    padding: 0.4rem 0.85rem 0.75rem;
     overflow: auto;
     max-height: 420px;
+    scrollbar-width: thin;
+  }
+
+  .inspect-output::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+
+  .inspect-output::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: var(--radius-pill);
   }
 
   .text-output {
