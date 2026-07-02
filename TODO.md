@@ -1,8 +1,8 @@
 TODO
 - fix save runnable html
-- load notebook with http://<host>/gh/<owner>/<repo>/<path-to-file>.js
 
 DONE
+- load notebook with http://<host>/gh/<owner>/<repo>/<path-to-file>.js (also /import?url=…)
 - make it more "vanilla" JS - it was all the way
 - Make Command+Enter and Shift+Enter consistent with Jupyter
 - Polish interface
