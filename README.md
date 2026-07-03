@@ -65,7 +65,7 @@ This project handles that with a small proxy — no browser extensions needed:
 
 - **Running locally (`npm run dev`)** — works out of the box. The Vite dev
   server proxies requests to `ollama.com`, so there's nothing to configure.
-- **Deployed web build (e.g. notebook.tangent.to)** — deploy the bundled
+- **Deployed web build (e.g. note.tangent.to)** — deploy the bundled
   **Cloudflare Worker** proxy once and point the app at it. The worker forwards
   requests to `ollama.com` and adds CORS headers; each user still uses their own
   API key (it just passes through — the worker never stores it). See
@@ -75,7 +75,7 @@ This project handles that with a small proxy — no browser extensions needed:
 
 ### Examples
 
-Head to notebook.tangent.to
+Head to note.tangent.to
 
 ## Tech stack
 

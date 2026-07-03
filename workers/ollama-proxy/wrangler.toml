@@ -5,4 +5,4 @@ compatibility_date = "2024-11-01"
 # CORS is restricted to this origin. Change it to your own domain, or set it to
 # "*" to allow any origin (less secure).
 [vars]
-ALLOWED_ORIGIN = "https://notebook.tangent.to"
+ALLOWED_ORIGIN = "https://note.tangent.to"

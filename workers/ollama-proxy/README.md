@@ -39,7 +39,7 @@ npx wrangler deploy
 Either way, Wrangler/the action prints the deployed URL, e.g.
 `https://ollama-proxy.<account>.workers.dev`.
 
-CORS is locked to `https://notebook.tangent.to` by default (via `ALLOWED_ORIGIN`
+CORS is locked to `https://note.tangent.to` by default (via `ALLOWED_ORIGIN`
 in `wrangler.toml`). Change it to your own domain before deploying, or set it to
 `"*"` to allow any origin (less secure).
 
