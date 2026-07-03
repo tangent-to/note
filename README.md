@@ -1,4 +1,4 @@
-# tangent/notebook
+# tangent/note
 
 A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, local-first on the web, with a Zed/deno -style notebook format in pure JavaScript.
 
@@ -12,7 +12,7 @@ A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober inter
 
 ```bash
 # Clone the repository
-git clone https://github.com/tangent-to/tangent-notebook.git
+git clone https://github.com/tangent-to/note.git
 cd notebook
 
 # Install dependencies
@@ -38,9 +38,9 @@ npm run build
 
 A notebook can be opened directly from a URL — handy for sharing:
 
-- **From any URL:** `https://notebook.tangent.to/import?url=https://example.com/my-notebook.js`
+- **From any URL:** `https://note.tangent.to/import?url=https://example.com/my-notebook.js`
   (a pasted `github.com/...blob...` URL is rewritten to its raw form automatically)
-- **From GitHub:** `https://notebook.tangent.to/gh/<owner>/<repo>/<path-to-file>.js`
+- **From GitHub:** `https://note.tangent.to/gh/<owner>/<repo>/<path-to-file>.js`
   (uses the repo's default branch; pin one with `/gh/<owner>/<repo>@<ref>/<path>`)
 
 Both `.js` (Tangent notebook format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md))
@@ -79,7 +79,7 @@ This project handles that with a small proxy — no browser extensions needed:
 
 - **Running locally (`npm run dev`)** — works out of the box. The Vite dev
   server proxies requests to `ollama.com`, so there's nothing to configure.
-- **Deployed web build (e.g. notebook.tangent.to)** — deploy the bundled
+- **Deployed web build (e.g. note.tangent.to)** — deploy the bundled
   **Cloudflare Worker** proxy once and point the app at it. The worker forwards
   requests to `ollama.com` and adds CORS headers; each user still uses their own
   API key (it just passes through — the worker never stores it). See
@@ -89,7 +89,7 @@ This project handles that with a small proxy — no browser extensions needed:
 
 ### Examples
 
-Head to notebook.tangent.to
+Head to note.tangent.to
 
 ## Tech stack
 

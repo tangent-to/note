@@ -1,6 +1,6 @@
 // Cloudflare Worker: CORS proxy for Ollama Cloud.
 //
-// The deployed web app (e.g. notebook.tangent.to) cannot call https://ollama.com
+// The deployed web app (e.g. note.tangent.to) cannot call https://ollama.com
 // directly from the browser because Ollama Cloud does not send CORS headers.
 // This Worker sits in front of ollama.com, forwards `/api/*` requests, and adds
 // the CORS headers the browser needs.
@@ -10,7 +10,7 @@
 // proxies the Ollama API surface, so it cannot be used as a generic open relay.
 //
 // Binding (wrangler.toml [vars]):
-//   ALLOWED_ORIGIN  Origin allowed by CORS. Set to "https://notebook.tangent.to"
+//   ALLOWED_ORIGIN  Origin allowed by CORS. Set to "https://note.tangent.to"
 //                   in wrangler.toml by default; use "*" to allow any origin.
 //                   Falls back to "*" if the binding is removed entirely.
 

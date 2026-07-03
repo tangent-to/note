@@ -1,11 +1,11 @@
-# 🚨 Fix: Certificate Not Issued for notebook.tangent.to
+# 🚨 Fix: Certificate Not Issued for note.tangent.to
 
 ## Current Issue
 
 GitHub Pages says:
 ```
 Enforce HTTPS — Unavailable for your site because a certificate
-has not yet been issued for your domain (notebook.tangent.to)
+has not yet been issued for your domain (note.tangent.to)
 ```
 
 This means GitHub can't provision a Let's Encrypt certificate. Let's fix it!
@@ -30,9 +30,9 @@ TTL:   3600 (or Auto)
 ```
 
 **Important**:
-- Name should be `notebook` (not `notebook.tangent.to`)
+- Name should be `note` (not `note.tangent.to`)
 - Value should end with a dot `.` or not, depending on your DNS provider
-- Remove any conflicting A records for `notebook`
+- Remove any conflicting A records for `note`
 
 #### Option B: A Records (Alternative)
 
@@ -89,13 +89,13 @@ TTL:   3600
 
 ```bash
 # Check DNS resolution
-dig notebook.tangent.to
+dig note.tangent.to
 
 # For CNAME (Option A), you should see:
-# notebook.tangent.to. 3600 IN CNAME tangent-to.github.io.
+# note.tangent.to. 3600 IN CNAME tangent-to.github.io.
 
 # For A records (Option B), you should see:
-# notebook.tangent.to. 3600 IN A 185.199.108.153
+# note.tangent.to. 3600 IN A 185.199.108.153
 # (and the other IPs)
 ```
 
@@ -109,7 +109,7 @@ dig notebook.tangent.to
 1. Go to: https://github.com/tangent-to/tangent-notebook/settings/pages
 
 2. Under "Custom domain":
-   - **Delete** `notebook.tangent.to` (clear the field completely)
+   - **Delete** `note.tangent.to` (clear the field completely)
    - Click **Save**
 
 3. **Wait 1-2 minutes**
@@ -117,7 +117,7 @@ dig notebook.tangent.to
 ### Step 4: Re-add Custom Domain
 
 1. Still in GitHub Pages settings:
-   - Type `notebook.tangent.to` in the Custom domain field
+   - Type `note.tangent.to` in the Custom domain field
    - Click **Save**
 
 2. You should see:
@@ -147,7 +147,7 @@ Or even better:
 **❌ Still failing?**
 ```
 ❌ DNS check failed
-   Both www.notebook.tangent.to and notebook.tangent.to are
+   Both www.note.tangent.to and note.tangent.to are
    improperly configured
 ```
 
@@ -165,7 +165,7 @@ Once you see "Certificate issued":
 
 ```bash
 # Test HTTPS
-curl -I https://notebook.tangent.to
+curl -I https://note.tangent.to
 
 # Should show:
 # HTTP/2 200
@@ -173,7 +173,7 @@ curl -I https://notebook.tangent.to
 ```
 
 Open in browser (incognito mode):
-- https://notebook.tangent.to
+- https://note.tangent.to
 - Should load with green padlock 🔒
 
 ---
@@ -200,7 +200,7 @@ Open in browser (incognito mode):
 
 **Fix**:
 1. Double-check DNS records in your DNS provider
-2. Make sure you're editing `notebook` subdomain
+2. Make sure you're editing `note` subdomain
 3. Use Option A (CNAME) if possible - it's simpler
 4. Wait 15 minutes and try again
 
@@ -209,7 +209,7 @@ Open in browser (incognito mode):
 **Cause**: DNS propagation delay or GitHub queue
 
 **Fix**:
-1. Verify DNS with `dig notebook.tangent.to`
+1. Verify DNS with `dig note.tangent.to`
 2. Remove and re-add domain to reset process
 3. Wait up to 1 hour - it can be slow
 4. Check https://www.githubstatus.com/ for GitHub issues
@@ -234,16 +234,16 @@ Run these commands and share the output:
 
 ```bash
 # 1. Check DNS
-dig notebook.tangent.to
+dig note.tangent.to
 
 # 2. Check DNS globally
-curl "https://dns.google/resolve?name=notebook.tangent.to&type=A"
+curl "https://dns.google/resolve?name=note.tangent.to&type=A"
 
 # 3. Check current HTTP response
-curl -I http://notebook.tangent.to
+curl -I http://note.tangent.to
 
 # 4. Check HTTPS (will fail but shows the error)
-curl -I https://notebook.tangent.to
+curl -I https://note.tangent.to
 
 # 5. Check if gh-pages branch exists
 git ls-remote --heads origin gh-pages
@@ -256,12 +256,12 @@ Send this to your DNS provider's support:
 ```
 I need to configure a CNAME record for my GitHub Pages site:
 
-Host/Name:  notebook
+Host/Name:  note
 Type:       CNAME
 Value:      tangent-to.github.io.
 TTL:        3600 (or automatic)
 
-This should point notebook.tangent.to to tangent-to.github.io
+This should point note.tangent.to to tangent-to.github.io
 for my GitHub Pages site.
 ```
 
@@ -269,13 +269,13 @@ for my GitHub Pages site.
 
 ## 🎯 Quick Summary
 
-1. **Configure DNS**: CNAME `notebook` → `tangent-to.github.io`
+1. **Configure DNS**: CNAME `note` → `tangent-to.github.io`
 2. **Wait for DNS**: 5-15 minutes
 3. **Remove domain** in GitHub settings
 4. **Re-add domain** in GitHub settings
 5. **Wait for certificate**: 10-30 minutes
 6. **Enable HTTPS** when available
-7. **Test**: https://notebook.tangent.to
+7. **Test**: https://note.tangent.to
 
 ---
 

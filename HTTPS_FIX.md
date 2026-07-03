@@ -1,6 +1,6 @@
 # 🔒 Quick Fix: HTTPS Security Warning
 
-If you're seeing **"Potential Security Risk Ahead"** when visiting `notebook.tangent.to`, follow these steps:
+If you're seeing **"Potential Security Risk Ahead"** when visiting `note.tangent.to`, follow these steps:
 
 ## ✅ Immediate Fix (5 minutes)
 
@@ -11,7 +11,7 @@ If you're seeing **"Potential Security Risk Ahead"** when visiting `notebook.tan
 2. Check these settings:
    ```
    Source: gh-pages branch, / (root) folder
-   Custom domain: notebook.tangent.to
+   Custom domain: note.tangent.to
    ✅ Enforce HTTPS (MUST BE CHECKED)
    ```
 
@@ -22,13 +22,13 @@ If you're seeing **"Potential Security Risk Ahead"** when visiting `notebook.tan
 ### Step 2: If Certificate is Pending
 
 1. **Remove custom domain**:
-   - Delete `notebook.tangent.to` from the field
+   - Delete `note.tangent.to` from the field
    - Click **Save**
 
 2. **Wait 1 minute**
 
 3. **Add it back**:
-   - Type `notebook.tangent.to` again
+   - Type `note.tangent.to` again
    - Click **Save**
 
 4. **Wait 10-30 minutes** for Let's Encrypt certificate to provision
@@ -52,13 +52,13 @@ npm run deploy:clean
 
 1. **Check DNS** (in terminal):
    ```bash
-   dig notebook.tangent.to
+   dig note.tangent.to
    # Should show GitHub Pages IPs or CNAME to tangent-to.github.io
    ```
 
 2. **Test in browser**:
    - Clear browser cache or use **Incognito/Private mode**
-   - Visit: https://notebook.tangent.to
+   - Visit: https://note.tangent.to
    - Should load without security warnings
 
 ## 🔍 Root Causes
@@ -77,11 +77,11 @@ The security warning happens when:
 ```bash
 # Check if CNAME exists in your build
 cat dist/CNAME
-# Should output: notebook.tangent.to
+# Should output: note.tangent.to
 
 # Check on GitHub Pages
 curl https://tangent-to.github.io/tangent-notebook/CNAME
-# Should output: notebook.tangent.to
+# Should output: note.tangent.to
 ```
 
 ### Check 2: DNS Configuration
@@ -116,7 +116,7 @@ Look for these indicators:
 
 ✅ **Healthy**:
 ```
-Your site is live at https://notebook.tangent.to
+Your site is live at https://note.tangent.to
 ✅ DNS check successful
 ✅ HTTPS enforced - certificate issued
 ```
@@ -166,14 +166,14 @@ npm run deploy
 
 ```bash
 # DNS propagation
-dig notebook.tangent.to
+dig note.tangent.to
 
 # SSL certificate
-openssl s_client -connect notebook.tangent.to:443 -servername notebook.tangent.to
+openssl s_client -connect note.tangent.to:443 -servername note.tangent.to
 
 # HTTP vs HTTPS
-curl -I http://notebook.tangent.to
-curl -I https://notebook.tangent.to
+curl -I http://note.tangent.to
+curl -I https://note.tangent.to
 ```
 
 ### Get Help
@@ -195,7 +195,7 @@ curl -I https://notebook.tangent.to
 Once fixed, you should see:
 
 ```
-✅ https://notebook.tangent.to loads
+✅ https://note.tangent.to loads
 ✅ Green padlock in browser
 ✅ No security warnings
 ✅ Latest version of your app
@@ -209,4 +209,4 @@ Once fixed, you should see:
 npm run deploy
 ```
 
-Then wait 2-5 minutes and try: https://notebook.tangent.to
+Then wait 2-5 minutes and try: https://note.tangent.to
