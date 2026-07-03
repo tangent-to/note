@@ -25,6 +25,7 @@
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
+  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, type ImportRequest } from './lib/utils/urlImport';
 
   let rightSidebarOpen = $state(false);
   let rightSidebarTab = $state<'info' | 'variables' | 'data'>('info');
@@ -101,15 +102,19 @@
   }
 
   onMount(() => {
-    const meta = getLocalStorageMeta();
-    const saved = loadFromLocalStorage();
+    // Deep links (/gh/… on GitHub Pages) arrive via the 404.html shim as
+    // /?p=<original path>; restore the real URL before routing.
+    const redirect = decodeRedirect(window.location.search);
+    if (redirect) {
+      history.replaceState(null, '', redirect.pathname + redirect.search);
+    }
+    const target = redirect ?? { pathname: window.location.pathname, search: window.location.search };
+    const importRequest = parseImportRequest(target.pathname, target.search);
 
-    if (saved && meta) {
-      currentNotebook.set(saved);
-      markNotebookClean();
-      console.info('Notebook restored from previous session');
+    if (importRequest) {
+      loadNotebookFromUrl(importRequest);
     } else {
-      loadSampleNotebook();
+      restoreOrLoadSample();
     }
 
     loadNotebookFiles();
@@ -147,6 +152,37 @@
       clearTimeout(toastTimer);
     };
   });
+
+  function restoreOrLoadSample() {
+    const meta = getLocalStorageMeta();
+    const saved = loadFromLocalStorage();
+
+    if (saved && meta) {
+      currentNotebook.set(saved);
+      markNotebookClean();
+      console.info('Notebook restored from previous session');
+    } else {
+      loadSampleNotebook();
+    }
+  }
+
+  async function loadNotebookFromUrl(request: ImportRequest) {
+    try {
+      const notebook = await fetchNotebookFromUrl(request);
+      resetExecutionCounter();
+      resetStaleTracking();
+      currentNotebook.set(notebook);
+      markNotebookClean();
+      // Drop the import URL so a refresh reopens the autosaved copy instead
+      // of re-fetching and overwriting any edits made since.
+      history.replaceState(null, '', '/');
+      showToast(`Loaded “${notebook.name}” from ${new URL(request.fetchUrl).hostname}`, 'info');
+    } catch (err: any) {
+      console.error('URL import failed:', err);
+      showToast(`Couldn’t open the notebook from the link: ${err.message}`, 'error');
+      restoreOrLoadSample();
+    }
+  }
 
   async function loadSampleNotebook() {
     try {
