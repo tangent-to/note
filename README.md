@@ -1,4 +1,4 @@
-# tangent/notebook
+# tangent/note
 
 A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober interface, supporting data viz, local-first on the web, with a Zed/deno -style notebook format in pure JavaScript.
 
@@ -12,7 +12,7 @@ A (mostly, sorry) vibe coded javascript notebook, featuring a modern sober inter
 
 ```bash
 # Clone the repository
-git clone https://github.com/tangent-to/tangent-notebook.git
+git clone https://github.com/tangent-to/note.git
 cd notebook
 
 # Install dependencies
