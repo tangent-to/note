@@ -38,9 +38,9 @@ npm run build
 
 A notebook can be opened directly from a URL — handy for sharing:
 
-- **From any URL:** `https://notebook.tangent.to/import?url=https://example.com/my-notebook.js`
+- **From any URL:** `https://note.tangent.to/import?url=https://example.com/my-notebook.js`
   (a pasted `github.com/...blob...` URL is rewritten to its raw form automatically)
-- **From GitHub:** `https://notebook.tangent.to/gh/<owner>/<repo>/<path-to-file>.js`
+- **From GitHub:** `https://note.tangent.to/gh/<owner>/<repo>/<path-to-file>.js`
   (uses the repo's default branch; pin one with `/gh/<owner>/<repo>@<ref>/<path>`)
 
 Both `.js` (Tangent notebook format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md))
