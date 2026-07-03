@@ -23,7 +23,7 @@ If you see "Potential Security Risk" warnings when visiting `note.tangent.to`, f
 
 #### Step 1: Verify GitHub Pages Settings
 
-1. Go to your repository on GitHub: `https://github.com/tangent-to/tangent-notebook`
+1. Go to your repository on GitHub: `https://github.com/tangent-to/note`
 2. Click **Settings** → **Pages** (in left sidebar)
 3. Verify the following:
 
@@ -180,7 +180,7 @@ jobs:
 
 If you encounter issues:
 
-1. Check the [GitHub Issues](https://github.com/tangent-to/tangent-notebook/issues)
+1. Check the [GitHub Issues](https://github.com/tangent-to/note/issues)
 2. Verify all prerequisites are installed
 3. Try a clean build: `rm -rf dist node_modules && npm install && npm run build`
 

@@ -106,7 +106,7 @@ dig note.tangent.to
 
 ### Step 3: Remove Custom Domain in GitHub
 
-1. Go to: https://github.com/tangent-to/tangent-notebook/settings/pages
+1. Go to: https://github.com/tangent-to/note/settings/pages
 
 2. Under "Custom domain":
    - **Delete** `note.tangent.to` (clear the field completely)

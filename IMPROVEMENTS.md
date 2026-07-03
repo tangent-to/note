@@ -261,7 +261,7 @@ Contributions are welcome! Please read CONTRIBUTING.md for guidelines.
 
 ## 🐛 Bug Reports
 
-Report issues at: https://github.com/tangent-to/tangent-notebook/issues
+Report issues at: https://github.com/tangent-to/note/issues
 
 ## 📖 Documentation
 

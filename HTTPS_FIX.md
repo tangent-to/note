@@ -6,7 +6,7 @@ If you're seeing **"Potential Security Risk Ahead"** when visiting `note.tangent
 
 ### Step 1: GitHub Pages Settings
 
-1. Go to: https://github.com/tangent-to/tangent-notebook/settings/pages
+1. Go to: https://github.com/tangent-to/note/settings/pages
 
 2. Check these settings:
    ```
@@ -80,7 +80,7 @@ cat dist/CNAME
 # Should output: note.tangent.to
 
 # Check on GitHub Pages
-curl https://tangent-to.github.io/tangent-notebook/CNAME
+curl https://tangent-to.github.io/note/CNAME
 # Should output: note.tangent.to
 ```
 
@@ -110,7 +110,7 @@ TTL: 3600
 
 ### Check 3: GitHub Pages Status
 
-Visit: https://github.com/tangent-to/tangent-notebook/settings/pages
+Visit: https://github.com/tangent-to/note/settings/pages
 
 Look for these indicators:
 
@@ -180,7 +180,7 @@ curl -I https://note.tangent.to
 
 1. Check if GitHub Pages is down: https://www.githubstatus.com/
 2. Review GitHub Pages docs: https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site
-3. Open an issue: https://github.com/tangent-to/tangent-notebook/issues
+3. Open an issue: https://github.com/tangent-to/note/issues
 
 ## ⏱️ How Long to Wait?
 
