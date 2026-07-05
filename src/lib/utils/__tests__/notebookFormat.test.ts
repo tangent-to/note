@@ -47,7 +47,7 @@ describe('serializeNotebook', () => {
     expect(output).toContain('console.log(x)');
   });
 
-  it('tags collapsed cells with #hide on the delimiter', () => {
+  it('tags collapsed cells with #hide-cell on the delimiter', () => {
     const notebook = makeNotebook({
       cells: [
         { id: 'cell-1', type: 'code', content: 'const x = 1;', collapsed: true },
@@ -56,8 +56,8 @@ describe('serializeNotebook', () => {
       ],
     });
     const output = serializeNotebook(notebook);
-    expect(output).toContain('// %% [javascript] #hide\nconst x = 1;');
-    expect(output).toContain('// %% [markdown] #hide');
+    expect(output).toContain('// %% [javascript] #hide-cell\nconst x = 1;');
+    expect(output).toContain('// %% [markdown] #hide-cell');
     expect(output).toContain('// %% [javascript]\nx');
   });
 
@@ -76,7 +76,7 @@ describe('serializeNotebook', () => {
       ],
     });
     const output = serializeNotebook(notebook);
-    expect(output).toContain('// %% [javascript] #hide #hide-output #skip #readonly');
+    expect(output).toContain('// %% [javascript] #hide-cell #hide-output #skip #readonly');
   });
 
   it('handles empty cells', () => {
@@ -120,7 +120,12 @@ describe('parseNotebook', () => {
     expect(parsed.cells[0].type).toBe('code');
   });
 
-  it('round-trips the collapsed state via the #hide tag', () => {
+  it('accepts #hide as a legacy alias of #hide-cell', () => {
+    const parsed = parseNotebook('// %% [javascript] #hide\nconst x = 1;', 'test.js');
+    expect(parsed.cells[0].collapsed).toBe(true);
+  });
+
+  it('round-trips the collapsed state via the #hide-cell tag', () => {
     const original = makeNotebook({
       cells: [
         { id: 'cell-1', type: 'code', content: 'const x = 1;', collapsed: true },

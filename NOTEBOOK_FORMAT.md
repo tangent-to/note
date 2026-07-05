@@ -57,19 +57,20 @@ You can use **bold**, *italic*, and `code`.
 ### Cell Tags
 
 The delimiter can carry tags after the cell type. Tags can be combined
-(`// %% [javascript] #hide #skip`), the UI equivalents live in each cell's
-⋮ menu, and every tag round-trips through export/import.
+(`// %% [javascript] #hide-cell #skip`), the UI equivalents live in each
+cell's ⋮ menu, and every tag round-trips through export/import.
 
-#### `#hide` — collapsed cell
+#### `#hide-cell` — collapsed cell
 
 ```javascript
-// %% [javascript] #hide
+// %% [javascript] #hide-cell
 // setup code that would clutter the page
 const config = { retries: 3 };
 ```
 
-A cell tagged `#hide` still runs normally but renders collapsed in the UI
-(only its first line is shown; click to expand).
+A cell tagged `#hide-cell` still runs normally but renders collapsed in
+the UI (only its first line is shown; click to expand). `#hide` is
+accepted as a legacy alias when reading files.
 
 #### `#skip` — disabled cell
 

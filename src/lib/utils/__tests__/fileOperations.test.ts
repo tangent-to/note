@@ -20,14 +20,14 @@ describe('slugify', () => {
 });
 
 describe('parseJSNotebook', () => {
-  it('marks cells tagged #hide as collapsed', () => {
-    const text = `// %% [javascript] #hide
+  it('marks cells tagged #hide-cell as collapsed', () => {
+    const text = `// %% [javascript] #hide-cell
 const secret = 42;
 
 // %% [javascript]
 secret * 2
 
-// %% [markdown] #hide
+// %% [markdown] #hide-cell
 /*
 # Hidden notes
 */`;

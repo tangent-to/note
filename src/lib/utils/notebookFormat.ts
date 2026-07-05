@@ -2,12 +2,12 @@ import type { Notebook, NotebookCell } from "../types/notebook";
 
 /**
  * Cell tags carried on the `// %%` delimiter line, e.g.
- * `// %% [javascript] #hide #skip`. Unknown tags are ignored so the
+ * `// %% [javascript] #hide-cell #skip`. Unknown tags are ignored so the
  * format stays forward-compatible.
  */
 export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly">): string {
   const tags = [
-    cell.collapsed ? "#hide" : null,
+    cell.collapsed ? "#hide-cell" : null,
     cell.outputCollapsed ? "#hide-output" : null,
     cell.skipped ? "#skip" : null,
     cell.readOnly ? "#readonly" : null,
@@ -20,7 +20,8 @@ export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
   const tags = new Set(
     (delimiterLine.match(/#[\w-]+/g) ?? []).map((t) => t.slice(1)),
   );
-  if (tags.has("hide")) cell.collapsed = true;
+  // "hide" is accepted as a legacy alias of "hide-cell".
+  if (tags.has("hide-cell") || tags.has("hide")) cell.collapsed = true;
   if (tags.has("hide-output")) cell.outputCollapsed = true;
   if (tags.has("skip")) cell.skipped = true;
   if (tags.has("readonly")) cell.readOnly = true;
