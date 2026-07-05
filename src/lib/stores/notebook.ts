@@ -62,6 +62,30 @@ reactiveMode.subscribe((on) => {
   }
 });
 
+// Where cell outputs render relative to the cell content: 'below' (default,
+// Jupyter-style) or 'above' (Observable-style). Persisted across sessions.
+const OUTPUT_POSITION_KEY = 'tangent-output-position';
+
+export type OutputPosition = 'below' | 'above';
+
+function loadOutputPosition(): OutputPosition {
+  try {
+    return localStorage.getItem(OUTPUT_POSITION_KEY) === 'above' ? 'above' : 'below';
+  } catch {
+    return 'below';
+  }
+}
+
+export const outputPosition = writable<OutputPosition>(loadOutputPosition());
+
+outputPosition.subscribe((pos) => {
+  try {
+    localStorage.setItem(OUTPUT_POSITION_KEY, pos);
+  } catch {
+    // ignore persistence failures
+  }
+});
+
 // Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 

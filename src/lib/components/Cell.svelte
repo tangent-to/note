@@ -5,6 +5,7 @@
   import MonacoEditor from './MonacoEditor.svelte';
   import CellOutput from './CellOutput.svelte';
   import { theme, monacoTheme } from '../utils/theme';
+  import { outputPosition } from '../stores/notebook';
   import type { NotebookCell } from '../types/notebook';
 
   interface Props {
@@ -305,8 +306,23 @@
       </span>
     </div>
 
-    <!-- Main column: content + output -->
-    <div class="cell-main">
+    <!-- Main column: content + output. Output renders below the content by
+         default, or above it when the global output-position option is set
+         (Observable-style). -->
+    {#snippet outputBlock()}
+      {#if cell.output && !cell.outputCollapsed}
+        <CellOutput output={cell.output} />
+      {:else if cell.output && cell.outputCollapsed}
+        <div class="collapsed-output-indicator">
+          <span>Output hidden ({cell.output.type})</span>
+        </div>
+      {/if}
+    {/snippet}
+
+    <div class="cell-main" class:output-first={$outputPosition === 'above'}>
+      {#if $outputPosition === 'above'}
+        {@render outputBlock()}
+      {/if}
       {#if !cell.collapsed}
         {#if cell.type === 'code'}
           <div class="cell-content">
@@ -363,12 +379,8 @@
         </div>
       {/if}
 
-      {#if cell.output && !cell.outputCollapsed}
-        <CellOutput output={cell.output} />
-      {:else if cell.output && cell.outputCollapsed}
-        <div class="collapsed-output-indicator">
-          <span>Output hidden ({cell.output.type})</span>
-        </div>
+      {#if $outputPosition === 'below'}
+        {@render outputBlock()}
       {/if}
     </div>
 
@@ -701,6 +713,17 @@
     color: var(--text-faint);
     cursor: pointer;
     border-top: 1px solid var(--border);
+  }
+
+  /* When outputs sit above the content, flip the separating gap/border. */
+  .output-first :global(.output-container) {
+    margin-top: 0;
+    margin-bottom: 0.2rem;
+  }
+
+  .output-first .collapsed-output-indicator {
+    border-top: none;
+    border-bottom: 1px solid var(--border);
   }
 
   .collapsed-output-indicator:hover {

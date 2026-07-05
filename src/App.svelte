@@ -19,7 +19,8 @@
     selectedCellId,
     undoDeleteCell,
     resetExecutionCounter,
-    resetStaleTracking
+    resetStaleTracking,
+    outputPosition
   } from './lib/stores/notebook';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
@@ -296,6 +297,12 @@
       case 'toggle-reactive':
         reactiveMode.update(v => !v);
         break;
+      case 'toggle-output-position': {
+        const next = get(outputPosition) === 'above' ? 'below' : 'above';
+        outputPosition.set(next);
+        showToast(`Cell outputs now appear ${next} the code`, 'info');
+        break;
+      }
       case 'add-code-cell':
         addNewCell('code');
         break;
