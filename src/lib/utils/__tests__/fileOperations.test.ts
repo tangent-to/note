@@ -20,14 +20,14 @@ describe('slugify', () => {
 });
 
 describe('parseJSNotebook', () => {
-  it('marks cells tagged #hide-cell as collapsed', () => {
-    const text = `// %% [javascript] #hide-cell
+  it('marks cells tagged #collapse-cell as collapsed', () => {
+    const text = `// %% [javascript] #collapse-cell
 const secret = 42;
 
 // %% [javascript]
 secret * 2
 
-// %% [markdown] #hide-cell
+// %% [markdown] #collapse-cell
 /*
 # Hidden notes
 */`;
@@ -39,11 +39,11 @@ secret * 2
     expect(nb.cells[2].collapsed).toBe(true);
   });
 
-  it('parses #skip, #hide-output, and #readonly tags', () => {
+  it('parses #skip, #collapse-output, and #readonly tags', () => {
     const text = `// %% [javascript] #skip
 legacy();
 
-// %% [javascript] #hide-output #readonly
+// %% [javascript] #collapse-output #readonly
 setup();`;
     const nb = parseJSNotebook(text, 'test.js');
     expect(nb.cells[0].skipped).toBe(true);

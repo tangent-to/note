@@ -2,13 +2,13 @@ import type { Notebook, NotebookCell } from "../types/notebook";
 
 /**
  * Cell tags carried on the `// %%` delimiter line, e.g.
- * `// %% [javascript] #hide-cell #skip`. Unknown tags are ignored so the
- * format stays forward-compatible.
+ * `// %% [javascript] #collapse-cell #skip`. Unknown tags are ignored so
+ * the format stays forward-compatible.
  */
 export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly">): string {
   const tags = [
-    cell.collapsed ? "#hide-cell" : null,
-    cell.outputCollapsed ? "#hide-output" : null,
+    cell.collapsed ? "#collapse-cell" : null,
+    cell.outputCollapsed ? "#collapse-output" : null,
     cell.skipped ? "#skip" : null,
     cell.readOnly ? "#readonly" : null,
   ].filter(Boolean);
@@ -20,9 +20,9 @@ export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
   const tags = new Set(
     (delimiterLine.match(/#[\w-]+/g) ?? []).map((t) => t.slice(1)),
   );
-  // "hide" is accepted as a legacy alias of "hide-cell".
-  if (tags.has("hide-cell") || tags.has("hide")) cell.collapsed = true;
-  if (tags.has("hide-output")) cell.outputCollapsed = true;
+  // "hide-cell"/"hide" and "hide-output" are accepted as legacy aliases.
+  if (tags.has("collapse-cell") || tags.has("hide-cell") || tags.has("hide")) cell.collapsed = true;
+  if (tags.has("collapse-output") || tags.has("hide-output")) cell.outputCollapsed = true;
   if (tags.has("skip")) cell.skipped = true;
   if (tags.has("readonly")) cell.readOnly = true;
 }

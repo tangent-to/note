@@ -57,20 +57,20 @@ You can use **bold**, *italic*, and `code`.
 ### Cell Tags
 
 The delimiter can carry tags after the cell type. Tags can be combined
-(`// %% [javascript] #hide-cell #skip`), the UI equivalents live in each
-cell's ⋮ menu, and every tag round-trips through export/import.
+(`// %% [javascript] #collapse-cell #skip`), the UI equivalents live in
+each cell's ⋮ menu, and every tag round-trips through export/import.
 
-#### `#hide-cell` — collapsed cell
+#### `#collapse-cell` — collapsed cell
 
 ```javascript
-// %% [javascript] #hide-cell
+// %% [javascript] #collapse-cell
 // setup code that would clutter the page
 const config = { retries: 3 };
 ```
 
-A cell tagged `#hide-cell` still runs normally but renders collapsed in
-the UI (only its first line is shown; click to expand). `#hide` is
-accepted as a legacy alias when reading files.
+A cell tagged `#collapse-cell` still runs normally but renders collapsed
+in the UI (only its first line is shown; click to expand). `#hide` and
+`#hide-cell` are accepted as legacy aliases when reading files.
 
 #### `#skip` — disabled cell
 
@@ -85,14 +85,15 @@ its run button, Run All, stale re-runs, and reactive cascades. Its edits
 don't mark downstream cells stale. Like disabled cells in marimo or frozen
 cells in Jupyter. Re-enable it from the cell menu.
 
-#### `#hide-output` — collapsed output
+#### `#collapse-output` — collapsed output
 
 ```javascript
-// %% [javascript] #hide-output
+// %% [javascript] #collapse-output
 verboseDiagnostics();
 ```
 
-The cell runs, but its output renders collapsed.
+The cell runs, but its output renders collapsed. `#hide-output` is
+accepted as a legacy alias when reading files.
 
 #### `#readonly` — locked cell
 
