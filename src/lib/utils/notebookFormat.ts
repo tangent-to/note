@@ -1,6 +1,32 @@
 import type { Notebook, NotebookCell } from "../types/notebook";
 
 /**
+ * Cell tags carried on the `// %%` delimiter line, e.g.
+ * `// %% [javascript] #hide #skip`. Unknown tags are ignored so the
+ * format stays forward-compatible.
+ */
+export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly">): string {
+  const tags = [
+    cell.collapsed ? "#hide" : null,
+    cell.outputCollapsed ? "#hide-output" : null,
+    cell.skipped ? "#skip" : null,
+    cell.readOnly ? "#readonly" : null,
+  ].filter(Boolean);
+  return tags.length ? ` ${tags.join(" ")}` : "";
+}
+
+/** Apply the tags found on a delimiter line to a freshly parsed cell. */
+export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
+  const tags = new Set(
+    (delimiterLine.match(/#[\w-]+/g) ?? []).map((t) => t.slice(1)),
+  );
+  if (tags.has("hide")) cell.collapsed = true;
+  if (tags.has("hide-output")) cell.outputCollapsed = true;
+  if (tags.has("skip")) cell.skipped = true;
+  if (tags.has("readonly")) cell.readOnly = true;
+}
+
+/**
  * Serialize a notebook to Jupytext-style format
  * Format:
  * // %% [markdown]
@@ -23,9 +49,9 @@ export function serializeNotebook(notebook: Notebook): string {
 
   // Serialize each cell
   notebook.cells.forEach((cell, index) => {
-    // Collapsed cells carry a #hide tag on the delimiter so the state
-    // survives a round-trip through the file.
-    const tags = cell.collapsed ? " #hide" : "";
+    // Cell state (collapsed/skipped/…) rides on the delimiter as tags so
+    // it survives a round-trip through the file.
+    const tags = serializeCellTags(cell);
     // Add cell delimiter
     if (cell.type === "markdown") {
       lines.push(`// %% [markdown]${tags}`);
@@ -71,6 +97,10 @@ export function parseNotebook(
   // Skip any lines before the header block
   while (i < lines.length && lines[i].trim() !== "// ---") {
     i++;
+  }
+  // No header at all: start over and parse the whole file as cells.
+  if (i >= lines.length) {
+    i = 0;
   }
   // Parse header metadata if present
   if (lines[i]?.trim() === "// ---") {
@@ -118,10 +148,7 @@ export function parseNotebook(
         output: null,
         isRunning: false,
       };
-      // A #hide tag on the delimiter renders the cell collapsed in the UI.
-      if (/(^|\s)#hide\b/.test(line)) {
-        currentCell.collapsed = true;
-      }
+      applyCellTags(currentCell, line);
 
       // Check if next line starts a markdown block
       if (

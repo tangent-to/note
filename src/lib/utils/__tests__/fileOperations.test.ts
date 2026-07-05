@@ -39,6 +39,20 @@ secret * 2
     expect(nb.cells[2].collapsed).toBe(true);
   });
 
+  it('parses #skip, #hide-output, and #readonly tags', () => {
+    const text = `// %% [javascript] #skip
+legacy();
+
+// %% [javascript] #hide-output #readonly
+setup();`;
+    const nb = parseJSNotebook(text, 'test.js');
+    expect(nb.cells[0].skipped).toBe(true);
+    expect(nb.cells[0].collapsed).toBeUndefined();
+    expect(nb.cells[1].outputCollapsed).toBe(true);
+    expect(nb.cells[1].readOnly).toBe(true);
+    expect(nb.cells[1].collapsed).toBeUndefined();
+  });
+
   it('parses a simple JS notebook', () => {
     const text = `// ---
 // title: Test

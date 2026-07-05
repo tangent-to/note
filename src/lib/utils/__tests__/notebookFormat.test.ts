@@ -61,6 +61,24 @@ describe('serializeNotebook', () => {
     expect(output).toContain('// %% [javascript]\nx');
   });
 
+  it('serializes combined cell tags', () => {
+    const notebook = makeNotebook({
+      cells: [
+        {
+          id: 'cell-1',
+          type: 'code',
+          content: 'const x = 1;',
+          collapsed: true,
+          skipped: true,
+          outputCollapsed: true,
+          readOnly: true,
+        },
+      ],
+    });
+    const output = serializeNotebook(notebook);
+    expect(output).toContain('// %% [javascript] #hide #hide-output #skip #readonly');
+  });
+
   it('handles empty cells', () => {
     const notebook = makeNotebook({
       cells: [{ id: 'cell-1', type: 'code', content: '' }],
@@ -112,6 +130,30 @@ describe('parseNotebook', () => {
     const parsed = parseNotebook(serializeNotebook(original), 'test.js');
     expect(parsed.cells[0].collapsed).toBe(true);
     expect(parsed.cells[1].collapsed).toBeUndefined();
+  });
+
+  it('round-trips skip, hide-output, and readonly tags', () => {
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'a', skipped: true },
+        { id: 'cell-2', type: 'code', content: 'b', outputCollapsed: true },
+        { id: 'cell-3', type: 'code', content: 'c', readOnly: true },
+        { id: 'cell-4', type: 'code', content: 'd' },
+      ],
+    });
+    const parsed = parseNotebook(serializeNotebook(original), 'test.js');
+    expect(parsed.cells[0].skipped).toBe(true);
+    expect(parsed.cells[1].outputCollapsed).toBe(true);
+    expect(parsed.cells[2].readOnly).toBe(true);
+    expect(parsed.cells[3].skipped).toBeUndefined();
+    expect(parsed.cells[3].outputCollapsed).toBeUndefined();
+    expect(parsed.cells[3].readOnly).toBeUndefined();
+  });
+
+  it('does not confuse #hide-output with #hide', () => {
+    const parsed = parseNotebook('// %% [javascript] #hide-output\nconst x = 1;', 'test.js');
+    expect(parsed.cells[0].outputCollapsed).toBe(true);
+    expect(parsed.cells[0].collapsed).toBeUndefined();
   });
 
   it('extracts title from header', () => {

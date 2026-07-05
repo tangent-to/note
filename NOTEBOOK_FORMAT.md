@@ -56,9 +56,11 @@ You can use **bold**, *italic*, and `code`.
 
 ### Cell Tags
 
-The delimiter can carry tags after the cell type:
+The delimiter can carry tags after the cell type. Tags can be combined
+(`// %% [javascript] #hide #skip`), the UI equivalents live in each cell's
+⋮ menu, and every tag round-trips through export/import.
 
-#### `#hide` — collapsed cells
+#### `#hide` — collapsed cell
 
 ```javascript
 // %% [javascript] #hide
@@ -67,9 +69,42 @@ const config = { retries: 3 };
 ```
 
 A cell tagged `#hide` still runs normally but renders collapsed in the UI
-(only its first line is shown; click to expand). Collapsing or expanding a
-cell in the UI updates the tag on export, so the state round-trips through
-the file. Unknown tags are ignored.
+(only its first line is shown; click to expand).
+
+#### `#skip` — disabled cell
+
+```javascript
+// %% [javascript] #skip
+// kept around for reference, never executed
+const oldImplementation = () => {};
+```
+
+A cell tagged `#skip` is greyed out and excluded from every execution path:
+its run button, Run All, stale re-runs, and reactive cascades. Its edits
+don't mark downstream cells stale. Like disabled cells in marimo or frozen
+cells in Jupyter. Re-enable it from the cell menu.
+
+#### `#hide-output` — collapsed output
+
+```javascript
+// %% [javascript] #hide-output
+verboseDiagnostics();
+```
+
+The cell runs, but its output renders collapsed.
+
+#### `#readonly` — locked cell
+
+```javascript
+// %% [javascript] #readonly
+// don't touch: notebook plumbing
+const db = await openDatabase();
+```
+
+The cell runs normally but its content can't be edited in the UI until
+unlocked from the cell menu (like Jupyter's lock-cell).
+
+Unknown tags are ignored, so the format stays forward-compatible.
 
 Because tags live inside a line comment after the `// %%` prefix, files
 using them remain plain JavaScript and stay compatible with editors that

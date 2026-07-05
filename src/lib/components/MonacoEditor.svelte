@@ -144,6 +144,12 @@
     monacoLib.editor.setTheme(theme);
   });
 
+  // Sync read-only state when prop changes
+  $effect(() => {
+    if (!editorReady || !editor) return;
+    editor.updateOptions({ readOnly });
+  });
+
   // Sync editor language when prop changes
   $effect(() => {
     if (!editorReady || !editor || !monacoLib) return;
