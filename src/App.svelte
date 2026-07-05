@@ -19,13 +19,15 @@
     selectedCellId,
     undoDeleteCell,
     resetExecutionCounter,
-    resetStaleTracking
+    resetStaleTracking,
+    outputPosition
   } from './lib/stores/notebook';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
-  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, type ImportRequest } from './lib/utils/urlImport';
+  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, notebooksEquivalent, type ImportRequest } from './lib/utils/urlImport';
+  import type { Notebook as NotebookDoc } from './lib/types/notebook';
 
   let rightSidebarOpen = $state(false);
   let rightSidebarTab = $state<'info' | 'variables' | 'data'>('info');
@@ -57,9 +59,11 @@
     { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
   ];
 
-  // Pending destructive navigation (New / Import) awaiting an unsaved-changes
-  // decision. When set, the confirmation modal is shown.
-  let pendingNav: { run: () => void; label: string } | null = $state(null);
+  // Pending destructive navigation (New / Import / open-from-link) awaiting a
+  // save decision. When set, the confirmation modal is shown. `message`
+  // overrides the default unsaved-changes wording; `onCancel` runs when the
+  // user backs out.
+  let pendingNav: { run: () => void; label: string; message?: string; onCancel?: () => void } | null = $state(null);
   let savingPending = $state(false);
 
   // Run `action` immediately if there's nothing to lose, otherwise ask the user
@@ -73,7 +77,9 @@
   }
 
   function cancelPending() {
+    const onCancel = pendingNav?.onCancel;
     pendingNav = null;
+    onCancel?.();
   }
 
   function discardAndContinue() {
@@ -167,21 +173,52 @@
   }
 
   async function loadNotebookFromUrl(request: ImportRequest) {
+    // Show the locally saved notebook while the link is fetched — it's also
+    // what's at stake if the import replaces it.
+    const cached = getLocalStorageMeta() ? loadFromLocalStorage() : null;
+    if (cached) {
+      currentNotebook.set(cached);
+      markNotebookClean();
+    }
+
     try {
       const notebook = await fetchNotebookFromUrl(request);
-      resetExecutionCounter();
-      resetStaleTracking();
-      currentNotebook.set(notebook);
-      markNotebookClean();
-      // Drop the import URL so a refresh reopens the autosaved copy instead
-      // of re-fetching and overwriting any edits made since.
-      history.replaceState(null, '', '/');
-      showToast(`Loaded “${notebook.name}” from ${new URL(request.fetchUrl).hostname}`, 'info');
+      const hostname = new URL(request.fetchUrl).hostname;
+
+      if (cached && !notebooksEquivalent(cached, notebook)) {
+        // Opening the link would replace local work: ask first.
+        pendingNav = {
+          run: () => applyImportedNotebook(notebook, hostname),
+          label: `open “${notebook.name}”`,
+          message: `This link opens “${notebook.name}”, which will replace your current notebook “${cached.name}”. Save the current one first?`,
+          // Keep the local notebook; drop the import URL so a refresh
+          // doesn't re-ask.
+          onCancel: () => history.replaceState(null, '', '/'),
+        };
+      } else {
+        applyImportedNotebook(notebook, hostname);
+      }
     } catch (err: any) {
       console.error('URL import failed:', err);
-      showToast(`Couldn’t open the notebook from the link: ${err.message}`, 'error');
-      restoreOrLoadSample();
+      showToast(
+        cached
+          ? `Couldn’t open the notebook from the link: ${err.message}. Showing your last local notebook instead.`
+          : `Couldn’t open the notebook from the link: ${err.message}.`,
+        'error'
+      );
+      if (!cached) loadSampleNotebook();
     }
+  }
+
+  function applyImportedNotebook(notebook: NotebookDoc, hostname: string) {
+    resetExecutionCounter();
+    resetStaleTracking();
+    currentNotebook.set(notebook);
+    markNotebookClean();
+    // Drop the import URL so a refresh reopens the autosaved copy instead
+    // of re-fetching and overwriting any edits made since.
+    history.replaceState(null, '', '/');
+    showToast(`Loaded “${notebook.name}” from ${hostname}`, 'info');
   }
 
   async function loadSampleNotebook() {
@@ -296,6 +333,12 @@
       case 'toggle-reactive':
         reactiveMode.update(v => !v);
         break;
+      case 'toggle-output-position': {
+        const next = get(outputPosition) === 'above' ? 'below' : 'above';
+        outputPosition.set(next);
+        showToast(`Cell outputs now appear ${next} the code`, 'info');
+        break;
+      }
       case 'add-code-cell':
         addNewCell('code');
         break;
@@ -550,10 +593,15 @@
       onclick={(e) => { if (e.target === e.currentTarget) cancelPending(); }}
     >
       <div class="unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
-        <h3 id="unsaved-title">Unsaved changes</h3>
+        <h3 id="unsaved-title">{pendingNav.message ? 'Replace your notebook?' : 'Unsaved changes'}</h3>
         <p>
-          You have unsaved changes. Save them before you {pendingNav.label}?
-          Discarding will permanently lose your current work.
+          {#if pendingNav.message}
+            {pendingNav.message}
+            Discarding will permanently lose your current work.
+          {:else}
+            You have unsaved changes. Save them before you {pendingNav.label}?
+            Discarding will permanently lose your current work.
+          {/if}
         </p>
         <div class="unsaved-actions">
           <button class="btn-ghost" onclick={cancelPending} disabled={savingPending}>Cancel</button>

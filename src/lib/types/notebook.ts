@@ -7,6 +7,10 @@ export interface NotebookCell {
   executionOrder?: number;
   collapsed?: boolean;
   outputCollapsed?: boolean;
+  /** Skipped cells are greyed out and excluded from execution (tag: #skip). */
+  skipped?: boolean;
+  /** Read-only cells can be run but not edited (tag: #readonly). */
+  readOnly?: boolean;
 }
 
 export interface CellOutput {

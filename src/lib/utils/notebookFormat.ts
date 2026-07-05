@@ -1,6 +1,33 @@
 import type { Notebook, NotebookCell } from "../types/notebook";
 
 /**
+ * Cell tags carried on the `// %%` delimiter line, e.g.
+ * `// %% [javascript] #collapse-cell #skip`. Unknown tags are ignored so
+ * the format stays forward-compatible.
+ */
+export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly">): string {
+  const tags = [
+    cell.collapsed ? "#collapse-cell" : null,
+    cell.outputCollapsed ? "#collapse-output" : null,
+    cell.skipped ? "#skip" : null,
+    cell.readOnly ? "#readonly" : null,
+  ].filter(Boolean);
+  return tags.length ? ` ${tags.join(" ")}` : "";
+}
+
+/** Apply the tags found on a delimiter line to a freshly parsed cell. */
+export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
+  const tags = new Set(
+    (delimiterLine.match(/#[\w-]+/g) ?? []).map((t) => t.slice(1)),
+  );
+  // "hide-cell"/"hide" and "hide-output" are accepted as legacy aliases.
+  if (tags.has("collapse-cell") || tags.has("hide-cell") || tags.has("hide")) cell.collapsed = true;
+  if (tags.has("collapse-output") || tags.has("hide-output")) cell.outputCollapsed = true;
+  if (tags.has("skip")) cell.skipped = true;
+  if (tags.has("readonly")) cell.readOnly = true;
+}
+
+/**
  * Serialize a notebook to Jupytext-style format
  * Format:
  * // %% [markdown]
@@ -23,9 +50,12 @@ export function serializeNotebook(notebook: Notebook): string {
 
   // Serialize each cell
   notebook.cells.forEach((cell, index) => {
+    // Cell state (collapsed/skipped/…) rides on the delimiter as tags so
+    // it survives a round-trip through the file.
+    const tags = serializeCellTags(cell);
     // Add cell delimiter
     if (cell.type === "markdown") {
-      lines.push(`// %% [markdown]`);
+      lines.push(`// %% [markdown]${tags}`);
       lines.push("/*");
       // Add markdown content, ensuring each line is preserved
       const content = cell.content.trim();
@@ -34,7 +64,7 @@ export function serializeNotebook(notebook: Notebook): string {
       }
       lines.push("*/");
     } else {
-      lines.push(`// %% [javascript]`);
+      lines.push(`// %% [javascript]${tags}`);
       // Add code content directly
       const content = cell.content.trim();
       if (content) {
@@ -68,6 +98,10 @@ export function parseNotebook(
   // Skip any lines before the header block
   while (i < lines.length && lines[i].trim() !== "// ---") {
     i++;
+  }
+  // No header at all: start over and parse the whole file as cells.
+  if (i >= lines.length) {
+    i = 0;
   }
   // Parse header metadata if present
   if (lines[i]?.trim() === "// ---") {
@@ -115,6 +149,7 @@ export function parseNotebook(
         output: null,
         isRunning: false,
       };
+      applyCellTags(currentCell, line);
 
       // Check if next line starts a markdown block
       if (

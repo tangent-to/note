@@ -1,5 +1,6 @@
 import type { Notebook } from '../types/notebook';
 import { ExportService } from './exportService';
+import { applyCellTags } from './notebookFormat';
 import { toast } from './toast';
 
 const exportService = new ExportService();
@@ -103,6 +104,7 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
+        applyCellTags(currentCell, line);
         inMarkdown = false;
         markdownContent = '';
         codeContent = '';

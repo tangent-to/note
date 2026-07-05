@@ -110,6 +110,17 @@ describe('computeStaleCells', () => {
     expect(stale.has('b')).toBe(false);
     expect(stale.has('c')).toBe(false);
   });
+
+  it('excludes skipped cells from staleness entirely', () => {
+    const runInfo = runInfoAt({ a: 1, b: 2, c: 3 });
+    // 'a' was edited since it ran, but is now skipped: neither it nor its
+    // dependents should be reported stale.
+    const edited = cells.map((c) =>
+      c.id === 'a' ? { ...c, content: 'const x = 99;', skipped: true } : c
+    );
+    const stale = computeStaleCells(edited, runInfo);
+    expect(stale.size).toBe(0);
+  });
 });
 
 describe('getDownstreamCells', () => {

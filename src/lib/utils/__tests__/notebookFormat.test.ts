@@ -47,6 +47,38 @@ describe('serializeNotebook', () => {
     expect(output).toContain('console.log(x)');
   });
 
+  it('tags collapsed cells with #collapse-cell on the delimiter', () => {
+    const notebook = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'const x = 1;', collapsed: true },
+        { id: 'cell-2', type: 'markdown', content: '# Hi', collapsed: true },
+        { id: 'cell-3', type: 'code', content: 'x' },
+      ],
+    });
+    const output = serializeNotebook(notebook);
+    expect(output).toContain('// %% [javascript] #collapse-cell\nconst x = 1;');
+    expect(output).toContain('// %% [markdown] #collapse-cell');
+    expect(output).toContain('// %% [javascript]\nx');
+  });
+
+  it('serializes combined cell tags', () => {
+    const notebook = makeNotebook({
+      cells: [
+        {
+          id: 'cell-1',
+          type: 'code',
+          content: 'const x = 1;',
+          collapsed: true,
+          skipped: true,
+          outputCollapsed: true,
+          readOnly: true,
+        },
+      ],
+    });
+    const output = serializeNotebook(notebook);
+    expect(output).toContain('// %% [javascript] #collapse-cell #collapse-output #skip #readonly');
+  });
+
   it('handles empty cells', () => {
     const notebook = makeNotebook({
       cells: [{ id: 'cell-1', type: 'code', content: '' }],
@@ -86,6 +118,53 @@ describe('parseNotebook', () => {
     const parsed = parseNotebook('', 'empty.js');
     expect(parsed.cells).toHaveLength(1);
     expect(parsed.cells[0].type).toBe('code');
+  });
+
+  it('accepts #hide, #hide-cell, and #hide-output as legacy aliases', () => {
+    const parsed = parseNotebook(
+      '// %% [javascript] #hide\na\n\n// %% [javascript] #hide-cell\nb\n\n// %% [javascript] #hide-output\nc',
+      'test.js'
+    );
+    expect(parsed.cells[0].collapsed).toBe(true);
+    expect(parsed.cells[1].collapsed).toBe(true);
+    expect(parsed.cells[2].outputCollapsed).toBe(true);
+    expect(parsed.cells[2].collapsed).toBeUndefined();
+  });
+
+  it('round-trips the collapsed state via the #collapse-cell tag', () => {
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'const x = 1;', collapsed: true },
+        { id: 'cell-2', type: 'code', content: 'x + 1' },
+      ],
+    });
+    const parsed = parseNotebook(serializeNotebook(original), 'test.js');
+    expect(parsed.cells[0].collapsed).toBe(true);
+    expect(parsed.cells[1].collapsed).toBeUndefined();
+  });
+
+  it('round-trips skip, collapse-output, and readonly tags', () => {
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'a', skipped: true },
+        { id: 'cell-2', type: 'code', content: 'b', outputCollapsed: true },
+        { id: 'cell-3', type: 'code', content: 'c', readOnly: true },
+        { id: 'cell-4', type: 'code', content: 'd' },
+      ],
+    });
+    const parsed = parseNotebook(serializeNotebook(original), 'test.js');
+    expect(parsed.cells[0].skipped).toBe(true);
+    expect(parsed.cells[1].outputCollapsed).toBe(true);
+    expect(parsed.cells[2].readOnly).toBe(true);
+    expect(parsed.cells[3].skipped).toBeUndefined();
+    expect(parsed.cells[3].outputCollapsed).toBeUndefined();
+    expect(parsed.cells[3].readOnly).toBeUndefined();
+  });
+
+  it('does not confuse #collapse-output with #collapse-cell', () => {
+    const parsed = parseNotebook('// %% [javascript] #collapse-output\nconst x = 1;', 'test.js');
+    expect(parsed.cells[0].outputCollapsed).toBe(true);
+    expect(parsed.cells[0].collapsed).toBeUndefined();
   });
 
   it('extracts title from header', () => {

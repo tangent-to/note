@@ -54,6 +54,65 @@ You can use **bold**, *italic*, and `code`.
 */
 ```
 
+### Cell Tags
+
+The delimiter can carry tags after the cell type. Tags can be combined
+(`// %% [javascript] #collapse-cell #skip`), the UI equivalents live in
+each cell's ⋮ menu, and every tag round-trips through export/import.
+
+#### `#collapse-cell` — collapsed cell
+
+```javascript
+// %% [javascript] #collapse-cell
+// setup code that would clutter the page
+const config = { retries: 3 };
+```
+
+A cell tagged `#collapse-cell` still runs normally but renders collapsed
+in the UI (only its first line is shown; click to expand). `#hide` and
+`#hide-cell` are accepted as legacy aliases when reading files.
+
+#### `#skip` — disabled cell
+
+```javascript
+// %% [javascript] #skip
+// kept around for reference, never executed
+const oldImplementation = () => {};
+```
+
+A cell tagged `#skip` is greyed out and excluded from every execution path:
+its run button, Run All, stale re-runs, and reactive cascades. Its edits
+don't mark downstream cells stale. Like disabled cells in marimo or frozen
+cells in Jupyter. Re-enable it from the cell menu.
+
+#### `#collapse-output` — collapsed output
+
+```javascript
+// %% [javascript] #collapse-output
+verboseDiagnostics();
+```
+
+The cell runs, but its output renders collapsed. `#hide-output` is
+accepted as a legacy alias when reading files.
+
+#### `#readonly` — locked cell
+
+```javascript
+// %% [javascript] #readonly
+// don't touch: notebook plumbing
+const db = await openDatabase();
+```
+
+The cell runs normally but its content can't be edited in the UI until
+unlocked from the cell menu (like Jupyter's lock-cell).
+
+Unknown tags are ignored, so the format stays forward-compatible.
+
+Because tags live inside a line comment after the `// %%` prefix, files
+using them remain plain JavaScript and stay compatible with editors that
+detect percent-format cells (e.g. Zed's REPL, which matches the `// %%`
+prefix and ignores the rest of the line).
+
 ## Example Notebook
 
 ```javascript

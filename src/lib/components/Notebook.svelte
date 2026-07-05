@@ -92,6 +92,10 @@
 
     if (cell.type === 'markdown') return;
 
+    // Skipped cells are excluded from every execution path (direct run,
+    // run-all, stale runs, reactive cascades, input-driven reruns).
+    if (cell.skipped) return;
+
     const execOrder = getNextExecutionOrder();
 
     currentNotebook.update(nb => {
@@ -345,6 +349,36 @@
     });
   }
 
+  function handleToggleSkip({ cellId }: { cellId: string }) {
+    currentNotebook.update(notebook => {
+      if (!notebook) return notebook;
+      return {
+        ...notebook,
+        cells: notebook.cells.map((cell: NotebookCell) =>
+          cell.id === cellId
+            ? { ...cell, skipped: !cell.skipped }
+            : cell
+        )
+      };
+    });
+    // Skipping removes a cell from the stale set; re-enabling may restore it.
+    recomputeStaleCells(getNotebookSnapshot());
+  }
+
+  function handleToggleReadOnly({ cellId }: { cellId: string }) {
+    currentNotebook.update(notebook => {
+      if (!notebook) return notebook;
+      return {
+        ...notebook,
+        cells: notebook.cells.map((cell: NotebookCell) =>
+          cell.id === cellId
+            ? { ...cell, readOnly: !cell.readOnly }
+            : cell
+        )
+      };
+    });
+  }
+
   function handleToggleOutputCollapse({ cellId }: { cellId: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -480,6 +514,8 @@
           ontypeChange={handleCellTypeChange}
           ontoggleCollapse={handleToggleCollapse}
           ontoggleOutputCollapse={handleToggleOutputCollapse}
+          ontoggleSkip={handleToggleSkip}
+          ontoggleReadOnly={handleToggleReadOnly}
           ondragstart={handleDragStart}
           ondragover={handleDragOver}
           ondragend={handleDragEnd}

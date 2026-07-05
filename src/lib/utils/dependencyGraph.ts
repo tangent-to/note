@@ -14,6 +14,7 @@ export interface CellLike {
   id: string;
   type: 'code' | 'markdown';
   content: string;
+  skipped?: boolean;
 }
 
 export interface CellAnalysis {
@@ -187,7 +188,9 @@ export function computeStaleCells(
   cells: CellLike[],
   runInfo: Map<string, RunRecord>
 ): Set<string> {
-  const codeCells = cells.filter((c) => c.type === 'code');
+  // Skipped cells never run, so they can't be stale and their edits
+  // shouldn't propagate staleness downstream.
+  const codeCells = cells.filter((c) => c.type === 'code' && !c.skipped);
   const { analyses, producersByName } = buildIndex(codeCells);
 
   const stale = new Set<string>();

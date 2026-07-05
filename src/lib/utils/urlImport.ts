@@ -89,13 +89,33 @@ export function decodeRedirect(search: string): { pathname: string; search: stri
     : { pathname: p.slice(0, q), search: p.slice(q) };
 }
 
+/** True when two notebooks have the same identity and cell content — used
+ *  to skip the "save your local notebook?" prompt when a link resolves to
+ *  exactly what's already loaded (e.g. re-clicking the same link). Outputs
+ *  and view state (collapsed, etc.) are ignored: content is the work. */
+export function notebooksEquivalent(a: Notebook, b: Notebook): boolean {
+  return (
+    a.id === b.id &&
+    a.cells.length === b.cells.length &&
+    a.cells.every(
+      (cell, i) =>
+        cell.type === b.cells[i].type &&
+        cell.content.trim() === b.cells[i].content.trim(),
+    )
+  );
+}
+
 /** Fetch and parse the notebook behind an ImportRequest. Throws with a
  *  human-readable message on network/CORS errors, HTTP errors, or content
  *  that isn't a notebook. */
 export async function fetchNotebookFromUrl(request: ImportRequest): Promise<Notebook> {
   let res: Response;
   try {
-    res = await fetch(request.fetchUrl);
+    // 'no-cache' revalidates with the server instead of trusting the HTTP
+    // cache: raw.githubusercontent.com serves max-age=300, so the default
+    // mode would keep opening a stale copy for up to 5 minutes after the
+    // file changed (longer for hosts with bigger max-age).
+    res = await fetch(request.fetchUrl, { cache: 'no-cache' });
   } catch {
     throw new Error('the file couldn’t be fetched (network error, or the host doesn’t allow cross-origin requests)');
   }

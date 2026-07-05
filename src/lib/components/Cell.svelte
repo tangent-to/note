@@ -5,6 +5,7 @@
   import MonacoEditor from './MonacoEditor.svelte';
   import CellOutput from './CellOutput.svelte';
   import { theme, monacoTheme } from '../utils/theme';
+  import { outputPosition } from '../stores/notebook';
   import type { NotebookCell } from '../types/notebook';
 
   interface Props {
@@ -22,6 +23,8 @@
     ontypeChange?: (detail: { cellId: string; type: 'code' | 'markdown' }) => void;
     ontoggleCollapse?: (detail: { cellId: string }) => void;
     ontoggleOutputCollapse?: (detail: { cellId: string }) => void;
+    ontoggleSkip?: (detail: { cellId: string }) => void;
+    ontoggleReadOnly?: (detail: { cellId: string }) => void;
     ondragstart?: (detail: { cellId: string }) => void;
     ondragover?: (detail: { cellId: string; position: 'above' | 'below' }) => void;
     ondragend?: () => void;
@@ -42,6 +45,8 @@
     ontypeChange,
     ontoggleCollapse,
     ontoggleOutputCollapse,
+    ontoggleSkip,
+    ontoggleReadOnly,
     ondragstart,
     ondragover,
     ondragend,
@@ -102,6 +107,10 @@
   }
 
   function handleEditMarkdown() {
+    if (cell.readOnly) {
+      onselect?.({ cellId: cell.id });
+      return;
+    }
     isEditingMarkdown = true;
     onselect?.({ cellId: cell.id });
     // Move the caret into the textarea we just revealed. The selection effect
@@ -245,6 +254,7 @@
 <div
   class="cell-wrapper {isSelected ? 'selected' : ''} {isDragging ? 'dragging' : ''}"
   class:stale={isStale}
+  class:skipped={cell.skipped}
   class:drag-above={isDraggedOver && dragPosition === 'above'}
   class:drag-below={isDraggedOver && dragPosition === 'below'}
   data-testid="cell-{cell.id}"
@@ -268,8 +278,8 @@
       <button
         onclick={(e) => { e.stopPropagation(); handleRun(); }}
         class="run-btn"
-        disabled={cell.isRunning}
-        title="Run cell (Shift+Enter)"
+        disabled={cell.isRunning || cell.skipped}
+        title={cell.skipped ? 'Cell is skipped — enable it from the cell menu to run' : 'Run cell (Shift+Enter)'}
         data-testid="run-cell-btn"
       >
         {#if cell.isRunning}
@@ -285,6 +295,18 @@
           class:stale={isStale}
           title={isStale ? 'Stale: a dependency changed since this ran. Run to refresh.' : 'Execution order'}
         >{execLabel}</span>
+      {/if}
+
+      {#if cell.skipped}
+        <span class="skip-badge" title="This cell is skipped: it never runs">skip</span>
+      {/if}
+      {#if cell.readOnly}
+        <span class="lock-badge" title="This cell is read-only">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="4" y="11" width="16" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 018 0v4"/>
+          </svg>
+        </span>
       {/if}
 
       <span
@@ -305,8 +327,23 @@
       </span>
     </div>
 
-    <!-- Main column: content + output -->
-    <div class="cell-main">
+    <!-- Main column: content + output. Output renders below the content by
+         default, or above it when the global output-position option is set
+         (Observable-style). -->
+    {#snippet outputBlock()}
+      {#if cell.output && !cell.outputCollapsed}
+        <CellOutput output={cell.output} />
+      {:else if cell.output && cell.outputCollapsed}
+        <div class="collapsed-output-indicator">
+          <span>Output hidden ({cell.output.type})</span>
+        </div>
+      {/if}
+    {/snippet}
+
+    <div class="cell-main" class:output-first={$outputPosition === 'above'}>
+      {#if $outputPosition === 'above'}
+        {@render outputBlock()}
+      {/if}
       {#if !cell.collapsed}
         {#if cell.type === 'code'}
           <div class="cell-content">
@@ -316,6 +353,7 @@
               language="javascript"
               theme={monacoTheme($theme)}
               height="auto"
+              readOnly={cell.readOnly ?? false}
               onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
               onrun={handleRun}
               onrunAndAdvance={handleRunAndAdvance}
@@ -363,12 +401,8 @@
         </div>
       {/if}
 
-      {#if cell.output && !cell.outputCollapsed}
-        <CellOutput output={cell.output} />
-      {:else if cell.output && cell.outputCollapsed}
-        <div class="collapsed-output-indicator">
-          <span>Output hidden ({cell.output.type})</span>
-        </div>
+      {#if $outputPosition === 'below'}
+        {@render outputBlock()}
       {/if}
     </div>
 
@@ -397,6 +431,10 @@
           {#if cell.output}
             <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleOutputCollapse?.({ cellId: cell.id }))}>{cell.outputCollapsed ? 'Show output' : 'Hide output'}</button>
           {/if}
+          {#if cell.type === 'code'}
+            <button role="menuitem" class="menu-item" data-testid="skip-cell-btn" onclick={runMenu(() => ontoggleSkip?.({ cellId: cell.id }))}>{cell.skipped ? 'Enable cell' : 'Skip cell (never runs)'}</button>
+          {/if}
+          <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleReadOnly?.({ cellId: cell.id }))}>{cell.readOnly ? 'Unlock cell' : 'Lock cell (read-only)'}</button>
           <div class="menu-sep"></div>
           <button
             role="menuitem"
@@ -568,6 +606,38 @@
 
   .exec-order.stale { color: var(--warn-fg); }
 
+  /* Skipped cells: greyed out and visually inert, but still editable. Keep
+     the menu/gutter fully interactive so the cell can be re-enabled. */
+  .cell-wrapper.skipped .cell-main {
+    opacity: 0.45;
+    filter: grayscale(0.9);
+  }
+
+  .cell-wrapper.skipped .run-btn {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .skip-badge {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    padding: 0.1rem 0.3rem;
+    line-height: 1;
+  }
+
+  .lock-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+  }
+
   .drag-handle {
     display: flex;
     align-items: center;
@@ -701,6 +771,17 @@
     color: var(--text-faint);
     cursor: pointer;
     border-top: 1px solid var(--border);
+  }
+
+  /* When outputs sit above the content, flip the separating gap/border. */
+  .output-first :global(.output-container) {
+    margin-top: 0;
+    margin-bottom: 0.2rem;
+  }
+
+  .output-first .collapsed-output-indicator {
+    border-top: none;
+    border-bottom: 1px solid var(--border);
   }
 
   .collapsed-output-indicator:hover {

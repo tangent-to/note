@@ -20,6 +20,39 @@ describe('slugify', () => {
 });
 
 describe('parseJSNotebook', () => {
+  it('marks cells tagged #collapse-cell as collapsed', () => {
+    const text = `// %% [javascript] #collapse-cell
+const secret = 42;
+
+// %% [javascript]
+secret * 2
+
+// %% [markdown] #collapse-cell
+/*
+# Hidden notes
+*/`;
+    const nb = parseJSNotebook(text, 'test.js');
+    expect(nb.cells).toHaveLength(3);
+    expect(nb.cells[0].collapsed).toBe(true);
+    expect(nb.cells[0].content).toBe('const secret = 42;');
+    expect(nb.cells[1].collapsed).toBeUndefined();
+    expect(nb.cells[2].collapsed).toBe(true);
+  });
+
+  it('parses #skip, #collapse-output, and #readonly tags', () => {
+    const text = `// %% [javascript] #skip
+legacy();
+
+// %% [javascript] #collapse-output #readonly
+setup();`;
+    const nb = parseJSNotebook(text, 'test.js');
+    expect(nb.cells[0].skipped).toBe(true);
+    expect(nb.cells[0].collapsed).toBeUndefined();
+    expect(nb.cells[1].outputCollapsed).toBe(true);
+    expect(nb.cells[1].readOnly).toBe(true);
+    expect(nb.cells[1].collapsed).toBeUndefined();
+  });
+
   it('parses a simple JS notebook', () => {
     const text = `// ---
 // title: Test
