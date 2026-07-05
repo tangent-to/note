@@ -4,7 +4,9 @@ import {
   decodeRedirect,
   githubUrlToRaw,
   fetchNotebookFromUrl,
+  notebooksEquivalent,
 } from '../urlImport';
+import type { Notebook } from '../../types/notebook';
 
 describe('parseImportRequest', () => {
   it('returns null for a plain visit', () => {
@@ -111,6 +113,40 @@ describe('githubUrlToRaw', () => {
   it('leaves non-file github URLs and other hosts alone', () => {
     expect(githubUrlToRaw(new URL('https://github.com/o/r'))).toBeNull();
     expect(githubUrlToRaw(new URL('https://example.com/o/r/blob/main/b.js'))).toBeNull();
+  });
+});
+
+describe('notebooksEquivalent', () => {
+  const base = (): Notebook => ({
+    id: 'nb-1',
+    name: 'A',
+    createdAt: 1,
+    updatedAt: 2,
+    cells: [
+      { id: 'c1', type: 'code', content: 'const x = 1;' },
+      { id: 'c2', type: 'markdown', content: '# hi' },
+    ],
+  });
+
+  it('is true for same id and same cell content, ignoring outputs/view state', () => {
+    const a = base();
+    const b = base();
+    b.cells[0] = { ...b.cells[0], id: 'other', output: { type: 'text', content: '1', timestamp: 3 }, collapsed: true };
+    b.cells[0].content = '  const x = 1;\n';
+    expect(notebooksEquivalent(a, b)).toBe(true);
+  });
+
+  it('is false when content, cell count, or id differ', () => {
+    const edited = base();
+    edited.cells[0].content = 'const x = 2;';
+    expect(notebooksEquivalent(base(), edited)).toBe(false);
+
+    const extra = base();
+    extra.cells.push({ id: 'c3', type: 'code', content: 'x' });
+    expect(notebooksEquivalent(base(), extra)).toBe(false);
+
+    const renamedId = { ...base(), id: 'nb-2' };
+    expect(notebooksEquivalent(base(), renamedId)).toBe(false);
   });
 });
 
