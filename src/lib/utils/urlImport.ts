@@ -95,7 +95,11 @@ export function decodeRedirect(search: string): { pathname: string; search: stri
 export async function fetchNotebookFromUrl(request: ImportRequest): Promise<Notebook> {
   let res: Response;
   try {
-    res = await fetch(request.fetchUrl);
+    // 'no-cache' revalidates with the server instead of trusting the HTTP
+    // cache: raw.githubusercontent.com serves max-age=300, so the default
+    // mode would keep opening a stale copy for up to 5 minutes after the
+    // file changed (longer for hosts with bigger max-age).
+    res = await fetch(request.fetchUrl, { cache: 'no-cache' });
   } catch {
     throw new Error('the file couldn’t be fetched (network error, or the host doesn’t allow cross-origin requests)');
   }

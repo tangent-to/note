@@ -143,6 +143,12 @@ const a = 1;
     expect(nb.cells).toHaveLength(1);
   });
 
+  it('revalidates the HTTP cache so a re-clicked link gets the current file', async () => {
+    stubFetch({ ok: true, text: () => Promise.resolve(jsNotebook) } as Response);
+    await fetchNotebookFromUrl({ fetchUrl: 'https://x.co/nb.js', filename: 'nb.js' });
+    expect(globalThis.fetch).toHaveBeenCalledWith('https://x.co/nb.js', { cache: 'no-cache' });
+  });
+
   it('parses a .json notebook', async () => {
     const json = JSON.stringify({ id: 'j1', name: 'Json', cells: [{ id: 'c1', type: 'code', content: '1' }] });
     stubFetch({ ok: true, text: () => Promise.resolve(json) } as Response);

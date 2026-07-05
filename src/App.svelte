@@ -180,7 +180,7 @@
       showToast(`Loaded “${notebook.name}” from ${new URL(request.fetchUrl).hostname}`, 'info');
     } catch (err: any) {
       console.error('URL import failed:', err);
-      showToast(`Couldn’t open the notebook from the link: ${err.message}`, 'error');
+      showToast(`Couldn’t open the notebook from the link: ${err.message}. Showing your last local notebook instead.`, 'error');
       restoreOrLoadSample();
     }
   }
