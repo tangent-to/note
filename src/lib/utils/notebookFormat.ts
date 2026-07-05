@@ -23,9 +23,12 @@ export function serializeNotebook(notebook: Notebook): string {
 
   // Serialize each cell
   notebook.cells.forEach((cell, index) => {
+    // Collapsed cells carry a #hide tag on the delimiter so the state
+    // survives a round-trip through the file.
+    const tags = cell.collapsed ? " #hide" : "";
     // Add cell delimiter
     if (cell.type === "markdown") {
-      lines.push(`// %% [markdown]`);
+      lines.push(`// %% [markdown]${tags}`);
       lines.push("/*");
       // Add markdown content, ensuring each line is preserved
       const content = cell.content.trim();
@@ -34,7 +37,7 @@ export function serializeNotebook(notebook: Notebook): string {
       }
       lines.push("*/");
     } else {
-      lines.push(`// %% [javascript]`);
+      lines.push(`// %% [javascript]${tags}`);
       // Add code content directly
       const content = cell.content.trim();
       if (content) {
@@ -115,6 +118,10 @@ export function parseNotebook(
         output: null,
         isRunning: false,
       };
+      // A #hide tag on the delimiter renders the cell collapsed in the UI.
+      if (/(^|\s)#hide\b/.test(line)) {
+        currentCell.collapsed = true;
+      }
 
       // Check if next line starts a markdown block
       if (

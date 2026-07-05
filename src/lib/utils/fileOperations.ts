@@ -103,6 +103,10 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
+        // A #hide tag on the delimiter renders the cell collapsed in the UI.
+        if (/(^|\s)#hide\b/.test(line)) {
+          currentCell.collapsed = true;
+        }
         inMarkdown = false;
         markdownContent = '';
         codeContent = '';

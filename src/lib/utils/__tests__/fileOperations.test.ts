@@ -20,6 +20,25 @@ describe('slugify', () => {
 });
 
 describe('parseJSNotebook', () => {
+  it('marks cells tagged #hide as collapsed', () => {
+    const text = `// %% [javascript] #hide
+const secret = 42;
+
+// %% [javascript]
+secret * 2
+
+// %% [markdown] #hide
+/*
+# Hidden notes
+*/`;
+    const nb = parseJSNotebook(text, 'test.js');
+    expect(nb.cells).toHaveLength(3);
+    expect(nb.cells[0].collapsed).toBe(true);
+    expect(nb.cells[0].content).toBe('const secret = 42;');
+    expect(nb.cells[1].collapsed).toBeUndefined();
+    expect(nb.cells[2].collapsed).toBe(true);
+  });
+
   it('parses a simple JS notebook', () => {
     const text = `// ---
 // title: Test

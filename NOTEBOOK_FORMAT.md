@@ -54,6 +54,28 @@ You can use **bold**, *italic*, and `code`.
 */
 ```
 
+### Cell Tags
+
+The delimiter can carry tags after the cell type:
+
+#### `#hide` — collapsed cells
+
+```javascript
+// %% [javascript] #hide
+// setup code that would clutter the page
+const config = { retries: 3 };
+```
+
+A cell tagged `#hide` still runs normally but renders collapsed in the UI
+(only its first line is shown; click to expand). Collapsing or expanding a
+cell in the UI updates the tag on export, so the state round-trips through
+the file. Unknown tags are ignored.
+
+Because tags live inside a line comment after the `// %%` prefix, files
+using them remain plain JavaScript and stay compatible with editors that
+detect percent-format cells (e.g. Zed's REPL, which matches the `// %%`
+prefix and ignores the rest of the line).
+
 ## Example Notebook
 
 ```javascript
