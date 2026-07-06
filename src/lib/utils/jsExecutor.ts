@@ -571,7 +571,10 @@ export class JavaScriptExecutor {
       (window as any).__tangent_loadedModules =
         (window as any).__tangent_loadedModules || {};
 
-      const imports: Array<{ spec: string; locals: string[] }> = [];
+      const imports: Array<{
+        spec: string;
+        bindings: Array<{ local: string; imported?: string }>;
+      }> = [];
       const importRegex =
         /import\s+(?:\*\s+as\s+([\w_$]+)|([\w_$]+)|\{([^}]+)\})\s+from\s+['"]([^'"]+)['"]/g;
       let m: RegExpExecArray | null;
@@ -580,20 +583,22 @@ export class JavaScriptExecutor {
         const localDefault = m[2];
         const localNamed = m[3];
         const spec = m[4];
-        const locals: string[] = [];
-        if (localAll) locals.push(localAll);
-        if (localDefault) locals.push(localDefault);
+        // `imported` undefined => namespace/default binding (whole module);
+        // `imported` set => a named specifier that must resolve to mod[imported].
+        const bindings: Array<{ local: string; imported?: string }> = [];
+        if (localAll) bindings.push({ local: localAll });
+        if (localDefault) bindings.push({ local: localDefault });
         if (localNamed) {
           localNamed.split(",").forEach((part) => {
             const asMatch = part.trim().match(/([\w_$]+)\s+as\s+([\w_$]+)/);
-            if (asMatch) locals.push(asMatch[2]);
+            if (asMatch) bindings.push({ local: asMatch[2], imported: asMatch[1] });
             else {
               const name = part.trim();
-              if (name) locals.push(name);
+              if (name) bindings.push({ local: name, imported: name });
             }
           });
         }
-        if (locals.length > 0) imports.push({ spec, locals });
+        if (bindings.length > 0) imports.push({ spec, bindings });
       }
 
       for (const imp of imports) {
@@ -601,9 +606,21 @@ export class JavaScriptExecutor {
         const mod = await import(
           /* @vite-ignore */ /* webpackIgnore: true */ url
         );
-        for (const local of imp.locals) {
-          (window as any)[local] = mod.default || mod;
-          this.scope[local] = mod.default || mod;
+        for (const b of imp.bindings) {
+          // Named specifiers resolve to the individual export (mod[name]);
+          // namespace/default bindings keep the module (or its default).
+          // Falling back to mod.default[name] covers packages that only
+          // surface members through their default export.
+          const value =
+            b.imported === undefined
+              ? mod.default || mod
+              : mod[b.imported] !== undefined
+                ? mod[b.imported]
+                : mod.default
+                  ? mod.default[b.imported]
+                  : undefined;
+          (window as any)[b.local] = value;
+          this.scope[b.local] = value;
         }
         (window as any).__tangent_loadedModules[imp.spec] = mod;
       }
