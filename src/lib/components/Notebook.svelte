@@ -445,6 +445,27 @@
     const activeCellId = $selectedCellId;
     if (!activeCellId) return;
 
+    // Ctrl/Cmd+A selects the current cell's content, not the whole page. Text
+    // editors (Monaco, markdown textarea) already handle their own select-all, so
+    // only scope the selection when we're in command mode (no editor focused).
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a'
+        && !event.shiftKey && !event.altKey) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('textarea, input, [contenteditable="true"], .monaco-editor')) {
+        return;
+      }
+      const content = document.querySelector(`[data-testid="cell-${activeCellId}"] .cell-content`);
+      if (content) {
+        event.preventDefault();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(content);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+      return;
+    }
+
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       await runCellById(activeCellId);

@@ -202,6 +202,15 @@
           }
         });
 
+        // Inline math: single $...$ on one line (run after $$ so it isn't caught here).
+        md = md.replace(/\$([^$\n]+?)\$/g, (m, expr) => {
+          try {
+            return katex.renderToString(expr, { throwOnError: false, displayMode: false });
+          } catch {
+            return m;
+          }
+        });
+
         renderedMarkdown = (marked(md) as string) || '';
       } catch (e: any) {
         renderedMarkdown = `<pre style="color: var(--danger-fg);">Markdown render error: ${e && e.message ? e.message : String(e)}</pre>`;
