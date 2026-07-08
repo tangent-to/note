@@ -82,6 +82,39 @@ export function serializeNotebook(notebook: Notebook): string {
 }
 
 /**
+ * Normalize the raw body of a `// %% [markdown]` cell into plain markdown.
+ *
+ * tangent/note writes markdown inside a `/* … *\/` block, but round-tripping the
+ * file through Jupyter/jupytext line-comments every cell line with `//` —
+ * including the block delimiters — turning
+ *
+ *   /*                 ->  // /*
+ *   ## Heading         ->  // ## Heading
+ *   *\/                ->  // *\/
+ *
+ * so the `/*` guard in the parser never fires and the cell reads as commented
+ * noise (blank when rendered). Detect that fully-commented form, strip the `//`
+ * prefix, then drop any wrapping `/* … *\/` delimiters. A native (uncommented)
+ * cell is returned unchanged.
+ */
+function normalizeMarkdownContent(raw: string): string {
+  let lines = raw.split("\n");
+  const nonEmpty = lines.filter((l) => l.trim() !== "");
+  const allCommented =
+    nonEmpty.length > 0 && nonEmpty.every((l) => l.trim().startsWith("//"));
+  if (allCommented) {
+    // Remove one leading `// ` (or bare `//`) per line, preserving indentation.
+    lines = lines.map((l) => l.replace(/^(\s*)\/\/ ?/, "$1"));
+  }
+  // Trim blank edges, then drop wrapping /* … */ if present.
+  while (lines.length && lines[0].trim() === "") lines.shift();
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  if (lines.length && lines[0].trim() === "/*") lines.shift();
+  if (lines.length && lines[lines.length - 1].trim() === "*/") lines.pop();
+  return lines.join("\n").trim();
+}
+
+/**
  * Parse a Jupytext-style notebook into our internal format
  */
 export function parseNotebook(
@@ -133,7 +166,9 @@ export function parseNotebook(
     if (line.trim().startsWith("// %%")) {
       // Save previous cell if exists
       if (currentCell) {
-        currentCell.content = cellContent.join("\n").trim();
+        currentCell.content = currentCell.type === "markdown"
+          ? normalizeMarkdownContent(cellContent.join("\n"))
+          : cellContent.join("\n").trim();
         cells.push(currentCell);
         cellContent = [];
       }
@@ -171,7 +206,9 @@ export function parseNotebook(
   }
   // Save last cell
   if (currentCell) {
-    currentCell.content = cellContent.join("\n").trim();
+    currentCell.content = currentCell.type === "markdown"
+      ? normalizeMarkdownContent(cellContent.join("\n"))
+      : cellContent.join("\n").trim();
     cells.push(currentCell);
   }
 

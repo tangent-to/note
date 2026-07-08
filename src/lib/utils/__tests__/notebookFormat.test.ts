@@ -199,3 +199,66 @@ describe('getNotebookFilename', () => {
     expect(getNotebookFilename(nb)).toBe('untitled.js');
   });
 });
+
+describe('parseNotebook - Jupyter/jupytext-commented markdown', () => {
+  it('recovers markdown from //-commented cells (with wrapping /* */)', () => {
+    // What jupytext writes when it round-trips a note markdown cell: every line
+    // line-commented, including the /* */ delimiters.
+    const src = [
+      '// %% [markdown]',
+      '// /*',
+      '// ## Section title',
+      '//',
+      '// A paragraph of prose.',
+      '// */',
+      '',
+      '// %% [javascript]',
+      'const x = 1;',
+    ].join('\n');
+    const nb = parseNotebook(src, 'nb.js');
+    const md = nb.cells.find((c) => c.type === 'markdown');
+    expect(md).toBeTruthy();
+    expect(md!.content).toBe('## Section title\n\nA paragraph of prose.');
+    expect(nb.cells.find((c) => c.type === 'code')!.content).toBe('const x = 1;');
+  });
+
+  it('recovers markdown from //-commented cells without /* */ delimiters', () => {
+    const src = [
+      '// %% [markdown]',
+      '// # Heading',
+      '// text',
+      '// %% [javascript]',
+      'const y = 2;',
+    ].join('\n');
+    const nb = parseNotebook(src, 'nb.js');
+    expect(nb.cells.find((c) => c.type === 'markdown')!.content).toBe('# Heading\ntext');
+  });
+
+  it('still parses the native /* */ markdown block unchanged', () => {
+    const src = [
+      '// %% [markdown]',
+      '/*',
+      '## Native',
+      'body',
+      '*/',
+      '// %% [javascript]',
+      'const z = 3;',
+    ].join('\n');
+    const nb = parseNotebook(src, 'nb.js');
+    expect(nb.cells.find((c) => c.type === 'markdown')!.content).toBe('## Native\nbody');
+  });
+
+  it('round-trips: serialize then parse a jupytext-commented file', () => {
+    const commented = [
+      '// %% [markdown]',
+      '// /*',
+      '// hello',
+      '// */',
+    ].join('\n');
+    const nb = parseNotebook(commented, 'nb.js');
+    const out = serializeNotebook(nb);
+    expect(out).toContain('/*\nhello\n*/');
+    // and re-parsing the native output is stable
+    expect(parseNotebook(out, 'nb.js').cells.find((c) => c.type === 'markdown')!.content).toBe('hello');
+  });
+});
