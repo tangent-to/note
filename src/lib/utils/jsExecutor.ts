@@ -384,7 +384,10 @@ export class JavaScriptExecutor {
         const isAsyncIIFE = /^\(\s*async\s*\(\)\s*=>/.test(codeNormalized) && /\)\s*\(\s*\)\s*;?$/.test(codeNormalized);
 
         // Detect if last line is a simple expression we should display
-        const rawLastLine = lines[lines.length - 1]?.trim() ?? "";
+        const codeForCapture = this.stripTrailingLineComments(code);
+        const captureLines = codeForCapture.split("\n");
+        const rawLastLine = captureLines[captureLines.length - 1]?.trim() ??
+          "";
         const lastNoSemi = rawLastLine.replace(/;+$/, "");
         const isLikelyExpression = lastNoSemi &&
           !/^(const|let|var|function|class|if|for|while|switch|return)\b/.test(
@@ -399,7 +402,7 @@ export class JavaScriptExecutor {
 
         let execBody = code;
         if (isLikelyExpression && !isAsyncIIFE) {
-          const capture = this.extractLastExpression(code);
+          const capture = this.extractLastExpression(codeForCapture);
           if (capture) {
             const { before, expression } = capture;
             const needsNewline = before.length > 0 && !before.endsWith("\n");
@@ -551,12 +554,23 @@ export class JavaScriptExecutor {
   /**
    * Try to sync simple top-level variable declarations from code into the scope.
    * This is a best-effort heuristic so notebook variables are trackable.
+   *
+   * `transformForScope` already writes plain `const x = …` declarations straight
+   * into the shared scope, so by the time this runs `scope.x` holds the cell's
+   * value. We must NOT then overwrite it with `window.x`: many ordinary variable
+   * names (`data`, `width`, `height`, `name`, `location`, `top`, `length`, …)
+   * also exist as built-in properties on `window`, and copying those back would
+   * clobber the notebook's value with an unrelated global — e.g. `const data =
+   * […]` would be replaced by the `data()` dataset accessor, breaking every
+   * downstream cell and closure that reads `data`. Only pull from `window` for
+   * names the transform did not already capture (e.g. destructuring patterns).
    */
   private syncScopeFromGlobals(code: string): void {
     const declRegex = /(?:^|\n)\s*(?:const|let|var)\s+([\w$]+)\s*=/g;
     let match: RegExpExecArray | null;
     while ((match = declRegex.exec(code)) !== null) {
       const name = match[1];
+      if (Object.prototype.hasOwnProperty.call(this.scope, name)) continue;
       if (name in window) {
         this.scope[name] = (window as any)[name];
       }
@@ -642,7 +656,8 @@ export class JavaScriptExecutor {
         };
       }
 
-      const lines = codeWithoutImports.split("\n");
+      const codeForCapture = this.stripTrailingLineComments(codeWithoutImports);
+      const lines = codeForCapture.split("\n");
       const rawLast = lines[lines.length - 1]?.trim() ?? "";
       const lastNoSemi = rawLast.replace(/;+$/, "");
       const isLastExpr = lastNoSemi &&
@@ -655,7 +670,7 @@ export class JavaScriptExecutor {
 
       let funcBody: string;
       if (isLastExpr) {
-        const capture = this.extractLastExpression(codeWithoutImports);
+        const capture = this.extractLastExpression(codeForCapture);
         if (capture) {
           const { before, expression } = capture;
           const needsNewline = before.length > 0 && !before.endsWith("\n");
@@ -715,6 +730,58 @@ export class JavaScriptExecutor {
         timestamp: Date.now(),
       };
     }
+  }
+
+  /**
+   * Remove a trailing `// comment` from the final line of the code and drop
+   * trailing lines that are blank or pure comments, so the last-expression
+   * capture never treats comment text as "the expression" (e.g. a cell ending
+   * in `f(x); // result: [5, -3.75]`).
+   */
+  private stripTrailingLineComments(code: string): string {
+    const lines = code.split("\n");
+    while (lines.length > 0) {
+      const line = lines[lines.length - 1];
+      const stripped = this.stripLineComment(line);
+      if (stripped.trim()) {
+        lines[lines.length - 1] = stripped.trimEnd();
+        break;
+      }
+      lines.pop();
+    }
+    return lines.join("\n");
+  }
+
+  /**
+   * Truncate `line` at the first `//` that is not inside a string literal.
+   * Lines containing backticks are returned untouched: they may sit inside a
+   * multi-line template literal, where truncation would corrupt the code.
+   */
+  private stripLineComment(line: string): string {
+    if (line.includes("`")) return line;
+    let inString: string | null = null;
+    let escaped = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line.charAt(i);
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === inString) inString = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        inString = ch;
+        continue;
+      }
+      if (ch === "/" && line.charAt(i + 1) === "/") return line.slice(0, i);
+    }
+    return line;
   }
 
   private extractLastExpression(code: string): {
