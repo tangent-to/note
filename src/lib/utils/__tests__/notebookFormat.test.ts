@@ -283,3 +283,31 @@ describe('markdown serialization round-trip (// form)', () => {
     expect(back).toBe(md);
   });
 });
+
+// The import / URL-load path uses parseJSNotebook (a second parser); it must
+// handle the // markdown form too, or imported files show blank markdown cells.
+import { parseJSNotebook } from '../fileOperations';
+
+describe('parseJSNotebook - markdown formats', () => {
+  it('reads //-commented markdown (the format note now writes)', () => {
+    const src = [
+      '// ---', '// title: T', '// id: t', '// ---', '',
+      '// %% [markdown]',
+      '// ## Heading',
+      '//',
+      '// body',
+      '',
+      '// %% [javascript]',
+      'const x = 1;',
+    ].join('\n');
+    const nb = parseJSNotebook(src, 't.js');
+    const md = nb.cells.find((c: any) => c.type === 'markdown');
+    expect(md.content).toBe('## Heading\n\nbody');
+    expect(nb.cells.find((c: any) => c.type === 'code').content).toBe('const x = 1;');
+  });
+
+  it('still reads the legacy /* */ markdown block', () => {
+    const src = ['// %% [markdown]', '/*', '## Old', 'body', '*/', '// %% [javascript]', 'a'].join('\n');
+    expect(parseJSNotebook(src, 't.js').cells.find((c: any) => c.type === 'markdown').content).toBe('## Old\nbody');
+  });
+});

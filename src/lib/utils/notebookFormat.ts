@@ -100,7 +100,7 @@ export function serializeNotebook(notebook: Notebook): string {
  * prefix, then drop any wrapping `/* … *\/` delimiters. A native (uncommented)
  * cell is returned unchanged.
  */
-function normalizeMarkdownContent(raw: string): string {
+export function normalizeMarkdownContent(raw: string): string {
   let lines = raw.split("\n");
   const nonEmpty = lines.filter((l) => l.trim() !== "");
   const allCommented =

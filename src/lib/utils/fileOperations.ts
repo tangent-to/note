@@ -1,6 +1,6 @@
 import type { Notebook } from '../types/notebook';
 import { ExportService } from './exportService';
-import { applyCellTags } from './notebookFormat';
+import { applyCellTags, normalizeMarkdownContent } from './notebookFormat';
 import { toast } from './toast';
 
 const exportService = new ExportService();
@@ -41,7 +41,6 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
   const cells: any[] = [];
   let currentCell: any = null;
   let inMetadata = false;
-  let inMarkdown = false;
   let markdownContent = '';
   let codeContent = '';
 
@@ -86,7 +85,7 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     if (line.startsWith('// %% ')) {
       if (currentCell) {
         if (currentCell.type === 'markdown') {
-          currentCell.content = markdownContent.trim();
+          currentCell.content = normalizeMarkdownContent(markdownContent);
         } else if (currentCell.type === 'code') {
           currentCell.content = codeContent.trim();
         }
@@ -105,7 +104,6 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
           updatedAt: Date.now(),
         };
         applyCellTags(currentCell, line);
-        inMarkdown = false;
         markdownContent = '';
         codeContent = '';
       }
@@ -114,13 +112,9 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
 
     if (currentCell) {
       if (currentCell.type === 'markdown') {
-        if (line.startsWith('/*')) {
-          inMarkdown = true;
-        } else if (line.startsWith('*/')) {
-          inMarkdown = false;
-        } else if (inMarkdown) {
-          markdownContent += line + '\n';
-        }
+        // Collect every line; normalizeMarkdownContent() strips the `//` line
+        // comments (jupytext form) and/or the wrapping /* */ at finalization.
+        markdownContent += line + '\n';
       } else if (currentCell.type === 'code') {
         codeContent += line + '\n';
       }
@@ -129,7 +123,7 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
 
   if (currentCell) {
     if (currentCell.type === 'markdown') {
-      currentCell.content = markdownContent.trim();
+      currentCell.content = normalizeMarkdownContent(markdownContent);
     } else if (currentCell.type === 'code') {
       currentCell.content = codeContent.trim();
     }
