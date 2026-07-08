@@ -32,12 +32,13 @@ describe('serializeNotebook', () => {
     expect(output).toContain('// %% [markdown]');
   });
 
-  it('wraps markdown in block comments', () => {
+  it('line-comments markdown (jupytext-native form)', () => {
     const notebook = makeNotebook();
     const output = serializeNotebook(notebook);
-    expect(output).toContain('/*');
-    expect(output).toContain('# Hello World');
-    expect(output).toContain('*/');
+    expect(output).toContain('// # Hello World');
+    // no /* */ block delimiters for markdown any more
+    expect(output).not.toContain('/*');
+    expect(output).not.toContain('*/');
   });
 
   it('includes code content directly', () => {
@@ -257,8 +258,28 @@ describe('parseNotebook - Jupyter/jupytext-commented markdown', () => {
     ].join('\n');
     const nb = parseNotebook(commented, 'nb.js');
     const out = serializeNotebook(nb);
-    expect(out).toContain('/*\nhello\n*/');
-    // and re-parsing the native output is stable
+    expect(out).toContain('// hello');
+    // and re-parsing the serialized output is stable
     expect(parseNotebook(out, 'nb.js').cells.find((c) => c.type === 'markdown')!.content).toBe('hello');
+  });
+});
+
+describe('markdown serialization round-trip (// form)', () => {
+  it('content -> serialize -> parse is lossless (headings, blanks, code fences)', () => {
+    const md = '## Title\n\nA paragraph with a `code span`.\n\n- bullet 1\n- bullet 2\n\n    indented code line';
+    const nb = makeNotebook({ cells: [{ id: 'm', type: 'markdown', content: md }] });
+    const out = serializeNotebook(nb);
+    // written as // lines, no block delimiters
+    expect(out).toContain('// ## Title');
+    expect(out).toContain('//\n'); // blank line as bare //
+    const back = parseNotebook(out, 'nb.js').cells.find((c) => c.type === 'markdown')!.content;
+    expect(back).toBe(md);
+  });
+
+  it('preserves a markdown line that itself starts with //', () => {
+    const md = '// this is literally in the text';
+    const nb = makeNotebook({ cells: [{ id: 'm', type: 'markdown', content: md }] });
+    const back = parseNotebook(serializeNotebook(nb), 'nb.js').cells.find((c) => c.type === 'markdown')!.content;
+    expect(back).toBe(md);
   });
 });

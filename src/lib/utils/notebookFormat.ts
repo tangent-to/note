@@ -56,13 +56,16 @@ export function serializeNotebook(notebook: Notebook): string {
     // Add cell delimiter
     if (cell.type === "markdown") {
       lines.push(`// %% [markdown]${tags}`);
-      lines.push("/*");
-      // Add markdown content, ensuring each line is preserved
+      // Line-comment each markdown line (jupytext-native form) so the file
+      // round-trips through Jupyter without the cells being mangled. Empty lines
+      // become a bare `//`; parseNotebook strips the prefix on read, and also
+      // still accepts the older `/* … */` block form.
       const content = cell.content.trim();
       if (content) {
-        lines.push(content);
+        for (const line of content.split("\n")) {
+          lines.push(line === "" ? "//" : `// ${line}`);
+        }
       }
-      lines.push("*/");
     } else {
       lines.push(`// %% [javascript]${tags}`);
       // Add code content directly
