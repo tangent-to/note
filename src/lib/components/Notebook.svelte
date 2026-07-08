@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
-  import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter, createNewNotebook, markNotebookClean } from '../stores/notebook';
+  import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter, createNewNotebook, markNotebookClean, runProgress } from '../stores/notebook';
   import {
     updateCellContent,
     addCellAfter,
@@ -193,14 +193,19 @@
     isRunningAll = true;
     suppressCascade = true;
     // Run stale code cells top-to-bottom (an approximation of dependency order).
+    const total = notebook.cells.filter(c => c.type === 'code' && stale.has(c.id)).length;
+    let done = 0;
+    runProgress.set({ done, total });
     for (const cell of notebook.cells) {
       if (cell.type === 'code' && stale.has(cell.id)) {
         await handleRunCell({ cellId: cell.id });
         await new Promise(resolve => setTimeout(resolve, 50));
+        runProgress.set({ done: ++done, total });
       }
     }
     suppressCascade = false;
     isRunningAll = false;
+    setTimeout(() => runProgress.set(null), 500);
   }
 
   async function handleRunAll() {
@@ -214,6 +219,9 @@
     suppressCascade = true;
     resetExecutionCounter();
 
+    const total = notebook.cells.length;
+    let done = 0;
+    runProgress.set({ done, total });
     for (const cell of notebook.cells) {
       if (cell.type === 'code') {
         await handleRunCell({ cellId: cell.id });
@@ -223,11 +231,14 @@
         window.dispatchEvent(event);
         await new Promise(resolve => setTimeout(resolve, 50));
       }
+      runProgress.set({ done: ++done, total });
     }
 
     suppressCascade = false;
     isRunningAll = false;
     recomputeStaleCells(getNotebookSnapshot());
+    // Let the filled bar linger a moment, then fade out.
+    setTimeout(() => runProgress.set(null), 500);
   }
 
   async function handleRunAndAdvance({ cellId }: { cellId: string }) {

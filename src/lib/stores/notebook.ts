@@ -17,6 +17,11 @@ export const selectedCellId = writable<string | null>(null);
 
 export const notebookDirty = writable(false);
 
+// Progress of a "run all" / "run stale" batch, for the thin bar on the header's
+// bottom edge. `null` when idle; otherwise how many cells have finished of the
+// total in the current batch.
+export const runProgress = writable<{ done: number; total: number } | null>(null);
+
 // Set of cell ids whose output is stale: an upstream dependency changed or ran
 // more recently, or the cell was edited since it last ran.
 export const staleCells = writable<Set<string>>(new Set());

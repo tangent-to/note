@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import { fade } from 'svelte/transition';
   import Notebook from './lib/components/Notebook.svelte';
   import RightSidebar from './lib/components/RightSidebar.svelte';
   import ChatSidebar from './lib/components/ChatSidebar.svelte';
@@ -14,6 +15,7 @@
     notebookDirty,
     staleCells,
     reactiveMode,
+    runProgress,
     addCellAfter,
     createNewCell,
     selectedCellId,
@@ -444,6 +446,18 @@
 <div class="app-container">
   <!-- Observable-style header -->
   <header class="app-header">
+    {#if $runProgress}
+      <div
+        class="run-progress"
+        class:complete={$runProgress.done >= $runProgress.total}
+        style="transform: scaleX({$runProgress.total ? $runProgress.done / $runProgress.total : 0})"
+        role="progressbar"
+        aria-valuenow={$runProgress.done}
+        aria-valuemax={$runProgress.total}
+        aria-label="Running cells"
+        transition:fade={{ duration: 250 }}
+      ></div>
+    {/if}
     <div class="header-left">
       <button class="notebooks-btn" onclick={() => showCommandPalette = true} title="Command Palette (Ctrl+K)">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -671,6 +685,32 @@
     height: 44px;
     position: relative;
     z-index: 50;
+  }
+
+  /* Thin batch-run progress bar, sitting on the header's bottom edge. It fills
+     left-to-right as cells finish; a gentle pulse marks that a cell is still
+     running, and it fades out when the run completes. */
+  .run-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    transform-origin: left center;
+    background: var(--accent-solid);
+    transition: transform 0.3s ease;
+    z-index: 51;
+    pointer-events: none;
+  }
+  .run-progress:not(.complete) {
+    animation: run-progress-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes run-progress-pulse {
+    0%, 100% { opacity: 0.72; }
+    50% { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .run-progress { transition: none; animation: none; }
   }
 
   .header-left,
