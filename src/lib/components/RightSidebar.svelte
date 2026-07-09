@@ -4,6 +4,7 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import { formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
 
   interface Props {
@@ -159,7 +160,7 @@
 
         <div class="info-section">
           <div class="info-label">Last Modified</div>
-          <div class="info-value">{new Date($currentNotebook.updatedAt).toLocaleString()}</div>
+          <div class="info-value">{formatDateTime($currentNotebook.updatedAt)}</div>
         </div>
 
         <div class="divider"></div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { currentNotebook } from '../stores/notebook';
   import { ExportService } from '../utils/exportService';
+  import { formatDate } from '../utils/format';
   import { toast } from '../utils/toast';
   import type { Notebook } from '../types/notebook';
 
@@ -130,7 +131,7 @@
           <h4>{$currentNotebook.name}</h4>
           <p>
             {$currentNotebook.cells.length} cells •
-            Modified {new Date($currentNotebook.updatedAt).toLocaleDateString()}
+            Modified {formatDate($currentNotebook.updatedAt)}
           </p>
         </div>
 
