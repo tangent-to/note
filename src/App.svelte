@@ -348,7 +348,7 @@
         kernelMode.set(next);
         showToast(next === 'worker'
           ? 'Kernel: background worker. The page stays responsive and runs can be stopped.'
-          : 'Kernel: main thread. Live DOM outputs work, but long runs freeze the page.', 'info');
+          : 'Kernel: main thread. Outputs can run their own scripts, but long runs freeze the page.', 'info');
         break;
       }
       case 'add-code-cell':

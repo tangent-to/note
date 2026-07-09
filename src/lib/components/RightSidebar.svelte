@@ -178,7 +178,7 @@
               checked={$kernelMode === 'worker'}
               onchange={() => kernelMode.set('worker')}
             />
-            <span><strong>Background worker</strong> (default). The page stays responsive during long computations, and runs can be stopped.</span>
+            <span><strong>Background worker</strong> (default). Plots and tables render normally, the page stays responsive during long computations, and runs can be stopped.</span>
           </label>
           <label class="setting-option">
             <input
@@ -188,7 +188,7 @@
               checked={$kernelMode === 'main'}
               onchange={() => kernelMode.set('main')}
             />
-            <span><strong>Main thread</strong>. Only for notebooks that need live DOM outputs (interactive players); long runs freeze the page.</span>
+            <span><strong>Main thread</strong>. Only needed when an output runs its own scripts after rendering (hover tooltips, zoomable charts, animated players); long runs freeze the page.</span>
           </label>
           <p class="setting-hint">Variables don't carry across kernels; re-run cells after switching.</p>
         </div>
