@@ -343,6 +343,14 @@
         showToast(`Cell outputs now appear ${next} the code`, 'info');
         break;
       }
+      case 'toggle-kernel-mode': {
+        const next = get(kernelMode) === 'worker' ? 'main' : 'worker';
+        kernelMode.set(next);
+        showToast(next === 'worker'
+          ? 'Kernel: background worker. The page stays responsive and runs can be stopped.'
+          : 'Kernel: main thread. Live DOM outputs work, but long runs freeze the page.', 'info');
+        break;
+      }
       case 'add-code-cell':
         addNewCell('code');
         break;
@@ -512,18 +520,6 @@
             <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
           </svg>
           <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
-        </button>
-        <button
-          class="reactive-toggle"
-          class:active={$kernelMode === 'worker'}
-          onclick={() => kernelMode.update(m => m === 'worker' ? 'main' : 'worker')}
-          title="Worker kernel: cells run off the main thread, so the page never freezes and runs can be stopped. Figures render as static HTML. Switch to main-thread mode only for notebooks that need live DOM outputs. Variables reset when switching."
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <rect x="4" y="4" width="16" height="16" rx="2"/>
-            <path d="M9 9l-2 3 2 3M15 9l2 3-2 3"/>
-          </svg>
-          <span class="btn-label">{$kernelMode === 'worker' ? 'Worker' : 'Main thread'}</span>
         </button>
         {#if $kernelBusy}
           <!-- No fade-in: the kill switch must never look half-disabled. -->

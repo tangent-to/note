@@ -76,6 +76,13 @@
       action: () => oncommand?.({ id: 'toggle-output-position' })
     },
     {
+      id: 'toggle-kernel-mode',
+      name: 'Toggle Kernel Mode',
+      description: 'Run cells in a background worker (default) or on the main thread',
+      icon: 'cpu',
+      action: () => oncommand?.({ id: 'toggle-kernel-mode' })
+    },
+    {
       id: 'add-code-cell',
       name: 'Add Code Cell',
       description: 'Insert a new code cell',
@@ -193,6 +200,7 @@
     'x-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM15 9l-6 6M9 9l6 6',
     'help-circle': 'M12 2a10 10 0 100 20 10 10 0 000-20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01',
     'zap': 'M13 2L3 14h7l-1 8 10-12h-7l1-8z',
+    'cpu': 'M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2M6 6h12v12H6zM9 9h6v6H9z',
     'arrows-up-down': 'M7 4v16M7 4L4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3',
     'database': 'M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3'
   };

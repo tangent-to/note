@@ -4,7 +4,7 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
-  import { formatDateTime } from '../utils/format';
+  import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
 
   interface Props {
@@ -155,12 +155,42 @@
 
         <div class="info-section">
           <div class="info-label">Created</div>
-          <div class="info-value">{new Date($currentNotebook.createdAt).toLocaleDateString()}</div>
+          <div class="info-value">{formatDate($currentNotebook.createdAt)}</div>
         </div>
 
         <div class="info-section">
           <div class="info-label">Last Modified</div>
           <div class="info-value">{formatDateTime($currentNotebook.updatedAt)}</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- App settings. The kernel choice is deliberately NOT in the header:
+             the default (worker) is right for almost everyone. -->
+        <div class="settings-section">
+          <h4 class="section-title">Settings</h4>
+          <div class="setting-label">Cells run on</div>
+          <label class="setting-option">
+            <input
+              type="radio"
+              name="kernel-mode"
+              value="worker"
+              checked={$kernelMode === 'worker'}
+              onchange={() => kernelMode.set('worker')}
+            />
+            <span><strong>Background worker</strong> (default). The page stays responsive during long computations, and runs can be stopped.</span>
+          </label>
+          <label class="setting-option">
+            <input
+              type="radio"
+              name="kernel-mode"
+              value="main"
+              checked={$kernelMode === 'main'}
+              onchange={() => kernelMode.set('main')}
+            />
+            <span><strong>Main thread</strong>. Only for notebooks that need live DOM outputs (interactive players); long runs freeze the page.</span>
+          </label>
+          <p class="setting-hint">Variables don't carry across kernels; re-run cells after switching.</p>
         </div>
 
         <div class="divider"></div>
@@ -349,6 +379,36 @@
   .divider { height: 1px; background-color: var(--border); margin: 1.1rem 0; }
 
   .shortcuts-section { margin-top: 0.5rem; }
+
+  .settings-section { margin-top: 0.5rem; }
+
+  .setting-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .setting-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .setting-option input { margin-top: 0.15rem; flex-shrink: 0; }
+  .setting-option strong { color: var(--text); font-weight: 600; }
+
+  .setting-hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin: 0.4rem 0 0;
+    font-style: italic;
+  }
 
   .section-title { font-size: 0.85rem; font-weight: 600; color: var(--heading); margin: 0 0 0.75rem 0; }
 
