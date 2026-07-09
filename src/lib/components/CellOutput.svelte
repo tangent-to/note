@@ -193,7 +193,9 @@
             <span class="error-label">Error</span>
             <button class="copy-btn" onclick={handleCopy}>{copyLabel}</button>
           </div>
-          <pre class="error-message"><code>{String(output.content)}</code></pre>
+          <!-- The block is already labeled "Error"; drop the message's own
+               "Error: " prefix so it doesn't read "Error / Error: ...". -->
+          <pre class="error-message"><code>{String(output.content).replace(/^Error:\s*/, '')}</code></pre>
         </div>
       {:else}
         <pre class="text-output"><code>{String(output.content)}</code></pre>
@@ -373,7 +375,7 @@
 
   .output-timestamp {
     font-size: 0.7rem;
-    color: var(--text-faint);
+    color: var(--text-muted);
   }
 
   .copy-btn {
@@ -385,14 +387,14 @@
     border: none;
     border-radius: var(--radius-pill);
     font-size: 0.68rem;
-    color: var(--text-faint);
+    color: var(--text-muted);
     cursor: pointer;
     transition: color 0.15s ease;
     font-family: inherit;
   }
 
   .copy-btn:hover {
-    color: var(--text-muted);
+    color: var(--heading);
   }
 
   .error-header .copy-btn {

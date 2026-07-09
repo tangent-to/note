@@ -23,12 +23,13 @@
     completionKeymap,
   } from '@codemirror/autocomplete';
   import { javascript } from '@codemirror/lang-javascript';
+  import { markdown } from '@codemirror/lang-markdown';
   import { classHighlighter } from '@lezer/highlight';
   import { aiInlineSuggestions } from '../utils/cmAiCompletion';
 
   interface Props {
     value?: string;
-    /** Kept for API compatibility; code cells are always JavaScript. */
+    /** 'javascript' (default) or 'markdown'. */
     language?: string;
     height?: string;
     readOnly?: boolean;
@@ -129,12 +130,14 @@
   );
 
   onMount(() => {
+    const isMarkdown = language === 'markdown';
     view = new EditorView({
       parent: container,
       state: EditorState.create({
         doc: value,
         extensions: [
-          lineNumbers(),
+          // Prose doesn't need line numbers; code does.
+          ...(isMarkdown ? [] : [lineNumbers()]),
           highlightSpecialChars(),
           history(),
           drawSelection(),
@@ -146,7 +149,7 @@
           closeBrackets(),
           autocompletion(),
           EditorView.lineWrapping,
-          javascript(),
+          isMarkdown ? markdown() : javascript(),
           syntaxHighlighting(classHighlighter),
           editorTheme,
           runKeymap,
@@ -235,36 +238,48 @@
   }
 
   /* Syntax colors (classHighlighter token classes), themed via data-theme.
-     Palette follows GitHub light/dark for familiarity and AA contrast. */
-  .code-editor-container :global(.tok-keyword) { color: #cf222e; }
+     Brand-tuned palette for the warm-stone + teal identity: keywords in the
+     tangent teal, strings in warm sienna, calls in a muted slate blue,
+     literals in muted violet (Flexoki-derived hues, all pairs >= 4.5:1).
+     Nothing red: red is reserved for actual errors. Operators and plain
+     variables stay in the text color so code doesn't turn into confetti. */
+  .code-editor-container :global(.tok-keyword) { color: #076e5e; }
   .code-editor-container :global(.tok-string),
-  .code-editor-container :global(.tok-special.tok-string) { color: #0a3069; }
+  .code-editor-container :global(.tok-special.tok-string) { color: #9a3412; }
   .code-editor-container :global(.tok-number),
   .code-editor-container :global(.tok-bool),
-  .code-editor-container :global(.tok-atom) { color: #0550ae; }
-  .code-editor-container :global(.tok-comment) { color: #6e7781; font-style: italic; }
+  .code-editor-container :global(.tok-atom) { color: #5e409d; }
+  .code-editor-container :global(.tok-comment) { color: #78716c; font-style: italic; }
   .code-editor-container :global(.tok-definition.tok-variableName),
   .code-editor-container :global(.tok-function.tok-variableName),
-  .code-editor-container :global(.tok-function.tok-propertyName) { color: #8250df; }
-  .code-editor-container :global(.tok-propertyName) { color: #0550ae; }
+  .code-editor-container :global(.tok-function.tok-propertyName) { color: #205ea6; }
+  .code-editor-container :global(.tok-propertyName) { color: #205ea6; }
   .code-editor-container :global(.tok-typeName),
-  .code-editor-container :global(.tok-className) { color: #953800; }
-  .code-editor-container :global(.tok-operator) { color: #cf222e; }
-  .code-editor-container :global(.tok-regexp) { color: #116329; }
+  .code-editor-container :global(.tok-className) { color: #92400e; }
+  .code-editor-container :global(.tok-regexp) { color: #a02f6f; }
+  /* Markdown prose tokens */
+  .code-editor-container :global(.tok-heading) { color: var(--heading, #1c1917); font-weight: 700; }
+  .code-editor-container :global(.tok-emphasis) { font-style: italic; }
+  .code-editor-container :global(.tok-strong) { font-weight: 700; }
+  .code-editor-container :global(.tok-link),
+  .code-editor-container :global(.tok-url) { color: #076e5e; }
+  .code-editor-container :global(.tok-monospace) { color: #9a3412; }
 
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-keyword) { color: #ff7b72; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-keyword) { color: #3aa99f; }
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-string),
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-special.tok-string) { color: #a5d6ff; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-special.tok-string) { color: #da702c; }
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-number),
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-bool),
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-atom) { color: #79c0ff; }
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-comment) { color: #8b949e; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-atom) { color: #a898d8; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-comment) { color: #8a847f; }
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-definition.tok-variableName),
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-function.tok-variableName),
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-function.tok-propertyName) { color: #d2a8ff; }
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-propertyName) { color: #79c0ff; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-function.tok-propertyName) { color: #6fa3d4; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-propertyName) { color: #6fa3d4; }
   :global(html[data-theme='dark']) .code-editor-container :global(.tok-typeName),
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-className) { color: #ffa657; }
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-operator) { color: #ff7b72; }
-  :global(html[data-theme='dark']) .code-editor-container :global(.tok-regexp) { color: #7ee787; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-className) { color: #d0a215; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-regexp) { color: #ce5d97; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-link),
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-url) { color: #3aa99f; }
+  :global(html[data-theme='dark']) .code-editor-container :global(.tok-monospace) { color: #da702c; }
 </style>

@@ -52,12 +52,12 @@
   }: Props = $props();
 
   let editorRef: CodeEditor = $state(null as any);
+  let mdEditorRef: CodeEditor = $state(null as any);
   let isDragging = $state(false);
   // Markdown renders by default; empty cells open in edit mode so you can type.
   // Capture only the initial content (untracked) — toggling is user-driven after.
   let isEditingMarkdown = $state(untrack(() => !cell.content || !cell.content.trim()));
   let renderedMarkdown = $state('');
-  let markdownTextarea: HTMLTextAreaElement = $state(null as any);
   let markdownPreview: any = $state(null);
 
   let execLabel = $derived(cell.executionOrder ? `[${cell.executionOrder}]` : '[ ]');
@@ -112,9 +112,9 @@
     }
     isEditingMarkdown = true;
     onselect?.({ cellId: cell.id });
-    // Move the caret into the textarea we just revealed. The selection effect
+    // Move the caret into the editor we just revealed. The selection effect
     // only re-runs on isSelected changes, not on this toggle, so focus here.
-    tick().then(() => markdownTextarea?.focus());
+    tick().then(() => mdEditorRef?.focus());
   }
 
   function handleCellClick() {
@@ -151,20 +151,6 @@
     onselect?.({ cellId: cell.id });
   }
 
-  function autoResizeTextarea(textarea: HTMLTextAreaElement) {
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.max(56, textarea.scrollHeight) + 'px';
-    }
-  }
-
-  // Auto-resize textarea when it becomes available or cell type changes
-  $effect(() => {
-    if (markdownTextarea && cell.type === 'markdown') {
-      autoResizeTextarea(markdownTextarea);
-    }
-  });
-
   // Focus active content when cell becomes selected
   $effect(() => {
     if (isSelected) {
@@ -177,8 +163,8 @@
         if (cell.type === 'code' && editorRef) {
           editorRef.focus();
         } else if (cell.type === 'markdown') {
-          if (isEditingMarkdown && markdownTextarea) {
-            markdownTextarea.focus();
+          if (isEditingMarkdown && mdEditorRef) {
+            mdEditorRef.focus();
           } else if (markdownPreview) {
             markdownPreview.focus();
           }
@@ -291,7 +277,7 @@
         onclick={(e) => { e.stopPropagation(); handleRun(); }}
         class="run-btn"
         disabled={cell.isRunning || cell.skipped}
-        title={cell.skipped ? 'Cell is skipped — enable it from the cell menu to run' : 'Run cell (Shift+Enter)'}
+        title={cell.skipped ? 'Cell is skipped. Enable it from the cell menu to run' : 'Run cell (Shift+Enter)'}
         data-testid="run-cell-btn"
       >
         {#if cell.isRunning}
@@ -375,19 +361,22 @@
         {:else}
           <div class="cell-content markdown-wrapper">
             {#if isEditingMarkdown}
-              <textarea
-                bind:this={markdownTextarea}
-                value={cell.content}
-                oninput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  autoResizeTextarea(target);
-                  oncontentChange?.({ cellId: cell.id, content: target.value });
-                }}
-                onfocus={handleEditorFocus}
-                class="markdown-editor"
-                placeholder="Write Markdown..."
-                data-testid="markdown-editor"
-              ></textarea>
+              <!-- Same editor as code cells (auto-grows, reflows with the
+                   pane, markdown highlighting), so editing feels uniform. -->
+              <div class="markdown-editor" data-testid="markdown-editor">
+                <CodeEditor
+                  bind:this={mdEditorRef}
+                  value={cell.content}
+                  language="markdown"
+                  height="auto"
+                  readOnly={cell.readOnly ?? false}
+                  onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
+                  onrun={handleRun}
+                  onrunAndAdvance={handleRunAndAdvance}
+                  oneditorFocus={handleEditorFocus}
+                  onfocus={handleEditorFocus}
+                />
+              </div>
             {:else}
               <div
                 class="markdown-preview rendered"
@@ -449,7 +438,7 @@
           <div class="menu-sep"></div>
           <button
             role="menuitem"
-            class="menu-item menu-subtle"
+            class="menu-item"
             data-testid="cell-type-toggle"
             onclick={runMenu(() => ontypeChange?.({ cellId: cell.id, type: cell.type === 'code' ? 'markdown' : 'code' }))}
           >
@@ -743,8 +732,6 @@
     color: var(--heading);
   }
 
-  .menu-subtle { color: var(--text-muted); font-size: 0.78rem; }
-
   .menu-danger { color: var(--danger-fg); }
   .menu-danger:hover { background-color: var(--danger-bg); color: var(--danger-fg); }
 
@@ -803,22 +790,14 @@
   .markdown-editor {
     width: 100%;
     min-height: 48px;
-    padding: 0.6rem 0.7rem;
+    padding: 0.35rem 0.45rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-input);
-    resize: vertical;
-    overflow: auto;
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    line-height: 1.5;
-    color: var(--text);
     background-color: var(--surface-2);
-    transition: all 0.15s ease;
-    height: auto;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
-  .markdown-editor:focus {
-    outline: none;
+  .markdown-editor:focus-within {
     border-color: var(--accent);
     background-color: var(--surface);
   }

@@ -526,11 +526,11 @@
           <span class="btn-label">{$kernelMode === 'worker' ? 'Worker' : 'Main thread'}</span>
         </button>
         {#if $kernelBusy}
+          <!-- No fade-in: the kill switch must never look half-disabled. -->
           <button
             class="stop-kernel-btn"
-            onclick={() => { kernel.interrupt(); resetStaleTracking(); showToast('Kernel stopped and restarted — notebook variables were cleared.', 'info'); }}
+            onclick={() => { kernel.interrupt(); resetStaleTracking(); showToast('Kernel stopped and restarted. Notebook variables were cleared.', 'info'); }}
             title="Stop the running computation (restarts the kernel; notebook variables are cleared)"
-            transition:fade={{ duration: 150 }}
           >
             <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
               <rect x="2.5" y="2.5" width="9" height="9" rx="1.5"/>
@@ -797,12 +797,13 @@
   }
 
   .icon-btn.active {
-    background-color: var(--accent-solid);
-    color: var(--accent-on-solid);
+    background-color: var(--accent-weak-bg);
+    color: var(--accent-weak-fg);
   }
 
   .icon-btn.active:hover {
-    background-color: var(--accent-solid-hover);
+    background-color: var(--accent-weak-bg);
+    color: var(--accent);
   }
 
   .header-meta {
@@ -884,10 +885,12 @@
 
   .reactive-toggle:hover { background-color: var(--surface-hover); color: var(--heading); }
 
+  /* Active state toggles are QUIET (weak accent fill): solid teal is reserved
+     for the page's one primary action, Run All. */
   .reactive-toggle.active {
-    background-color: var(--accent-solid);
-    color: var(--accent-on-solid);
-    border-color: var(--accent-solid);
+    background-color: var(--accent-weak-bg);
+    color: var(--accent-weak-fg);
+    border-color: var(--accent-weak-border);
   }
 
   .stop-kernel-btn {

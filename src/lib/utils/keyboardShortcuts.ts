@@ -16,8 +16,13 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
     return true;
   }
 
-  // Toggle Chat: Ctrl/Cmd + /
+  // Toggle Chat: Ctrl/Cmd + / — but NOT while a code editor has focus:
+  // CodeMirror binds Mod-/ to toggle-comment, and firing both actions on one
+  // keystroke commented the current line AND opened the chat.
   if ((event.metaKey || event.ctrlKey) && event.key === '/') {
+    if (typeof document !== 'undefined' && document.activeElement?.closest('.cm-editor')) {
+      return false;
+    }
     event.preventDefault();
     handlers.toggleChat();
     return true;

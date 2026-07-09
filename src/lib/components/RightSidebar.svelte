@@ -391,7 +391,7 @@
 
   .refresh-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
-  .empty-vars { font-size: 0.8rem; color: var(--text-faint); padding: 1rem 0; text-align: center; }
+  .empty-vars { font-size: 0.8rem; color: var(--text-muted); padding: 1rem 0; text-align: center; }
   .empty-vars code {
     font-family: var(--font-mono);
     font-size: 0.92em;
@@ -408,7 +408,7 @@
     padding: 1.5rem 1rem;
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-card);
-    color: var(--text-faint);
+    color: var(--text-muted);
     cursor: pointer;
     text-align: center;
     transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
