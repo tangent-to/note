@@ -2,9 +2,8 @@
   import { tick, untrack } from 'svelte';
   import { marked } from 'marked';
   import katex from 'katex';
-  import MonacoEditor from './MonacoEditor.svelte';
+  import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
-  import { theme, monacoTheme } from '../utils/theme';
   import { outputPosition } from '../stores/notebook';
   import type { NotebookCell } from '../types/notebook';
 
@@ -52,7 +51,7 @@
     ondragend,
   }: Props = $props();
 
-  let editorRef: MonacoEditor = $state(null as any);
+  let editorRef: CodeEditor = $state(null as any);
   let isDragging = $state(false);
   // Markdown renders by default; empty cells open in edit mode so you can type.
   // Capture only the initial content (untracked) — toggling is user-driven after.
@@ -126,7 +125,7 @@
     const target = event.target as HTMLElement;
     // Leave focus alone when the user is interacting with output widgets
     // (sliders, inputs, buttons, links) or the music player. Stealing focus to
-    // the Monaco editor mid-press breaks native interactions like dragging a
+    // the code editor mid-press breaks native interactions like dragging a
     // range slider, so we don't even select the cell in that case.
     if (
       target &&
@@ -220,14 +219,18 @@
     }
   });
 
-  // Listen for render-markdown event
-  if (typeof window !== 'undefined') {
-    window.addEventListener('render-markdown', (e: any) => {
+  // Listen for render-markdown events for the lifetime of this cell. The
+  // listener is removed on unmount (the old version leaked one listener per
+  // ever-mounted cell).
+  $effect(() => {
+    const onRenderMarkdown = (e: any) => {
       if (e.detail.cellId === cell.id && cell.type === 'markdown') {
         isEditingMarkdown = false;
       }
-    });
-  }
+    };
+    window.addEventListener('render-markdown', onRenderMarkdown);
+    return () => window.removeEventListener('render-markdown', onRenderMarkdown);
+  });
 
   // Drag-and-drop handlers
   function onDragStart(event: DragEvent) {
@@ -356,11 +359,10 @@
       {#if !cell.collapsed}
         {#if cell.type === 'code'}
           <div class="cell-content">
-            <MonacoEditor
+            <CodeEditor
               bind:this={editorRef}
               value={cell.content}
               language="javascript"
-              theme={monacoTheme($theme)}
               height="auto"
               readOnly={cell.readOnly ?? false}
               onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}

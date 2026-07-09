@@ -27,11 +27,6 @@ function initialTheme(): Theme {
 
 export const theme = writable<Theme>(initialTheme());
 
-/** Monaco's built-in theme name for the current app theme. */
-export function monacoTheme(t: Theme): string {
-  return t === 'dark' ? 'vs-dark' : 'vs';
-}
-
 if (typeof document !== 'undefined') {
   theme.subscribe((t) => {
     document.documentElement.setAttribute('data-theme', t);

@@ -63,12 +63,28 @@
       for (const cell of notebook.cells) {
         if (cell.type === 'code' && dependents.has(cell.id)) {
           await handleRunCell({ cellId: cell.id });
-          await new Promise(resolve => setTimeout(resolve, 20));
+          await yieldToUI();
         }
       }
     } finally {
       suppressCascade = false;
     }
+  }
+
+  // Give the browser one frame to paint outputs/progress between cell runs.
+  // (The old fixed sleeps — 20-100 ms per cell — added seconds to run-all.)
+  const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+  // Staleness needs a full dependency re-analysis of the notebook (regex over
+  // every code cell), so don't do it on every keystroke — debounce until the
+  // user pauses typing.
+  let staleTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleStaleRecompute() {
+    if (staleTimer) clearTimeout(staleTimer);
+    staleTimer = setTimeout(() => {
+      staleTimer = null;
+      recomputeStaleCells(getNotebookSnapshot());
+    }, 250);
   }
 
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
@@ -77,7 +93,7 @@
       return updateCellContent(notebook, cellId, content);
     });
     // Editing a cell may make it (and its dependents) stale.
-    recomputeStaleCells(getNotebookSnapshot());
+    scheduleStaleRecompute();
   }
 
   async function handleRunCell({ cellId }: { cellId: string }) {
@@ -175,7 +191,7 @@
       for (const cell of notebook.cells) {
         if (cell.type === 'code' && downstream.has(cell.id)) {
           await handleRunCell({ cellId: cell.id });
-          await new Promise(resolve => setTimeout(resolve, 30));
+          await yieldToUI();
         }
       }
     } finally {
@@ -199,7 +215,7 @@
     for (const cell of notebook.cells) {
       if (cell.type === 'code' && stale.has(cell.id)) {
         await handleRunCell({ cellId: cell.id });
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await yieldToUI();
         runProgress.set({ done: ++done, total });
       }
     }
@@ -225,11 +241,10 @@
     for (const cell of notebook.cells) {
       if (cell.type === 'code') {
         await handleRunCell({ cellId: cell.id });
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await yieldToUI();
       } else if (cell.type === 'markdown') {
         const event = new CustomEvent('render-markdown', { detail: { cellId: cell.id } });
         window.dispatchEvent(event);
-        await new Promise(resolve => setTimeout(resolve, 50));
       }
       runProgress.set({ done: ++done, total });
     }
@@ -457,12 +472,12 @@
     if (!activeCellId) return;
 
     // Ctrl/Cmd+A selects the current cell's content, not the whole page. Text
-    // editors (Monaco, markdown textarea) already handle their own select-all, so
-    // only scope the selection when we're in command mode (no editor focused).
+    // editors (CodeMirror, markdown textarea) already handle their own select-all,
+    // so only scope the selection when we're in command mode (no editor focused).
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a'
         && !event.shiftKey && !event.altKey) {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('textarea, input, [contenteditable="true"], .monaco-editor')) {
+      if (target?.closest('textarea, input, [contenteditable="true"], .cm-editor')) {
         return;
       }
       const content = document.querySelector(`[data-testid="cell-${activeCellId}"] .cell-content`);

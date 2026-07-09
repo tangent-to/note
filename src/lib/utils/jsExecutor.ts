@@ -10,9 +10,6 @@
  * - Capture console output and collect DOM outputs appended to a temporary output div.
  * - Preserve last-expression display without mutating the global scope unless the
  *   executed code does so explicitly.
- * - Intercept dynamic <script> injection from cell code and temporarily disable
- *   Monaco's RequireJS/AMD `define` so third-party UMD/WASM scripts (e.g. Verovio)
- *   don't collide with the AMD loader.
  */
 
 import type { CellOutput } from "../types/notebook";
@@ -40,9 +37,6 @@ export class JavaScriptExecutor {
     this.setupInputs();
     // `data(name)` accessor for files dropped into the Data panel.
     this.setupDataAccess();
-    // Install the AMD guard so dynamically injected scripts don't conflict
-    // with Monaco Editor's RequireJS loader.
-    this.installAmdGuard();
   }
 
   /**
@@ -207,73 +201,6 @@ export class JavaScriptExecutor {
     };
 
     (window as any).ui = ui;
-  }
-
-  /**
-   * Monkey-patch document.createElement to intercept <script> element creation.
-   * When a notebook cell (or a library it loads) injects a <script> tag,
-   * we temporarily hide `window.define` so that UMD/AMD scripts see no AMD
-   * loader and fall through to their global/IIFE path instead of colliding
-   * with Monaco's RequireJS.
-   *
-   * `define` is restored once the script's `load` or `error` event fires.
-   * Idempotent — safe to call multiple times.
-   */
-  private installAmdGuard() {
-    if ((window as any).__tangent_amdGuardInstalled) return;
-    (window as any).__tangent_amdGuardInstalled = true;
-
-    const origCreateElement = document.createElement.bind(document);
-    const srcDescriptor = Object.getOwnPropertyDescriptor(
-      HTMLScriptElement.prototype,
-      "src",
-    );
-
-    document.createElement = function (
-      tagName: string,
-      options?: ElementCreationOptions,
-    ): HTMLElement {
-      const el = origCreateElement(tagName, options);
-
-      // Only patch <script> elements, and only if we can intercept src
-      if (tagName.toLowerCase() !== "script" || !srcDescriptor?.set) {
-        return el;
-      }
-
-      const origSrcSet = srcDescriptor.set;
-      const origSrcGet = srcDescriptor.get;
-
-      // Override `src` on this specific element instance.
-      // When src is assigned, hide AMD `define` until load/error fires.
-      Object.defineProperty(el, "src", {
-        set(value: string) {
-          const savedDefine = (window as any).define;
-          if (savedDefine && savedDefine.amd) {
-            (window as any).define = undefined;
-
-            const restore = () => {
-              // Only restore if nothing else has set define in the meantime
-              if (!(window as any).define) {
-                (window as any).define = savedDefine;
-              }
-            };
-            el.addEventListener("load", restore, { once: true });
-            el.addEventListener("error", restore, { once: true });
-            // Safety net: restore after 30s even if no event fires
-            setTimeout(restore, 30000);
-          }
-
-          origSrcSet.call(el, value);
-        },
-        get() {
-          return origSrcGet?.call(el) ?? "";
-        },
-        configurable: true,
-        enumerable: true,
-      });
-
-      return el;
-    } as typeof document.createElement;
   }
 
   /** Reset the shared scope (equivalent to "restart kernel") */

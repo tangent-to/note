@@ -54,7 +54,7 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
   // Undo: Ctrl/Cmd + Z (handled by undo system when no editor focused)
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
     const active = document.activeElement;
-    const isInEditor = active?.closest('.monaco-editor') || active?.tagName === 'TEXTAREA' || active?.tagName === 'INPUT';
+    const isInEditor = active?.closest('.cm-editor') || active?.tagName === 'TEXTAREA' || active?.tagName === 'INPUT';
     if (!isInEditor) {
       event.preventDefault();
       handlers.undo();
