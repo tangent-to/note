@@ -104,10 +104,14 @@
     },
   });
 
+  // stopPropagation matters: the Notebook component has a global window
+  // keydown handler for these same shortcuts, and without it a run from
+  // inside the editor would bubble up and execute the cell twice.
   const runKeymap = Prec.highest(
     keymap.of([
       {
         key: 'Shift-Enter',
+        stopPropagation: true,
         run: () => {
           onrunAndAdvance?.();
           return true;
@@ -115,6 +119,7 @@
       },
       {
         key: 'Mod-Enter',
+        stopPropagation: true,
         run: () => {
           onrun?.();
           return true;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
+  import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
   import '../styles/observable-inspector.css';
 
   let { output }: { output: CellOutput } = $props();
@@ -135,6 +136,24 @@
       destroy() { node.innerHTML = ''; }
     };
   }
+
+  // Render a worker-kernel widget spec as a live main-thread control.
+  function insertWidget(node: HTMLElement, specJson: string) {
+    const render = (json: string) => {
+      node.innerHTML = '';
+      try {
+        const spec = JSON.parse(json) as WidgetSpec;
+        node.appendChild(renderWidget(spec));
+      } catch (err: any) {
+        renderError = `Failed to render widget: ${err?.message || String(err)}`;
+      }
+    };
+    render(specJson);
+    return {
+      update(next: string) { render(next); },
+      destroy() { node.innerHTML = ''; }
+    };
+  }
 </script>
 
 <div class="output-container" data-testid="cell-output">
@@ -156,6 +175,8 @@
     <div class="output-content {output.type}">
       {#if output.type === 'dom'}
         <div class="dom-output" use:insertLiveElement={output.content as Element}></div>
+      {:else if output.type === 'widget'}
+        <div class="widget-output" use:insertWidget={output.content as string}></div>
       {:else if output.type === 'html'}
         <div class="html-output">
           {@html output.content}
@@ -211,6 +232,10 @@
   .html-output {
     max-width: 100%;
     overflow-x: auto;
+  }
+
+  .widget-output {
+    padding: 0.3rem 0.85rem;
   }
 
   .dom-output :global(svg),

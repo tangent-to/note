@@ -22,8 +22,10 @@
     undoDeleteCell,
     resetExecutionCounter,
     resetStaleTracking,
-    outputPosition
+    outputPosition,
+    kernelMode
   } from './lib/stores/notebook';
+  import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
@@ -511,6 +513,31 @@
           </svg>
           <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
         </button>
+        <button
+          class="reactive-toggle"
+          class:active={$kernelMode === 'worker'}
+          onclick={() => kernelMode.update(m => m === 'worker' ? 'main' : 'worker')}
+          title="Worker kernel: cells run off the main thread, so the page never freezes and runs can be stopped. Figures render as static HTML. Switch to main-thread mode only for notebooks that need live DOM outputs. Variables reset when switching."
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+            <path d="M9 9l-2 3 2 3M15 9l2 3-2 3"/>
+          </svg>
+          <span class="btn-label">{$kernelMode === 'worker' ? 'Worker' : 'Main thread'}</span>
+        </button>
+        {#if $kernelBusy}
+          <button
+            class="stop-kernel-btn"
+            onclick={() => { kernel.interrupt(); resetStaleTracking(); showToast('Kernel stopped and restarted — notebook variables were cleared.', 'info'); }}
+            title="Stop the running computation (restarts the kernel; notebook variables are cleared)"
+            transition:fade={{ duration: 150 }}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="2.5" y="2.5" width="9" height="9" rx="1.5"/>
+            </svg>
+            <span class="btn-label">Stop</span>
+          </button>
+        {/if}
         <span class="header-meta">
           {#if $notebookDirty}
             <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
@@ -862,6 +889,23 @@
     color: var(--accent-on-solid);
     border-color: var(--accent-solid);
   }
+
+  .stop-kernel-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.7rem;
+    background-color: var(--danger-bg);
+    color: var(--danger-fg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-pill);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .stop-kernel-btn:hover { filter: brightness(0.95); }
 
   /* Mobile: collapse the header to icons so it fits narrow screens. */
   @media (max-width: 640px) {

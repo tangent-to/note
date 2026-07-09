@@ -10,9 +10,11 @@
     staleCells,
     recordCellRun,
     recomputeStaleCells,
-    reactiveMode
+    reactiveMode,
+    kernelMode
   } from '../stores/notebook';
   import { JavaScriptExecutor } from '../utils/jsExecutor';
+  import { kernel } from '../utils/kernelClient';
   import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
@@ -35,11 +37,16 @@
   };
 
   onMount(async () => {
-    jsExecutor = new JavaScriptExecutor();
-    await jsExecutor.setupCommonLibraries();
     window.addEventListener('run-all-cells', handleRunAllEvent);
     window.addEventListener('run-stale-cells', handleRunStaleEvent);
     window.addEventListener('tangent-input-change', handleInputChangeEvent);
+    if (get(kernelMode) === 'worker') {
+      // Worker kernel: preload common libraries in the background.
+      void kernel.setup();
+    } else {
+      jsExecutor = new JavaScriptExecutor();
+      await jsExecutor.setupCommonLibraries();
+    }
   });
 
   onDestroy(() => {
@@ -127,12 +134,16 @@
     });
 
     try {
-      if (!jsExecutor) {
-        jsExecutor = new JavaScriptExecutor();
-        await jsExecutor.setupCommonLibraries();
+      let output;
+      if (get(kernelMode) === 'worker') {
+        output = await kernel.execute(cell.content);
+      } else {
+        if (!jsExecutor) {
+          jsExecutor = new JavaScriptExecutor();
+          await jsExecutor.setupCommonLibraries();
+        }
+        output = await jsExecutor.executeCode(cell.content);
       }
-
-      const output = await jsExecutor.executeCode(cell.content);
 
       currentNotebook.update(nb => {
         if (!nb) return nb;

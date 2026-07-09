@@ -367,6 +367,16 @@ export class JavaScriptExecutor {
           // ignore
         }
 
+        // Worker-kernel ui.* controls return a declarative spec instead of a
+        // DOM node; surface it as a `widget` output for main-thread rendering.
+        if (lastVal && lastVal.__tangentWidget) {
+          return {
+            type: "widget",
+            content: JSON.stringify(lastVal),
+            timestamp: Date.now(),
+          };
+        }
+
         if (lastVal instanceof Node) {
           return {
             type: "dom",
@@ -627,6 +637,14 @@ export class JavaScriptExecutor {
       try {
         delete (window as any).__tangent_last;
       } catch {}
+
+      if (last && last.__tangentWidget) {
+        return {
+          type: "widget",
+          content: JSON.stringify(last),
+          timestamp: Date.now(),
+        };
+      }
 
       if (last instanceof Node) {
         return {

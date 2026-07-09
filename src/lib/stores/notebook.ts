@@ -67,6 +67,32 @@ reactiveMode.subscribe((on) => {
   }
 });
 
+// Where cells execute. 'worker' (default) runs code in a Web Worker kernel:
+// the UI never freezes and runs can be stopped, but outputs are serialized
+// (figures render as static HTML). 'main' is the legacy main-thread executor
+// for notebooks that need live DOM outputs (interactive players, etc.).
+const KERNEL_MODE_KEY = 'tangent-kernel-mode';
+
+export type KernelMode = 'worker' | 'main';
+
+function loadKernelMode(): KernelMode {
+  try {
+    return localStorage.getItem(KERNEL_MODE_KEY) === 'main' ? 'main' : 'worker';
+  } catch {
+    return 'worker';
+  }
+}
+
+export const kernelMode = writable<KernelMode>(loadKernelMode());
+
+kernelMode.subscribe((mode) => {
+  try {
+    localStorage.setItem(KERNEL_MODE_KEY, mode);
+  } catch {
+    // ignore persistence failures
+  }
+});
+
 // Where cell outputs render relative to the cell content: 'below' (default,
 // Jupyter-style) or 'above' (Observable-style). Persisted across sessions.
 const OUTPUT_POSITION_KEY = 'tangent-output-position';

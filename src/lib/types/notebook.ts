@@ -14,7 +14,9 @@ export interface NotebookCell {
 }
 
 export interface CellOutput {
-  type: "text" | "html" | "json" | "error" | "dom";
+  /** `widget` is a serialized ui.* control spec produced by the worker kernel,
+   *  rendered as a live control on the main thread (see widgetHost.ts). */
+  type: "text" | "html" | "json" | "error" | "dom" | "widget";
   content: string | Element;
   timestamp: number;
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { currentNotebook } from '../stores/notebook';
+  import { get } from 'svelte/store';
+  import { currentNotebook, kernelMode } from '../stores/notebook';
+  import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
   import { toast } from '../utils/toast';
 
@@ -55,7 +57,10 @@
     toast('Copied snippet to clipboard', 'info');
   }
 
+  // Worker kernel pushes variable summaries after each run (kernelVariables
+  // store); polling the window scope only applies to main-thread mode.
   function refreshVariables() {
+    if (get(kernelMode) === 'worker') return;
     const scope = (window as any).__tangent_scope;
     if (!scope || typeof scope !== 'object') {
       variables = {};
@@ -112,7 +117,16 @@
     if (refreshTimer) clearInterval(refreshTimer);
   });
 
-  let varEntries = $derived(Object.entries(variables));
+  // Unified {name, type, repr} rows from either kernel mode.
+  let varEntries = $derived(
+    $kernelMode === 'worker'
+      ? $kernelVariables
+      : Object.entries(variables).map(([name, value]) => ({
+          name,
+          type: getVarType(value),
+          repr: formatVarValue(value),
+        }))
+  );
 </script>
 
 <div class="right-sidebar">
@@ -259,12 +273,12 @@
         <div class="empty-vars">No variables defined yet. Run a cell to see variables here.</div>
       {:else}
         <div class="variables-list">
-          {#each varEntries as [name, value]}
+          {#each varEntries as v (v.name)}
             <div class="var-item">
-              <div class="var-name">{name}</div>
+              <div class="var-name">{v.name}</div>
               <div class="var-meta">
-                <span class="var-type">{getVarType(value)}</span>
-                <span class="var-value" title={formatVarValue(value)}>{formatVarValue(value)}</span>
+                <span class="var-type">{v.type}</span>
+                <span class="var-value" title={v.repr}>{v.repr}</span>
               </div>
             </div>
           {/each}
