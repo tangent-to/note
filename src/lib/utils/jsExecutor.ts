@@ -281,8 +281,6 @@ export class JavaScriptExecutor {
       console.warn = captureWarn;
 
       try {
-        const lines = code.split("\n");
-
         const stripLeadingComments = (input: string): string => {
           let prev = input;
           let curr = input;
@@ -552,11 +550,21 @@ export class JavaScriptExecutor {
         if (bindings.length > 0) imports.push({ spec, bindings });
       }
 
-      for (const imp of imports) {
-        const url = this.normalizeModuleUrl(imp.spec);
-        const mod = await import(
-          /* @vite-ignore */ /* webpackIgnore: true */ url
-        );
+      // The imports are independent, so fetch them in parallel; the binding /
+      // scope assignments below still run in the original order.
+      const mods = await Promise.all(
+        imports.map((imp) =>
+          import(
+            /* @vite-ignore */ /* webpackIgnore: true */ this.normalizeModuleUrl(
+              imp.spec,
+            )
+          ),
+        ),
+      );
+
+      for (let i = 0; i < imports.length; i++) {
+        const imp = imports[i];
+        const mod = mods[i];
         for (const b of imp.bindings) {
           // Named specifiers resolve to the individual export (mod[name]);
           // namespace/default bindings keep the module (or its default).
@@ -962,37 +970,4 @@ export class JavaScriptExecutor {
     }
   }
 
-  async executeCodeWithModules(
-    code: string,
-    modules: string[] = [],
-  ): Promise<CellOutput> {
-    try {
-      await Promise.all(
-        modules.map(async (m) => {
-          const mod = await this.loadModule(m);
-          const name = this.getModuleName(m);
-          (window as any)[name] = mod.default || mod;
-          this.scope[name] = mod.default || mod;
-        }),
-      );
-      return await this.executeCode(code);
-    } catch (err: any) {
-      return {
-        type: "error",
-        content: `Module loading error: ${err?.message ?? String(err)}`,
-        timestamp: Date.now(),
-      };
-    }
-  }
-
-  private getModuleName(moduleUrl: string): string {
-    if (moduleUrl.includes("d3")) return "d3";
-    if (moduleUrl.includes("plot")) return "Plot";
-    if (moduleUrl.includes("lodash")) return "_";
-    if (moduleUrl.includes("three")) return "THREE";
-    if (moduleUrl.includes("p5")) return "p5";
-    const parts = moduleUrl.split("/");
-    const last = parts[parts.length - 1];
-    return last.replace(/[@\-\.]/g, "_");
-  }
 }

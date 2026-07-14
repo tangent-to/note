@@ -42,6 +42,7 @@
     "@tailwindcss/postcss": "^4.1.14",
     "@tailwindcss/typography": "^0.5.19",
     "autoprefixer": "^10.4.21",
+    "dompurify": "^3.4.12",
     "katex": "^0.16.8",
     "linkedom": "^0.18.13",
     "marked": "^4.2.12",

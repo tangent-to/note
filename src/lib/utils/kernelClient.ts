@@ -98,7 +98,9 @@ class KernelClient {
         if (msg.variables) kernelVariables.set(msg.variables);
         return msg.output as CellOutput;
       } finally {
-        this.running--;
+        // Clamp so a reject-from-interrupt (which already reconciles the
+        // counter) can never drive `running` negative and wedge kernelBusy on.
+        this.running = Math.max(0, this.running - 1);
         if (this.running === 0) kernelBusy.set(false);
       }
     });
@@ -133,7 +135,10 @@ class KernelClient {
     for (const p of this.pending.values()) p.reject(err);
     this.pending.clear();
     this.execChain = Promise.resolve();
-    this.running = 0;
+    // Don't zero `running` here: the in-flight execute() we just rejected still
+    // runs its own finally, which decrements the counter. Zeroing as well would
+    // double-count and push `running` negative, permanently wedging kernelBusy.
+    // The clamped decrement in that finally reconciles it back to 0.
     kernelBusy.set(false);
     kernelVariables.set([]);
     // Respawn eagerly so the next run doesn't pay the startup cost.

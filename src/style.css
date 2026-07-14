@@ -173,11 +173,6 @@ pre {
     font-family: var(--font-mono);
 }
 
-.monaco-editor,
-.monaco-editor * {
-    font-family: var(--font-mono) !important;
-}
-
 /* Tabular figures keep execution counters and metrics from shifting width. */
 .tabular-nums {
     font-variant-numeric: tabular-nums;
@@ -233,12 +228,6 @@ progress {
   }
 }
 
-/* Monaco renders a large "show keyboard" button on iOS/touch that overlaps the
-   code. We focus the editor on tap anyway, so hide it. */
-.monaco-editor .iPadShowKeyboard {
-  display: none !important;
-}
-
 /* iOS Safari zooms in when a focused field has font-size < 16px. Bump editable
    fields to 16px on small screens to stop the jarring auto-zoom. */
 @media (max-width: 640px) {
@@ -247,7 +236,9 @@ progress {
   select {
     font-size: 16px !important;
   }
-  .monaco-editor .inputarea {
+  /* CodeMirror's editable element — keep it 16px so tapping into a code or
+     markdown editor doesn't trigger the auto-zoom. */
+  .cm-content {
     font-size: 16px !important;
   }
 }

@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, get, type Writable } from 'svelte/store';
 import type { Notebook, NotebookCell, NotebookFile } from '../types/notebook';
 import { saveToLocalStorage } from '../utils/webPersistence';
 import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependencyGraph';
@@ -45,77 +45,55 @@ export function resetStaleTracking(): void {
   staleCells.set(new Set());
 }
 
-// Reactive mode: when on, running a cell automatically re-runs its downstream
-// dependents in dependency order. Persisted across sessions.
-const REACTIVE_KEY = 'tangent-reactive-mode';
-
-function loadReactiveMode(): boolean {
+// A writable store backed by localStorage under `key`. The initial value comes
+// from `parse` (which receives the raw stored string, or null when absent or
+// when localStorage is unavailable); every change is written back as a string.
+// Read/write failures (private mode, quota) are swallowed so the store still
+// works purely in-memory.
+function persistedStore<T>(key: string, parse: (raw: string | null) => T): Writable<T> {
+  let initial: T;
   try {
-    return localStorage.getItem(REACTIVE_KEY) === '1';
+    initial = parse(localStorage.getItem(key));
   } catch {
-    return false;
+    initial = parse(null);
   }
+  const store = writable<T>(initial);
+  store.subscribe((value) => {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch {
+      // ignore persistence failures
+    }
+  });
+  return store;
 }
 
-export const reactiveMode = writable<boolean>(loadReactiveMode());
+export type KernelMode = 'worker' | 'main';
+export type OutputPosition = 'below' | 'above';
 
-reactiveMode.subscribe((on) => {
-  try {
-    localStorage.setItem(REACTIVE_KEY, on ? '1' : '0');
-  } catch {
-    // ignore persistence failures
-  }
-});
+// Reactive mode: when on, running a cell automatically re-runs its downstream
+// dependents in dependency order. Persisted across sessions.
+// Stored as 'true'/'false'; '1' is also accepted for backward compatibility.
+export const reactiveMode = persistedStore<boolean>(
+  'tangent-reactive-mode',
+  (raw) => raw === 'true' || raw === '1',
+);
 
 // Where cells execute. 'worker' (default) runs code in a Web Worker kernel:
 // the UI never freezes and runs can be stopped, but outputs are serialized
 // (figures render as static HTML). 'main' is the legacy main-thread executor
 // for notebooks that need live DOM outputs (interactive players, etc.).
-const KERNEL_MODE_KEY = 'tangent-kernel-mode';
-
-export type KernelMode = 'worker' | 'main';
-
-function loadKernelMode(): KernelMode {
-  try {
-    return localStorage.getItem(KERNEL_MODE_KEY) === 'main' ? 'main' : 'worker';
-  } catch {
-    return 'worker';
-  }
-}
-
-export const kernelMode = writable<KernelMode>(loadKernelMode());
-
-kernelMode.subscribe((mode) => {
-  try {
-    localStorage.setItem(KERNEL_MODE_KEY, mode);
-  } catch {
-    // ignore persistence failures
-  }
-});
+export const kernelMode = persistedStore<KernelMode>(
+  'tangent-kernel-mode',
+  (raw) => (raw === 'main' ? 'main' : 'worker'),
+);
 
 // Where cell outputs render relative to the cell content: 'below' (default,
 // Jupyter-style) or 'above' (Observable-style). Persisted across sessions.
-const OUTPUT_POSITION_KEY = 'tangent-output-position';
-
-export type OutputPosition = 'below' | 'above';
-
-function loadOutputPosition(): OutputPosition {
-  try {
-    return localStorage.getItem(OUTPUT_POSITION_KEY) === 'above' ? 'above' : 'below';
-  } catch {
-    return 'below';
-  }
-}
-
-export const outputPosition = writable<OutputPosition>(loadOutputPosition());
-
-outputPosition.subscribe((pos) => {
-  try {
-    localStorage.setItem(OUTPUT_POSITION_KEY, pos);
-  } catch {
-    // ignore persistence failures
-  }
-});
+export const outputPosition = persistedStore<OutputPosition>(
+  'tangent-output-position',
+  (raw) => (raw === 'above' ? 'above' : 'below'),
+);
 
 // Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);

@@ -2,6 +2,7 @@
   import { tick, untrack } from 'svelte';
   import { marked } from 'marked';
   import katex from 'katex';
+  import DOMPurify from 'dompurify';
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
   import { outputPosition } from '../stores/notebook';
@@ -173,9 +174,15 @@
     }
   });
 
-  // Render markdown
+  // Render markdown. Gated on `isEditingMarkdown`: the preview is hidden while
+  // editing, so re-rendering (katex + marked + sanitize) on every keystroke is
+  // wasted work. Returning early before reading `cell.content` keeps this effect
+  // from tracking it while editing; it re-runs (rendering the latest content)
+  // once the user leaves edit mode. The previous render is preserved meanwhile.
   $effect(() => {
-    if (cell.type === 'markdown' && cell.content) {
+    if (cell.type !== 'markdown') return;
+    if (isEditingMarkdown) return;
+    if (cell.content) {
       try {
         let md = cell.content || '';
 
@@ -196,11 +203,21 @@
           }
         });
 
-        renderedMarkdown = (marked(md) as string) || '';
+        // Sanitize before {@html}: markdown can come from imported remote
+        // notebooks (?url= / /gh/), so an attacker's cell must not be able to
+        // run script. DOMPurify strips event handlers (onerror, onclick, …) and
+        // <script>. Its default MathML profile drops KaTeX's <semantics> /
+        // <annotation> (the TeX source used for a11y/copy), so allow those tags
+        // and the `encoding` attribute back — event handlers on them are still
+        // stripped, so this stays safe.
+        renderedMarkdown = DOMPurify.sanitize((marked(md) as string) || '', {
+          ADD_TAGS: ['semantics', 'annotation', 'annotation-xml'],
+          ADD_ATTR: ['encoding'],
+        });
       } catch (e: any) {
         renderedMarkdown = `<pre style="color: var(--danger-fg);">Markdown render error: ${e && e.message ? e.message : String(e)}</pre>`;
       }
-    } else if (cell.type === 'markdown') {
+    } else {
       renderedMarkdown = '';
     }
   });
