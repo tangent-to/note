@@ -70,7 +70,8 @@ function topLevelBoundaries(code: string): { index: number; char: string }[] {
       continue;
     }
 
-    // code frame
+    // code frame (the only remaining variant here; narrow for TypeScript)
+    const codeTop = top as { type: "code"; depth: number };
     if (c === "/" && c2 === "/") {           // line comment: skip to (not incl.) newline
       let j = i + 2;
       while (j < n && code[j] !== "\n") j++;
@@ -86,18 +87,18 @@ function topLevelBoundaries(code: string): { index: number; char: string }[] {
     if (c === "'") { stack.push({ type: "sq" }); i++; continue; }
     if (c === '"') { stack.push({ type: "dq" }); i++; continue; }
     if (c === "`") { stack.push({ type: "tpl" }); i++; continue; }
-    if (c === "(" || c === "[" || c === "{") { top.depth++; i++; continue; }
-    if (c === ")" || c === "]") { top.depth = Math.max(0, top.depth - 1); i++; continue; }
+    if (c === "(" || c === "[" || c === "{") { codeTop.depth++; i++; continue; }
+    if (c === ")" || c === "]") { codeTop.depth = Math.max(0, codeTop.depth - 1); i++; continue; }
     if (c === "}") {
-      if (top.depth === 0 && stack.length > 1) {
+      if (codeTop.depth === 0 && stack.length > 1) {
         stack.pop();                          // closes a `${...}` interpolation
       } else {
-        top.depth = Math.max(0, top.depth - 1);
+        codeTop.depth = Math.max(0, codeTop.depth - 1);
       }
       i++;
       continue;
     }
-    if ((c === ";" || c === "\n" || c === "\r") && stack.length === 1 && top.depth === 0) {
+    if ((c === ";" || c === "\n" || c === "\r") && stack.length === 1 && codeTop.depth === 0) {
       boundaries.push({ index: i, char: c });
     }
     i++;
