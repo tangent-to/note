@@ -15,6 +15,130 @@
 import type { CellOutput } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
 
+/**
+ * Split a code cell into its final expression (for last-value display) and the
+ * statements before it. Pure string logic, exported for unit testing. Scans
+ * backward, respecting bracket depth and string literals, to find the start of
+ * the trailing expression.
+ *
+ * Method-chain continuation is honoured: a newline before a leading `.` (a
+ * fluent chain broken across lines, e.g. `foo(...)\n  .bar()`) is NOT a
+ * statement boundary, so the whole chain is captured rather than the dangling
+ * `.bar()` (which would parse as "expected expression, got '.'"). An explicit
+ * `;` always ends the statement.
+ *
+ * Returns null when there is no displayable trailing expression, or when the
+ * expression would begin inside a template literal (`\``), which this scanner
+ * does not split.
+ */
+/**
+ * Forward scan: find every top-level statement boundary (`;` or newline that is
+ * NOT inside a string, comment, template literal, or bracket group). Returns the
+ * boundary character indices, in order.
+ *
+ * A frame stack handles template-literal interpolation correctly: inside a
+ * `` `...` `` a `${` opens a nested CODE frame (with its own bracket depth), and
+ * the matching `}` returns to the template. This is what lets a last expression
+ * contain a `title: \`... ${x} ...\`` template literal — the old scanner bailed
+ * on any backtick and the cell silently never displayed.
+ */
+function topLevelBoundaries(code: string): { index: number; char: string }[] {
+  const boundaries: { index: number; char: string }[] = [];
+  // Each frame is a CODE context with its own bracket depth, or a string/template
+  // context. The outermost frame is code; interpolation pushes another code frame.
+  type Frame = { type: "code"; depth: number } | { type: "sq" | "dq" | "tpl" };
+  const stack: Frame[] = [{ type: "code", depth: 0 }];
+  const n = code.length;
+  let i = 0;
+  while (i < n) {
+    const top = stack[stack.length - 1];
+    const c = code[i];
+    const c2 = code[i + 1];
+
+    if (top.type === "sq" || top.type === "dq") {
+      if (c === "\\") { i += 2; continue; }
+      if ((top.type === "sq" && c === "'") || (top.type === "dq" && c === '"')) stack.pop();
+      i++;
+      continue;
+    }
+
+    if (top.type === "tpl") {
+      if (c === "\\") { i += 2; continue; }
+      if (c === "`") { stack.pop(); i++; continue; }
+      if (c === "$" && c2 === "{") { stack.push({ type: "code", depth: 0 }); i += 2; continue; }
+      i++;
+      continue;
+    }
+
+    // code frame
+    if (c === "/" && c2 === "/") {           // line comment: skip to (not incl.) newline
+      let j = i + 2;
+      while (j < n && code[j] !== "\n") j++;
+      i = j;
+      continue;
+    }
+    if (c === "/" && c2 === "*") {            // block comment
+      let j = i + 2;
+      while (j < n && !(code[j] === "*" && code[j + 1] === "/")) j++;
+      i = Math.min(n, j + 2);
+      continue;
+    }
+    if (c === "'") { stack.push({ type: "sq" }); i++; continue; }
+    if (c === '"') { stack.push({ type: "dq" }); i++; continue; }
+    if (c === "`") { stack.push({ type: "tpl" }); i++; continue; }
+    if (c === "(" || c === "[" || c === "{") { top.depth++; i++; continue; }
+    if (c === ")" || c === "]") { top.depth = Math.max(0, top.depth - 1); i++; continue; }
+    if (c === "}") {
+      if (top.depth === 0 && stack.length > 1) {
+        stack.pop();                          // closes a `${...}` interpolation
+      } else {
+        top.depth = Math.max(0, top.depth - 1);
+      }
+      i++;
+      continue;
+    }
+    if ((c === ";" || c === "\n" || c === "\r") && stack.length === 1 && top.depth === 0) {
+      boundaries.push({ index: i, char: c });
+    }
+    i++;
+  }
+  return boundaries;
+}
+
+export function extractLastExpression(code: string): {
+  before: string;
+  expression: string;
+} | null {
+  if (!code) return null;
+
+  // Trim trailing whitespace and semicolons to locate the end of the last expression.
+  let end = code.length;
+  while (end > 0 && /\s/.test(code.charAt(end - 1))) end--;
+  while (end > 0 && code.charAt(end - 1) === ";") {
+    end--;
+    while (end > 0 && /\s/.test(code.charAt(end - 1))) end--;
+  }
+  if (end <= 0) return null;
+
+  const boundaries = topLevelBoundaries(code).filter((b) => b.index < end);
+
+  // Walk boundaries from the last toward the first; the statement start is just
+  // after the chosen boundary. A NEWLINE boundary immediately before a leading
+  // `.` is a method-chain continuation, not a statement break, so skip it and
+  // take an earlier boundary (an explicit `;` always breaks).
+  for (let k = boundaries.length - 1; k >= 0; k--) {
+    const b = boundaries[k];
+    const expression = code.slice(b.index + 1, end);
+    if (!expression.trim()) continue;
+    if (b.char !== ";" && /^\s*\./.test(expression)) continue;
+    return { before: code.slice(0, b.index + 1), expression };
+  }
+
+  const expression = code.slice(0, end);
+  if (!expression.trim()) return null;
+  return { before: "", expression };
+}
+
 export class JavaScriptExecutor {
   private outputElement: HTMLElement | null = null;
 
@@ -741,76 +865,7 @@ export class JavaScriptExecutor {
     before: string;
     expression: string;
   } | null {
-    if (!code) return null;
-
-    let end = code.length;
-    while (end > 0 && /\s/.test(code.charAt(end - 1))) {
-      end--;
-    }
-
-    while (end > 0 && code.charAt(end - 1) === ";") {
-      end--;
-      while (end > 0 && /\s/.test(code.charAt(end - 1))) {
-        end--;
-      }
-    }
-
-    if (end <= 0) return null;
-
-    const relevant = code.slice(0, end);
-    let depth = 0;
-    let inString: string | null = null;
-    let escaped = false;
-
-    for (let i = end - 1; i >= 0; i--) {
-      const ch = relevant.charAt(i);
-
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-          continue;
-        }
-        if (ch === "\\") {
-          escaped = true;
-          continue;
-        }
-        if (ch === inString) {
-          inString = null;
-        }
-        continue;
-      }
-
-      if (ch === "'" || ch === '"') {
-        inString = ch;
-        continue;
-      }
-
-      if (ch === "`") {
-        return null;
-      }
-
-      if (ch === ")" || ch === "]" || ch === "}") {
-        depth++;
-        continue;
-      }
-
-      if ((ch === "(" || ch === "[" || ch === "{") && depth > 0) {
-        depth--;
-        continue;
-      }
-
-      if (depth === 0 && (ch === ";" || ch === "\n" || ch === "\r")) {
-        const start = i + 1;
-        const expression = relevant.slice(start);
-        if (!expression.trim()) return null;
-        const before = relevant.slice(0, start);
-        return { before, expression };
-      }
-    }
-
-    const expression = relevant;
-    if (!expression.trim()) return null;
-    return { before: "", expression };
+    return extractLastExpression(code);
   }
 
   private formatValue(value: any): string {

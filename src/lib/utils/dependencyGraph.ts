@@ -36,13 +36,59 @@ export function hashCode(input: string): string {
   return String(hash >>> 0);
 }
 
+// Blank out strings and comments in one left-to-right pass. A single scanner is
+// required (not sequential regexes): a `//` or `/* */` comment may contain a
+// backtick, and a string may contain `//` — so whichever construct opens FIRST
+// wins. The old regex order (comments before strings) left a stray backtick from
+// a commented-out template literal, which then swallowed the rest of the source
+// and corrupted the dependency scan. Newlines are preserved so line-anchored
+// (`^`) declaration regexes downstream still work; every other consumed char
+// becomes a space.
 function stripStringsAndComments(code: string): string {
-  return code
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/\/\/[^\n]*/g, ' ')
-    .replace(/`(?:\\.|[^`\\])*`/g, ' ')
-    .replace(/'(?:\\.|[^'\\])*'/g, ' ')
-    .replace(/"(?:\\.|[^"\\])*"/g, ' ');
+  let out = '';
+  let i = 0;
+  const n = code.length;
+  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
+  while (i < n) {
+    const ch = code[i];
+    const next = code[i + 1];
+    // line comment
+    if (ch === '/' && next === '/') {
+      let j = i + 2;
+      while (j < n && code[j] !== '\n') j++;
+      out += blank(code.slice(i, j));
+      i = j;
+      continue;
+    }
+    // block comment
+    if (ch === '/' && next === '*') {
+      let j = i + 2;
+      while (j < n && !(code[j] === '*' && code[j + 1] === '/')) j++;
+      j = Math.min(n, j + 2);
+      out += blank(code.slice(i, j));
+      i = j;
+      continue;
+    }
+    // string / template literal (template interpolation is blanked wholesale too,
+    // which is safe here: it only makes the scan miss reads inside `${…}`, so at
+    // worst a dependency is under-reported for interpolated identifiers — a known,
+    // acceptable limitation of this lightweight analyser)
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const quote = ch;
+      let j = i + 1;
+      while (j < n) {
+        if (code[j] === '\\') { j += 2; continue; }
+        if (code[j] === quote) { j++; break; }
+        j++;
+      }
+      out += blank(code.slice(i, j));
+      i = j;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }
 
 // Pull binding names out of a destructuring pattern like `{a, b: c, d = 1}`

@@ -49,6 +49,32 @@ describe('analyzeCell', () => {
     expect(reads.has('foo')).toBe(false);
     expect(reads.has('bar')).toBe(false);
   });
+
+  it('handles a template literal with ${} inside a line comment', () => {
+    // Regression: a backtick (and ${...}) inside a // comment must not leak out
+    // and swallow the rest of the source. Previously the comment-before-string
+    // strip order left a dangling backtick, corrupting the whole scan.
+    const code = [
+      'const pct = rate * 100;',
+      '// title: `value is ${pct.toFixed(0)}% of total`,',
+      'const out = pct + 1;',
+    ].join('\n');
+    const { defines, reads } = analyzeCell(code);
+    expect(defines.has('pct')).toBe(true);
+    expect(defines.has('out')).toBe(true);   // line AFTER the backtick comment still parses
+    expect(reads.has('rate')).toBe(true);
+  });
+
+  it('handles a template literal spanning a block comment with backticks', () => {
+    const code = [
+      'const a = 1;',
+      '/* example: `${a}` and `${b}` */',
+      'const c = a + 2;',
+    ].join('\n');
+    const { defines } = analyzeCell(code);
+    expect(defines.has('a')).toBe(true);
+    expect(defines.has('c')).toBe(true);
+  });
 });
 
 describe('computeStaleCells', () => {
