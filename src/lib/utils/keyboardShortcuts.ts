@@ -2,6 +2,7 @@ export interface ShortcutHandler {
   showCommandPalette: () => void;
   toggleChat: () => void;
   toggleData: () => void;
+  toggleConsole?: () => void;
   save: () => void;
   newNotebook: () => void;
   importNotebook: () => void;
@@ -32,6 +33,14 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'd') {
     event.preventDefault();
     handlers.toggleData();
+    return true;
+  }
+
+  // Toggle Console: Ctrl/Cmd + ` (backtick), the terminal-panel convention.
+  // Plain backtick typing is unaffected (this needs the modifier).
+  if ((event.metaKey || event.ctrlKey) && event.key === '`') {
+    event.preventDefault();
+    handlers.toggleConsole?.();
     return true;
   }
 

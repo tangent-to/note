@@ -9,7 +9,7 @@
     dropCursor,
   } from '@codemirror/view';
   import { EditorState, Compartment, Prec } from '@codemirror/state';
-  import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
   import {
     bracketMatching,
     indentOnInput,
@@ -33,9 +33,14 @@
     language?: string;
     height?: string;
     readOnly?: boolean;
+    /** Console REPL mode: plain Enter submits, Shift+Enter inserts a newline,
+     *  and Arrow Up/Down at the first/last line browse input history. */
+    submitOnEnter?: boolean;
     onchange?: (detail: { value: string }) => void;
     onrun?: () => void;
     onrunAndAdvance?: () => void;
+    onsubmit?: () => void;
+    onhistory?: (direction: 'prev' | 'next') => boolean;
     oneditorFocus?: () => void;
     onfocus?: () => void;
     oneditorBlur?: () => void;
@@ -47,9 +52,12 @@
     language = 'javascript',
     height = 'auto',
     readOnly = false,
+    submitOnEnter = false,
     onchange,
     onrun,
     onrunAndAdvance,
+    onsubmit,
+    onhistory,
     oneditorFocus,
     onfocus,
     oneditorBlur,
@@ -129,6 +137,21 @@
     ]),
   );
 
+  // Console REPL keymap (used instead of runKeymap when submitOnEnter is set).
+  const atFirstLine = (v: EditorView) =>
+    v.state.doc.lineAt(v.state.selection.main.head).number === 1;
+  const atLastLine = (v: EditorView) =>
+    v.state.doc.lineAt(v.state.selection.main.head).number === v.state.doc.lines;
+
+  const consoleKeymap = Prec.highest(
+    keymap.of([
+      { key: 'Enter', stopPropagation: true, run: () => { onsubmit?.(); return true; } },
+      { key: 'Shift-Enter', stopPropagation: true, run: insertNewlineAndIndent },
+      { key: 'ArrowUp', run: (v) => (atFirstLine(v) ? (onhistory?.('prev') ?? false) : false) },
+      { key: 'ArrowDown', run: (v) => (atLastLine(v) ? (onhistory?.('next') ?? false) : false) },
+    ]),
+  );
+
   onMount(() => {
     const isMarkdown = language === 'markdown';
     view = new EditorView({
@@ -136,8 +159,9 @@
       state: EditorState.create({
         doc: value,
         extensions: [
-          // Prose doesn't need line numbers; code does.
-          ...(isMarkdown ? [] : [lineNumbers()]),
+          // Prose doesn't need line numbers; code does. The console prompt is a
+          // single REPL line, so it doesn't either.
+          ...(isMarkdown || submitOnEnter ? [] : [lineNumbers()]),
           highlightSpecialChars(),
           history(),
           drawSelection(),
@@ -152,7 +176,7 @@
           isMarkdown ? markdown() : javascript(),
           syntaxHighlighting(classHighlighter),
           editorTheme,
-          runKeymap,
+          submitOnEnter ? consoleKeymap : runKeymap,
           aiInlineSuggestions(),
           keymap.of([
             ...closeBracketsKeymap,

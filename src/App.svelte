@@ -4,7 +4,6 @@
   import { fade } from 'svelte/transition';
   import Notebook from './lib/components/Notebook.svelte';
   import RightSidebar from './lib/components/RightSidebar.svelte';
-  import ChatSidebar from './lib/components/ChatSidebar.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
@@ -28,14 +27,60 @@
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
-  import { saveNotebook, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
+  import { saveNotebook, exportNotebookSource, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
   import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
   import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, notebooksEquivalent, type ImportRequest } from './lib/utils/urlImport';
+  import { connectSync, isSyncConnected, saveThroughSync, syncFile, syncStatus } from './lib/utils/serverSync';
   import type { Notebook as NotebookDoc } from './lib/types/notebook';
 
+  type PanelTab = 'info' | 'variables' | 'console' | 'chat' | 'data';
   let rightSidebarOpen = $state(false);
-  let rightSidebarTab = $state<'info' | 'variables' | 'data'>('info');
-  let chatSidebarOpen = $state(false);
+  let rightSidebarTab = $state<PanelTab>('info');
+
+  /**
+   * Open the panel on `tab`, or close it if it is already showing that tab.
+   * Every panel entry point (header buttons, shortcuts, command palette) goes
+   * through here, so there is one panel with one open/close behaviour.
+   */
+  function togglePanelTab(tab: PanelTab) {
+    if (rightSidebarOpen && rightSidebarTab === tab) {
+      rightSidebarOpen = false;
+      return;
+    }
+    rightSidebarTab = tab;
+    rightSidebarOpen = true;
+    // Chat is prose and needs more room than the tool tabs. Widen once if the
+    // panel is too narrow to read in, never shrink what the user chose.
+    if (tab === 'chat' && rightSidebarWidth < CHAT_MIN_WIDTH) {
+      rightSidebarWidth = CHAT_MIN_WIDTH;
+      localStorage.setItem(PANEL_WIDTH_KEY, String(rightSidebarWidth));
+    }
+  }
+
+  // Right panel width: user-resizable by dragging its left edge, persisted.
+  const PANEL_WIDTH_KEY = 'tangent-panel-width';
+  const PANEL_MIN = 240;
+  const PANEL_MAX = 720;
+  const CHAT_MIN_WIDTH = 380;
+  const clampPanel = (w: number) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
+  let rightSidebarWidth = $state(clampPanel(Number(localStorage.getItem(PANEL_WIDTH_KEY)) || 300));
+
+  function startPanelResize(event: PointerEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = rightSidebarWidth;
+    const onMove = (e: PointerEvent) => {
+      // Dragging left widens the panel (it is docked to the right edge).
+      rightSidebarWidth = clampPanel(startWidth + (startX - e.clientX));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      localStorage.setItem(PANEL_WIDTH_KEY, String(rightSidebarWidth));
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
   let showExportDialog = $state(false);
   let showCommandPalette = $state(false);
   let showShortcuts = $state(false);
@@ -60,6 +105,8 @@
     { keys: '⌘/Ctrl + Enter', action: 'Run cell' },
     { keys: 'Shift + Enter', action: 'Run cell, select next' },
     { keys: 'Alt + Enter', action: 'Run cell, insert below' },
+    { keys: '⌘/Ctrl + `', action: 'Toggle console' },
+    { keys: '⌘/Ctrl + Shift + D', action: 'Toggle data panel' },
     { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
   ];
 
@@ -121,11 +168,20 @@
     const target = redirect ?? { pathname: window.location.pathname, search: window.location.search };
     const importRequest = parseImportRequest(target.pathname, target.search);
 
-    if (importRequest) {
-      loadNotebookFromUrl(importRequest);
-    } else {
-      restoreOrLoadSample();
-    }
+    // A `note serve` companion owns a file on disk and wins over the cache: it
+    // is the git-tracked source of truth. When none answers, nothing changes.
+    connectSync({
+      onLoad: (content, reason) => applySyncedContent(content, reason),
+      onConflict: (diskContent) => handleSyncConflict(diskContent),
+      onSaved: () => {
+        markNotebookClean();
+        showToast('Saved to disk', 'info');
+      },
+    }).then((connected) => {
+      if (connected) return;
+      if (importRequest) loadNotebookFromUrl(importRequest);
+      else restoreOrLoadSample();
+    });
 
     loadNotebookFiles();
 
@@ -275,21 +331,12 @@
     showExportDialog = true;
   }
 
-  // Open the right sidebar on the Data tab; toggle it closed if already there.
-  function toggleDataPanel() {
-    if (rightSidebarOpen && rightSidebarTab === 'data') {
-      rightSidebarOpen = false;
-    } else {
-      rightSidebarTab = 'data';
-      rightSidebarOpen = true;
-    }
-  }
-
   function onKeydown(event: KeyboardEvent) {
     handleGlobalKeydown(event, {
       showCommandPalette: () => { showCommandPalette = !showCommandPalette; },
-      toggleChat: () => { chatSidebarOpen = !chatSidebarOpen; },
-      toggleData: () => toggleDataPanel(),
+      toggleChat: () => togglePanelTab('chat'),
+      toggleData: () => togglePanelTab('data'),
+      toggleConsole: () => togglePanelTab('console'),
       save: () => performSaveShortcut(),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
@@ -297,10 +344,42 @@
     });
   }
 
+  /** Load content pushed by the companion (initial file, or an external edit). */
+  function applySyncedContent(content: string, reason: 'hello' | 'disk-change') {
+    // An external edit must not silently discard work in progress in the tab.
+    if (reason === 'disk-change' && get(notebookDirty)) {
+      showToast('The file changed on disk. Save or reload to take the new version.', 'error');
+      return;
+    }
+    const name = get(syncFile)?.split('/').pop() ?? 'notebook.js';
+    const notebook = parseJSNotebook(content, name);
+    currentNotebook.set(notebook);
+    resetStaleTracking();
+    resetExecutionCounter();
+    markNotebookClean();
+    if (reason === 'disk-change') showToast('Reloaded from disk', 'info');
+  }
+
+  function handleSyncConflict(_diskContent: string) {
+    showToast('The file changed on disk since you opened it. Save again to overwrite.', 'error');
+    syncConflict = true;
+  }
+
+  let syncConflict = $state(false);
+
   async function performSaveShortcut() {
     const notebook = get(currentNotebook);
     if (!notebook) return;
     try {
+      // With a companion, save writes the file in place so git sees the diff.
+      // A second save after a conflict warning overwrites deliberately.
+      if (isSyncConnected()) {
+        const source = await exportNotebookSource(notebook);
+        if (saveThroughSync(source, syncConflict)) {
+          syncConflict = false;
+          return;
+        }
+      }
       await saveNotebook(notebook);
       markNotebookClean();
       console.info('Notebook checkpoint exported as .js');
@@ -358,10 +437,13 @@
         addNewCell('markdown');
         break;
       case 'toggle-chat':
-        chatSidebarOpen = !chatSidebarOpen;
+        togglePanelTab('chat');
         break;
       case 'open-data':
-        toggleDataPanel();
+        togglePanelTab('data');
+        break;
+      case 'open-console':
+        togglePanelTab('console');
         break;
       case 'clear-outputs':
         clearAllOutputs();
@@ -540,6 +622,17 @@
           {/if}
           {$currentNotebook.cells.length} {$currentNotebook.cells.length === 1 ? 'cell' : 'cells'}
         </span>
+        {#if $syncStatus === 'connected'}
+          <!-- Saving writes this file in place, so the state on disk (and in
+               git) is what you see. Worth showing: it changes what Ctrl+S does. -->
+          <span class="sync-badge" title={`Linked to ${$syncFile}. Ctrl/Cmd+S writes this file.`}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/>
+              <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>
+            </svg>
+            {$syncFile?.split('/').pop()}
+          </span>
+        {/if}
         <button
           class="run-all-header-btn"
           onclick={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
@@ -552,16 +645,6 @@
         </button>
         <span class="header-divider" aria-hidden="true"></span>
       {/if}
-      <button
-        class="icon-btn"
-        class:active={chatSidebarOpen}
-        onclick={() => chatSidebarOpen = !chatSidebarOpen}
-        title="AI Assistant (Ctrl+/)"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>
-        </svg>
-      </button>
       <button
         class="icon-btn"
         onclick={toggleTheme}
@@ -581,13 +664,14 @@
       </button>
       <button
         class="icon-btn"
-        class:active={rightSidebarOpen && rightSidebarTab === 'data'}
-        onclick={toggleDataPanel}
-        title="Data (Ctrl+Shift+D)"
-        aria-label="Data panel"
+        class:active={rightSidebarOpen}
+        onclick={() => rightSidebarOpen = !rightSidebarOpen}
+        title="Side panel"
+        aria-label="Toggle side panel"
       >
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2"/>
+          <line x1="14.5" y1="4" x2="14.5" y2="20"/>
         </svg>
       </button>
     </div>
@@ -598,18 +682,20 @@
       <Notebook />
     </main>
 
-    {#if chatSidebarOpen}
-      <aside class="chat-sidebar-container">
-        <ChatSidebar
-          onclose={() => chatSidebarOpen = false}
+    {#if rightSidebarOpen}
+      <aside class="right-sidebar-container" style="width: {rightSidebarWidth}px">
+        <div
+          class="panel-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          onpointerdown={startPanelResize}
+        ></div>
+        <RightSidebar
+          bind:activeTab={rightSidebarTab}
+          onclose={() => rightSidebarOpen = false}
           oninsertCode={handleInsertCode}
         />
-      </aside>
-    {/if}
-
-    {#if rightSidebarOpen}
-      <aside class="right-sidebar-container">
-        <RightSidebar bind:activeTab={rightSidebarTab} onclose={() => rightSidebarOpen = false} />
       </aside>
     {/if}
   </div>
@@ -932,24 +1018,45 @@
     overflow-x: hidden;
   }
 
-  .chat-sidebar-container {
-    width: 380px;
+  .right-sidebar-container {
+    position: relative;
     border-left: 1px solid var(--border);
     background-color: var(--bg);
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
+    flex-shrink: 0;
   }
 
-  .right-sidebar-container {
-    width: 280px;
-    border-left: 1px solid var(--border);
-    background-color: var(--bg);
-    overflow-y: auto;
+  /* Invisible grab strip over the left border; teal on hover/drag. */
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+  }
+
+  .panel-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 10;
+  }
+
+  .panel-resize-handle:hover,
+  .panel-resize-handle:active {
+    background: var(--accent);
+    opacity: 0.35;
   }
 
   @media (max-width: 768px) {
-    .chat-sidebar-container,
     .right-sidebar-container {
       position: fixed;
       right: 0;
@@ -957,6 +1064,8 @@
       bottom: 0;
       z-index: 30;
       box-shadow: var(--shadow-md);
+      /* Never wider than the viewport, whatever width was dragged on desktop. */
+      max-width: 100vw;
     }
   }
 

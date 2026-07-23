@@ -13,12 +13,11 @@
     reactiveMode,
     kernelMode
   } from '../stores/notebook';
-  import { JavaScriptExecutor } from '../utils/jsExecutor';
+  import { mainExecutor } from '../utils/mainExecutor';
   import { kernel } from '../utils/kernelClient';
   import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
-  let jsExecutor: JavaScriptExecutor;
   let isRunningAll = false;
   // While true, handleRunCell won't trigger a reactive cascade — used so that
   // run-all, run-stale, and the cascade itself don't recurse.
@@ -44,8 +43,7 @@
       // Worker kernel: preload common libraries in the background.
       void kernel.setup();
     } else {
-      jsExecutor = new JavaScriptExecutor();
-      await jsExecutor.setupCommonLibraries();
+      await mainExecutor.setupCommonLibraries();
     }
   });
 
@@ -138,11 +136,8 @@
       if (get(kernelMode) === 'worker') {
         output = await kernel.execute(cell.content);
       } else {
-        if (!jsExecutor) {
-          jsExecutor = new JavaScriptExecutor();
-          await jsExecutor.setupCommonLibraries();
-        }
-        output = await jsExecutor.executeCode(cell.content);
+        await mainExecutor.setupCommonLibraries();
+        output = await mainExecutor.executeCode(cell.content);
       }
 
       currentNotebook.update(nb => {

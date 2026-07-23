@@ -9,9 +9,12 @@
   interface Props {
     onclose?: () => void;
     oninsertCode?: (detail: { code: string }) => void;
+    /** Rendered inside the right panel's tab shell, which supplies the tab bar
+     *  and the close button, so this drops its own heavy header chrome. */
+    embedded?: boolean;
   }
 
-  let { onclose, oninsertCode }: Props = $props();
+  let { onclose, oninsertCode, embedded = false }: Props = $props();
 
   // Chat history is held in a persisted module store (src/lib/stores/chat),
   // accessed below as $chatMessages, so it survives closing/reopening the
@@ -146,7 +149,7 @@
   }
 </script>
 
-<div class="chat-sidebar">
+<div class="chat-sidebar" class:embedded>
   <div class="chat-header">
     <h2>AI Assistant</h2>
     <div class="header-actions">
@@ -156,11 +159,13 @@
           <path d="M12 1v6m0 6v6M5.6 5.6l4.2 4.2m4.2 4.2l4.2 4.2M1 12h6m6 0h6M5.6 18.4l4.2-4.2m4.2-4.2l4.2-4.2"/>
         </svg>
       </button>
-      <button class="icon-btn" onclick={() => onclose?.()} title="Close">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M18 6L6 18M6 6l12 12"/>
-        </svg>
-      </button>
+      {#if !embedded}
+        <button class="icon-btn" onclick={() => onclose?.()} title="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -409,6 +414,16 @@
     color: var(--heading);
     margin: 0;
   }
+
+  /* Inside the panel's tab shell the tab bar is the frame, so the chat header
+     drops to a section label matching the Console and Variables tabs. */
+  .chat-sidebar.embedded .chat-header {
+    padding: 1rem 1rem 0.5rem;
+    border-bottom: none;
+    background-color: transparent;
+  }
+
+  .chat-sidebar.embedded .chat-header h2 { font-size: 0.85rem; }
 
   .header-actions {
     display: flex;

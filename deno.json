@@ -1,0 +1,13 @@
+{
+  "//": "Deno entry points for the toolchain. Node users keep using the package.json scripts; these mirror them for a Node-free workflow. `deno install` populates node_modules (pass --allow-scripts so native deps like @tailwindcss/oxide land), which these tasks then run.",
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "install": "deno install --allow-scripts",
+    "dev": "deno run -A npm:vite",
+    "build": "deno run -A npm:vite build",
+    "preview": "deno run -A npm:vite preview",
+    "check": "deno run -A npm:svelte-check --tsconfig ./tsconfig.json",
+    "test": "deno run -A npm:vitest run",
+    "serve": "deno run -A cli/serve.ts"
+  }
+}

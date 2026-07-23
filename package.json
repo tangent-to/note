@@ -15,7 +15,8 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
-    "deploy:clean": "gh-pages -d dist -f"
+    "deploy:clean": "gh-pages -d dist -f",
+    "serve": "deno run -A cli/serve.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
@@ -46,6 +47,7 @@
     "katex": "^0.16.8",
     "linkedom": "^0.18.13",
     "marked": "^4.2.12",
+    "playwright": "^1.61.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.14"
   }

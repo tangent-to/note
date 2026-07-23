@@ -23,16 +23,24 @@ export function downloadText(text: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function saveNotebook(notebook: Notebook): Promise<void> {
-  const baseName = slugify(notebook.name || 'notebook');
-  const content = await exportService.exportNotebook(notebook, {
+/**
+ * Serialize a notebook to its `.js` source. Used both by the download path and
+ * by the `note serve` companion, which writes the same bytes to disk.
+ */
+export async function exportNotebookSource(notebook: Notebook): Promise<string> {
+  return (await exportService.exportNotebook(notebook, {
     includeCode: true,
     includeOutputs: true,
     includeTimestamps: false,
     theme: 'light',
     format: 'js'
-  });
-  downloadText(content as string, `${baseName}.js`, 'text/javascript');
+  })) as string;
+}
+
+export async function saveNotebook(notebook: Notebook): Promise<void> {
+  const baseName = slugify(notebook.name || 'notebook');
+  const content = await exportNotebookSource(notebook);
+  downloadText(content, `${baseName}.js`, 'text/javascript');
 }
 
 export function parseJSNotebook(text: string, filename = 'notebook.js') {

@@ -6,13 +6,16 @@
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
+  import Console from './Console.svelte';
+  import ChatSidebar from './ChatSidebar.svelte';
 
   interface Props {
     onclose?: () => void;
-    activeTab?: 'info' | 'variables' | 'data';
+    activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'data';
+    oninsertCode?: (detail: { code: string }) => void;
   }
 
-  let { onclose, activeTab = $bindable('info') }: Props = $props();
+  let { onclose, activeTab = $bindable('info'), oninsertCode }: Props = $props();
 
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
@@ -135,6 +138,8 @@
     <div class="tab-bar">
       <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'}>Info</button>
       <button class="tab-btn" class:active={activeTab === 'variables'} onclick={() => { activeTab = 'variables'; refreshVariables(); }}>Variables</button>
+      <button class="tab-btn" class:active={activeTab === 'console'} onclick={() => activeTab = 'console'}>Console</button>
+      <button class="tab-btn" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
       <button class="tab-btn" class:active={activeTab === 'data'} onclick={() => { activeTab = 'data'; refreshDatasets(); }}>Data</button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
@@ -289,6 +294,14 @@
         </div>
       {/if}
     </div>
+  {:else if activeTab === 'console'}
+    <div class="console-tab">
+      <Console />
+    </div>
+  {:else if activeTab === 'chat'}
+    <div class="console-tab">
+      <ChatSidebar embedded {oninsertCode} />
+    </div>
   {:else}
     <div class="sidebar-content">
       <div class="variables-header">
@@ -335,7 +348,10 @@
   .tab-btn {
     background: transparent;
     border: none;
-    padding: 0.4rem 0.65rem;
+    padding: 0.4rem 0.5rem;
+    /* Buttons don't inherit font-family; without this the tabs fall back to the
+       browser default instead of the UI sans. */
+    font-family: var(--font-sans);
     font-size: 0.8rem;
     font-weight: 500;
     color: var(--text-muted);
@@ -363,6 +379,10 @@
   .close-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
   .sidebar-content { padding: 1rem; overflow-y: auto; flex: 1; }
+
+  /* Console owns its own scrolling and pinned prompt, so it fills the panel
+     without the sidebar-content padding. */
+  .console-tab { flex: 1; min-height: 0; display: flex; }
 
   .info-section { margin-bottom: 0.75rem; }
 
