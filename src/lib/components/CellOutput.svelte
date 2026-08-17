@@ -161,6 +161,30 @@
 </script>
 
 <div class="output-container" data-testid="cell-output">
+  <!-- The worker kernel can only send markup, so an output that depended on
+       listeners or its own <script> arrives inert. Say so, rather than leaving
+       the reader clicking a dead control. -->
+  {#if output.needsMainThread}
+    <div class="needs-main-thread" data-testid="needs-main-thread">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 8v4M12 16v.5"/>
+      </svg>
+      <span>
+        {#if onMainThread}
+          Now on the main-thread kernel — run this cell again to get a live output.
+          Variables don't carry across kernels, so re-run the cells it depends on too.
+        {:else}
+          This output's buttons and tooltips need code that runs after rendering,
+          which the background worker can't send — it returns static HTML.
+        {/if}
+      </span>
+      {#if !onMainThread}
+        <button class="use-main-btn" onclick={() => kernelMode.set('main')}>Use main thread</button>
+      {/if}
+    </div>
+  {/if}
+
   {#if renderError}
     <div class="output-content error">
       <div class="error-output">
@@ -207,30 +231,6 @@
     </div>
   {/if}
 
-  <!-- The worker kernel can only send markup, so an output that depended on
-       listeners or its own <script> arrives inert. Say so, rather than leaving
-       the reader clicking a dead control. -->
-  {#if output.needsMainThread}
-    <div class="needs-main-thread" data-testid="needs-main-thread">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 8v4M12 16v.5"/>
-      </svg>
-      <span>
-        {#if onMainThread}
-          Now on the main-thread kernel — run this cell again to get a live output.
-          Variables don't carry across kernels, so re-run the cells it depends on too.
-        {:else}
-          This output's buttons and tooltips need code that runs after rendering,
-          which the background worker can't send — it returns static HTML.
-        {/if}
-      </span>
-      {#if !onMainThread}
-        <button class="use-main-btn" onclick={() => kernelMode.set('main')}>Use main thread</button>
-      {/if}
-    </div>
-  {/if}
-
   <div class="output-footer">
     <button class="copy-btn" onclick={handleCopy} title="Copy output">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -258,18 +258,15 @@
     margin-bottom: 0;
   }
 
-  /* Advisory, not an error: the output rendered, it just can't respond.
-     The output footer (Copy + timestamp) is absolutely positioned at the
-     container's bottom-right and takes pointer events on hover, so leave it a
-     row of its own below this note — otherwise it covers the action button. */
+  /* Advisory, not an error: the output rendered, it just can't respond. Sits
+     above the output, like the duplicate-definition notice sits above the code —
+     a notice is read before the thing it is about. */
   .needs-main-thread {
-    position: relative;
-    z-index: 2;
     display: flex;
     align-items: flex-start;
     gap: 0.4rem;
-    margin-top: 0.35rem;
-    margin-bottom: 1.25rem;
+    margin-top: 0.1rem;
+    margin-bottom: 0.4rem;
     padding: 0.35rem 0.55rem;
     font-size: 0.72rem;
     line-height: 1.45;
