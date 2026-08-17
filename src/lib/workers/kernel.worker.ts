@@ -18,6 +18,7 @@
  *   the worker scope (see widgetHost.ts / kernelClient.ts).
  */
 import { parseHTML } from 'linkedom';
+import { LISTENER_FLAG, lostInteractivity } from '../utils/cellOutput';
 
 // ---------------------------------------------------------------------------
 // Globals the executor (and notebook code) expects. Must be set up before
@@ -54,6 +55,29 @@ if (!g.requestAnimationFrame) {
 }
 if (!g.getComputedStyle) {
   g.getComputedStyle = () => ({ getPropertyValue: () => '' });
+}
+
+// Outputs leave this worker as HTML, so listeners attached here are dropped on
+// the way out (a player's Play button, a chart's tooltips). Record which
+// elements got one, so serializeOutput can tell the reader their output needs
+// the main-thread kernel rather than handing them dead controls. Recording is
+// all this does — the listener is still attached as asked.
+{
+  const probe = dom.document.createElement('div');
+  let owner: any = Object.getPrototypeOf(probe);
+  while (owner && !Object.prototype.hasOwnProperty.call(owner, 'addEventListener')) {
+    owner = Object.getPrototypeOf(owner);
+  }
+  if (owner) {
+    const original = owner.addEventListener;
+    owner.addEventListener = function (this: any, ...args: unknown[]) {
+      // Elements only: a listener on `document` says nothing about one output.
+      if (typeof this?.nodeType === 'number' && this.nodeType === 1) {
+        this[LISTENER_FLAG] = true;
+      }
+      return original.apply(this, args);
+    };
+  }
 }
 
 // NOTE: this import hoists above the global setup, but that's fine — the
@@ -107,7 +131,11 @@ function serializeOutput(out: CellOutput): CellOutput {
   if (out.type === 'dom') {
     const el = out.content as any;
     const html = el && typeof el.outerHTML === 'string' ? el.outerHTML : String(el);
-    return { type: 'html', content: html, timestamp: out.timestamp };
+    // Flag output whose behaviour did not survive the trip (see lostInteractivity).
+    const needsMainThread = lostInteractivity(el);
+    return needsMainThread
+      ? { type: 'html', content: html, timestamp: out.timestamp, needsMainThread }
+      : { type: 'html', content: html, timestamp: out.timestamp };
   }
   // text / html / json / error / widget already carry strings.
   return { ...out, content: String(out.content ?? '') };

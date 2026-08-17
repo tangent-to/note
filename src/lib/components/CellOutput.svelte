@@ -2,12 +2,16 @@
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
+  import { kernelMode } from '../stores/notebook';
   import '../styles/observable-inspector.css';
 
   let { output }: { output: CellOutput } = $props();
 
   let renderError: string | null = $state(null);
   let copyLabel = $state('Copy');
+  // Derived from the store, not from clicking the button below, so the note reads
+  // correctly however the reader switched kernels (button, or the Info panel).
+  const onMainThread = $derived($kernelMode === 'main');
 
   function formatTimestamp(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString();
@@ -203,6 +207,30 @@
     </div>
   {/if}
 
+  <!-- The worker kernel can only send markup, so an output that depended on
+       listeners or its own <script> arrives inert. Say so, rather than leaving
+       the reader clicking a dead control. -->
+  {#if output.needsMainThread}
+    <div class="needs-main-thread" data-testid="needs-main-thread">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M12 8v4M12 16v.5"/>
+      </svg>
+      <span>
+        {#if onMainThread}
+          Now on the main-thread kernel — run this cell again to get a live output.
+          Variables don't carry across kernels, so re-run the cells it depends on too.
+        {:else}
+          This output's buttons and tooltips need code that runs after rendering,
+          which the background worker can't send — it returns static HTML.
+        {/if}
+      </span>
+      {#if !onMainThread}
+        <button class="use-main-btn" onclick={() => kernelMode.set('main')}>Use main thread</button>
+      {/if}
+    </div>
+  {/if}
+
   <div class="output-footer">
     <button class="copy-btn" onclick={handleCopy} title="Copy output">
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -228,6 +256,53 @@
 
   .output-content {
     margin-bottom: 0;
+  }
+
+  /* Advisory, not an error: the output rendered, it just can't respond.
+     The output footer (Copy + timestamp) is absolutely positioned at the
+     container's bottom-right and takes pointer events on hover, so leave it a
+     row of its own below this note — otherwise it covers the action button. */
+  .needs-main-thread {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+    margin-bottom: 1.25rem;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: var(--warn-fg);
+    background-color: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-input);
+  }
+
+  .needs-main-thread svg {
+    flex: 0 0 auto;
+    margin-top: 0.15rem;
+  }
+
+  .needs-main-thread span {
+    flex: 1 1 auto;
+  }
+
+  .use-main-btn {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.45rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--warn-fg);
+    background: transparent;
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-input);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .use-main-btn:hover {
+    background-color: var(--warn-border);
   }
 
   .dom-output,

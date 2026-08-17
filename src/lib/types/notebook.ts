@@ -19,6 +19,12 @@ export interface CellOutput {
   type: "text" | "html" | "json" | "error" | "dom" | "widget";
   content: string | Element;
   timestamp: number;
+  /**
+   * Set when the worker kernel had to serialize a live DOM output, dropping
+   * event listeners or scripts it depended on — the reader sees controls that
+   * cannot respond. Transient: it describes this run, and is never persisted.
+   */
+  needsMainThread?: boolean;
 }
 
 export interface Notebook {
