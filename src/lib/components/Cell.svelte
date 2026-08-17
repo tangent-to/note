@@ -287,13 +287,20 @@
   ondragover={onDragOver}
   ondrop={onDrop}
 >
+  <!-- Clicking anywhere in the cell selects it and focuses the editor. That is a
+       mouse convenience, not a control: the cell is a region (the wrapper's
+       role="group"), and it holds the editor, the run button and the output's own
+       controls. Marking it role="button" made a screen reader announce the whole
+       cell as one button named after all its text, put every cell in the tab
+       order, and nested interactive elements inside a button. Keyboard users
+       reach the same places directly by tabbing to the editor or the run button,
+       so no key handler is needed here. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="cell-container"
     onmousedown={handleCellMouseDown}
     onclick={handleCellClick}
-    role="button"
-    tabindex="0"
-    onkeydown={(e) => e.key === 'Enter' && handleCellClick()}
   >
     <!-- Left gutter: run + execution count (Jupyter/Marimo idiom). The drag
          handle reveals on hover. No reserved top toolbar row, so content fills
