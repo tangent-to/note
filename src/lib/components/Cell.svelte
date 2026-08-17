@@ -172,12 +172,9 @@
         if (active && active.closest('.output-container, .tangent-input')) return;
         if (cell.type === 'code' && editorRef) {
           editorRef.focus();
-        } else if (cell.type === 'markdown') {
-          if (isEditingMarkdown && mdEditorRef) {
-            mdEditorRef.focus();
-          } else if (markdownPreview) {
-            markdownPreview.focus();
-          }
+        } else if (cell.type === 'markdown' && isEditingMarkdown && mdEditorRef) {
+          // A rendered preview takes no focus; selection alone is enough.
+          mdEditorRef.focus();
         }
       });
     }
@@ -428,13 +425,17 @@
                 />
               </div>
             {:else}
+              <!-- Click-to-edit is a mouse convenience on rendered prose, not a
+                   control: as role="button" this announced the whole rendered
+                   text as one button name and nested its links and headings
+                   inside a button. The keyboard path is the cell menu's
+                   "Edit text", which is a real button. -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 class="markdown-preview rendered"
                 bind:this={markdownPreview}
                 onclick={(e) => { e.stopPropagation(); handleEditMarkdown(); }}
-                onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter') handleEditMarkdown(); }}
-                tabindex="0"
-                role="button"
                 data-testid="markdown-preview"
               >
                 {@html renderedMarkdown}
@@ -478,6 +479,9 @@
           <button role="menuitem" class="menu-item" onclick={runMenu(() => onaddCell?.({ afterCellId: cell.id, type: 'markdown' }))}>Add text cell below</button>
           <div class="menu-sep"></div>
           <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleCollapse?.({ cellId: cell.id }))}>{cell.collapsed ? 'Expand cell' : 'Collapse cell'}</button>
+          {#if cell.type === 'markdown' && !isEditingMarkdown}
+            <button role="menuitem" class="menu-item" data-testid="edit-text-btn" onclick={runMenu(handleEditMarkdown)}>Edit text</button>
+          {/if}
           {#if hasOutput}
             <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleOutputCollapse?.({ cellId: cell.id }))}>{cell.outputCollapsed ? 'Show output' : 'Hide output'}</button>
           {/if}
