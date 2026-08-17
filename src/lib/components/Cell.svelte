@@ -376,10 +376,10 @@
           {#if duplicateNames.length > 0}
             <CellNotice
               testid="duplicate-definition-warning"
-              title="Another cell defines {duplicateNames.length === 1 ? 'this name' : 'these names'} too. Both write the same notebook variable — the cell that runs last wins, and a reactive re-run may pick the other cell's value. Rename one, or keep a single definition."
+              title="Another cell defines {duplicateNames.length === 1 ? 'this name' : 'these names'} too. Both write the same notebook variable, so the cell that runs last wins, and a reactive re-run may pick the other cell's value. Rename one, or keep a single definition."
             >
               {#each duplicateNames as name, i}<code>{name}</code>{#if i < duplicateNames.length - 1}, {/if}{/each}
-              {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell — the last one to run wins
+              {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell. The last one to run wins.
             </CellNotice>
           {/if}
           <div class="cell-content">

@@ -172,11 +172,11 @@
       onaction={() => kernelMode.set('main')}
     >
       {#if onMainThread}
-        Now on the main-thread kernel — run this cell again to get a live output.
-        Variables don't carry across kernels, so re-run the cells it depends on too.
+        Now on the main-thread kernel. Variables don't carry across kernels, so use
+        Run All to rebuild them and get a live output.
       {:else}
-        This output's buttons and tooltips need code that runs after rendering,
-        which the background worker can't send — it returns static HTML.
+        This output's buttons and tooltips need code that runs after rendering.
+        The background worker can only send static HTML.
       {/if}
     </CellNotice>
   {/if}
