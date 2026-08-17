@@ -2,6 +2,7 @@
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
+  import CellNotice from './CellNotice.svelte';
   import { kernelMode } from '../stores/notebook';
   import '../styles/observable-inspector.css';
 
@@ -165,24 +166,19 @@
        listeners or its own <script> arrives inert. Say so, rather than leaving
        the reader clicking a dead control. -->
   {#if output.needsMainThread}
-    <div class="needs-main-thread" data-testid="needs-main-thread">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 8v4M12 16v.5"/>
-      </svg>
-      <span>
-        {#if onMainThread}
-          Now on the main-thread kernel — run this cell again to get a live output.
-          Variables don't carry across kernels, so re-run the cells it depends on too.
-        {:else}
-          This output's buttons and tooltips need code that runs after rendering,
-          which the background worker can't send — it returns static HTML.
-        {/if}
-      </span>
-      {#if !onMainThread}
-        <button class="use-main-btn" onclick={() => kernelMode.set('main')}>Use main thread</button>
+    <CellNotice
+      testid="needs-main-thread"
+      actionLabel={onMainThread ? undefined : 'Use main thread'}
+      onaction={() => kernelMode.set('main')}
+    >
+      {#if onMainThread}
+        Now on the main-thread kernel — run this cell again to get a live output.
+        Variables don't carry across kernels, so re-run the cells it depends on too.
+      {:else}
+        This output's buttons and tooltips need code that runs after rendering,
+        which the background worker can't send — it returns static HTML.
       {/if}
-    </div>
+    </CellNotice>
   {/if}
 
   {#if renderError}
@@ -258,49 +254,6 @@
     margin-bottom: 0;
   }
 
-  /* Advisory, not an error: the output rendered, it just can't respond. Sits
-     above the output, like the duplicate-definition notice sits above the code —
-     a notice is read before the thing it is about. */
-  .needs-main-thread {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.4rem;
-    margin-top: 0.1rem;
-    margin-bottom: 0.4rem;
-    padding: 0.35rem 0.55rem;
-    font-size: 0.72rem;
-    line-height: 1.45;
-    color: var(--warn-fg);
-    background-color: var(--warn-bg);
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius-input);
-  }
-
-  .needs-main-thread svg {
-    flex: 0 0 auto;
-    margin-top: 0.15rem;
-  }
-
-  .needs-main-thread span {
-    flex: 1 1 auto;
-  }
-
-  .use-main-btn {
-    flex: 0 0 auto;
-    padding: 0.15rem 0.45rem;
-    font: inherit;
-    font-weight: 600;
-    color: var(--warn-fg);
-    background: transparent;
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius-input);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .use-main-btn:hover {
-    background-color: var(--warn-border);
-  }
 
   .dom-output,
   .html-output {

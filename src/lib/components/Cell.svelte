@@ -5,6 +5,7 @@
   import DOMPurify from 'dompurify';
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
+  import CellNotice from './CellNotice.svelte';
   import { outputPosition } from '../stores/notebook';
   import { isEmptyOutput } from '../utils/cellOutput';
   import type { NotebookCell } from '../types/notebook';
@@ -373,20 +374,13 @@
           <!-- Two cells declaring the same name share one shared-scope variable,
                so the warning names the collision rather than failing the run. -->
           {#if duplicateNames.length > 0}
-            <div
-              class="dup-warning"
-              data-testid="duplicate-definition-warning"
+            <CellNotice
+              testid="duplicate-definition-warning"
               title="Another cell defines {duplicateNames.length === 1 ? 'this name' : 'these names'} too. Both write the same notebook variable — the cell that runs last wins, and a reactive re-run may pick the other cell's value. Rename one, or keep a single definition."
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M12 3L2 20h20L12 3z"/>
-                <path d="M12 9v5M12 17v.5"/>
-              </svg>
-              <span>
-                {#each duplicateNames as name, i}<code>{name}</code>{#if i < duplicateNames.length - 1}, {/if}{/each}
-                {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell — the last one to run wins
-              </span>
-            </div>
+              {#each duplicateNames as name, i}<code>{name}</code>{#if i < duplicateNames.length - 1}, {/if}{/each}
+              {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell — the last one to run wins
+            </CellNotice>
           {/if}
           <div class="cell-content">
             <CodeEditor
@@ -794,42 +788,6 @@
   .collapsed-indicator {
     padding: 0.1rem 0;
     cursor: pointer;
-  }
-
-  /* Duplicate-definition notice: a quiet strip above the editor, not an error —
-     the cell still runs, it just shares its variable with another cell. */
-  .dup-warning {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.35rem;
-    padding: 0.3rem 0.65rem;
-    font-size: 0.75rem;
-    line-height: 1.4;
-    color: var(--warn-fg);
-    background-color: var(--warn-bg);
-    border-bottom: 1px solid var(--warn-border);
-    cursor: help;
-  }
-
-  .dup-warning svg {
-    flex: 0 0 auto;
-    margin-top: 0.15rem;
-  }
-
-  .dup-warning code {
-    font-family: var(--font-mono);
-    font-weight: 600;
-  }
-
-  .collapsed-text {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    font-style: italic;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
   }
 
   .collapsed-output-indicator {
