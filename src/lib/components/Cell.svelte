@@ -6,12 +6,15 @@
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
   import { outputPosition } from '../stores/notebook';
+  import { isEmptyOutput } from '../utils/cellOutput';
   import type { NotebookCell } from '../types/notebook';
 
   interface Props {
     cell: NotebookCell;
     isSelected?: boolean;
     isStale?: boolean;
+    /** Names this cell defines that another cell defines too. */
+    duplicateNames?: string[];
     isDraggedOver?: boolean;
     dragPosition?: 'above' | 'below' | null;
     oncontentChange?: (detail: { cellId: string; content: string }) => void;
@@ -34,6 +37,7 @@
     cell,
     isSelected = false,
     isStale = false,
+    duplicateNames = [],
     isDraggedOver = false,
     dragPosition = null,
     oncontentChange,
@@ -51,6 +55,9 @@
     ondragover,
     ondragend,
   }: Props = $props();
+
+  /** An output object with no content shows nothing, so it gets no frame. */
+  const hasOutput = $derived(!isEmptyOutput(cell.output));
 
   let editorRef: CodeEditor = $state(null as any);
   let mdEditorRef: CodeEditor = $state(null as any);
@@ -346,11 +353,13 @@
          default, or above it when the global output-position option is set
          (Observable-style). -->
     {#snippet outputBlock()}
-      {#if cell.output && !cell.outputCollapsed}
-        <CellOutput output={cell.output} />
-      {:else if cell.output && cell.outputCollapsed}
+      <!-- Nothing to display (a declaration, a loop, an assignment) renders no
+           output frame at all — not an empty box with a copy button. -->
+      {#if hasOutput && !cell.outputCollapsed}
+        <CellOutput output={cell.output!} />
+      {:else if hasOutput && cell.outputCollapsed}
         <div class="collapsed-output-indicator">
-          <span>Output hidden ({cell.output.type})</span>
+          <span>Output hidden ({cell.output!.type})</span>
         </div>
       {/if}
     {/snippet}
@@ -361,6 +370,24 @@
       {/if}
       {#if !cell.collapsed}
         {#if cell.type === 'code'}
+          <!-- Two cells declaring the same name share one shared-scope variable,
+               so the warning names the collision rather than failing the run. -->
+          {#if duplicateNames.length > 0}
+            <div
+              class="dup-warning"
+              data-testid="duplicate-definition-warning"
+              title="Another cell defines {duplicateNames.length === 1 ? 'this name' : 'these names'} too. Both write the same notebook variable — the cell that runs last wins, and a reactive re-run may pick the other cell's value. Rename one, or keep a single definition."
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 3L2 20h20L12 3z"/>
+                <path d="M12 9v5M12 17v.5"/>
+              </svg>
+              <span>
+                {#each duplicateNames as name, i}<code>{name}</code>{#if i < duplicateNames.length - 1}, {/if}{/each}
+                {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell — the last one to run wins
+              </span>
+            </div>
+          {/if}
           <div class="cell-content">
             <CodeEditor
               bind:this={editorRef}
@@ -445,7 +472,7 @@
           <button role="menuitem" class="menu-item" onclick={runMenu(() => onaddCell?.({ afterCellId: cell.id, type: 'markdown' }))}>Add text cell below</button>
           <div class="menu-sep"></div>
           <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleCollapse?.({ cellId: cell.id }))}>{cell.collapsed ? 'Expand cell' : 'Collapse cell'}</button>
-          {#if cell.output}
+          {#if hasOutput}
             <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleOutputCollapse?.({ cellId: cell.id }))}>{cell.outputCollapsed ? 'Show output' : 'Hide output'}</button>
           {/if}
           {#if cell.type === 'code'}
@@ -767,6 +794,31 @@
   .collapsed-indicator {
     padding: 0.1rem 0;
     cursor: pointer;
+  }
+
+  /* Duplicate-definition notice: a quiet strip above the editor, not an error —
+     the cell still runs, it just shares its variable with another cell. */
+  .dup-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--warn-fg);
+    background-color: var(--warn-bg);
+    border-bottom: 1px solid var(--warn-border);
+    cursor: help;
+  }
+
+  .dup-warning svg {
+    flex: 0 0 auto;
+    margin-top: 0.15rem;
+  }
+
+  .dup-warning code {
+    font-family: var(--font-mono);
+    font-weight: 600;
   }
 
   .collapsed-text {

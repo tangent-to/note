@@ -32,9 +32,9 @@ import { getDataset, listDatasetNames } from "./dataStore";
  * does not split.
  */
 /**
- * Forward scan: find every top-level statement boundary (`;` or newline that is
- * NOT inside a string, comment, template literal, or bracket group). Returns the
- * boundary character indices, in order.
+ * Forward scan: find every top-level token of interest — a statement boundary
+ * (`;` or newline) or an assignment `=` — that is NOT inside a string, comment,
+ * template literal, or bracket group. Returns the character indices, in order.
  *
  * A frame stack handles template-literal interpolation correctly: inside a
  * `` `...` `` a `${` opens a nested CODE frame (with its own bracket depth), and
@@ -42,8 +42,8 @@ import { getDataset, listDatasetNames } from "./dataStore";
  * contain a `title: \`... ${x} ...\`` template literal — the old scanner bailed
  * on any backtick and the cell silently never displayed.
  */
-function topLevelBoundaries(code: string): { index: number; char: string }[] {
-  const boundaries: { index: number; char: string }[] = [];
+function scanTopLevel(code: string): { index: number; char: string }[] {
+  const tokens: { index: number; char: string }[] = [];
   // Each frame is a CODE context with its own bracket depth, or a string/template
   // context. The outermost frame is code; interpolation pushes another code frame.
   type Frame = { type: "code"; depth: number } | { type: "sq" | "dq" | "tpl" };
@@ -98,12 +98,66 @@ function topLevelBoundaries(code: string): { index: number; char: string }[] {
       i++;
       continue;
     }
+    if (c === "=") {
+      // Distinguish a real assignment from `==`/`===`/`=>`/`!=`/`<=`/`>=`.
+      if (c2 === "=" || c2 === ">") { i += 2; continue; }
+      const prev = i > 0 ? code[i - 1] : "";
+      if (prev === "=" || prev === "!" || prev === "<" || prev === ">") { i++; continue; }
+      // Compound assignments (`+=`, `||=`, …) count as assignments, like `=`.
+      if (stack.length === 1 && codeTop.depth === 0) tokens.push({ index: i, char: "=" });
+      i++;
+      continue;
+    }
     if ((c === ";" || c === "\n" || c === "\r") && stack.length === 1 && codeTop.depth === 0) {
-      boundaries.push({ index: i, char: c });
+      tokens.push({ index: i, char: c });
     }
     i++;
   }
-  return boundaries;
+  return tokens;
+}
+
+/** Statement boundaries only (`;`/newline), for splitting off the last statement. */
+function topLevelBoundaries(code: string): { index: number; char: string }[] {
+  return scanTopLevel(code).filter((t) => t.char !== "=");
+}
+
+/** True when `code` performs an assignment at its own top level (not nested). */
+function hasTopLevelAssignment(code: string): boolean {
+  return scanTopLevel(code).some((t) => t.char === "=");
+}
+
+/**
+ * Keywords that begin a *statement*, not an expression. Wrapping any of these in
+ * `(...)` for last-value display is a syntax error (`const`, `if`, `return`, …) or
+ * silently drops a binding (`function foo(){}`, `class A{}`), so such a trailing
+ * statement must be executed as written instead.
+ */
+const STATEMENT_START =
+  /^(?:const|let|var|function|class|if|else|for|while|do|switch|case|default|try|catch|finally|return|throw|break|continue|import(?!\s*\()|export|debugger|with|yield|async\s+function)\b/;
+
+/**
+ * Decide whether a candidate trailing statement can be wrapped as
+ * `window.__tangent_last = (<candidate>)` for last-value display.
+ *
+ * This deliberately inspects the WHOLE candidate statement rather than the cell's
+ * final physical line: a multi-line declaration ends in `];` or `);`, which reads
+ * as an expression line-wise, and wrapping it produced
+ * "expected expression, got keyword 'const'". Declarations are complete
+ * statements on their own — they run unwrapped and simply display nothing.
+ *
+ * Assignments are checked at the candidate's top level only, so a nested `=`
+ * (a default parameter, or a `const` inside an arrow-function body) does not
+ * suppress display of an otherwise ordinary expression.
+ */
+export function isDisplayableExpression(candidate: string): boolean {
+  const text = candidate.replace(/[\s;]+$/, "").trim();
+  if (!text) return false;
+  if (STATEMENT_START.test(text)) return false;
+  // An unterminated block, or a statement ending in one (`if (…) { … }`).
+  if (text.endsWith("{") || text.endsWith("}")) return false;
+  // `x = 1` / `window.foo = bar` are statements we run but don't display.
+  if (hasTopLevelAssignment(text)) return false;
+  return true;
 }
 
 export function extractLastExpression(code: string): {
@@ -433,27 +487,15 @@ export class JavaScriptExecutor {
 
         const isAsyncIIFE = /^\(\s*async\s*\(\)\s*=>/.test(codeNormalized) && /\)\s*\(\s*\)\s*;?$/.test(codeNormalized);
 
-        // Detect if last line is a simple expression we should display
+        // Split off the cell's last statement and display it only if it is an
+        // expression. A trailing declaration (`const x = […]`) is left alone: it
+        // is a complete statement, and wrapping it for display was a syntax error.
         const codeForCapture = this.stripTrailingLineComments(code);
-        const captureLines = codeForCapture.split("\n");
-        const rawLastLine = captureLines[captureLines.length - 1]?.trim() ??
-          "";
-        const lastNoSemi = rawLastLine.replace(/;+$/, "");
-        const isLikelyExpression = lastNoSemi &&
-          !/^(const|let|var|function|class|if|for|while|switch|return)\b/.test(
-            lastNoSemi,
-          ) &&
-          !lastNoSemi.endsWith("{") &&
-          !lastNoSemi.endsWith("}") &&
-          // Skip genuine assignments (x = ...), but NOT arrow functions (=>) or
-          // comparisons (==, ===, <=, >=, !=). A bare `=` here means the cell's
-          // last line is an assignment statement, which we don't display.
-          !/(^|[^=!<>])=(?![=>])/.test(lastNoSemi);
 
         let execBody = code;
-        if (isLikelyExpression && !isAsyncIIFE) {
+        if (!isAsyncIIFE) {
           const capture = this.extractLastExpression(codeForCapture);
-          if (capture) {
+          if (capture && isDisplayableExpression(capture.expression)) {
             const { before, expression } = capture;
             const needsNewline = before.length > 0 && !before.endsWith("\n");
             const prefix = needsNewline ? `${before}\n` : before;
@@ -461,15 +503,12 @@ export class JavaScriptExecutor {
               ? `${prefix}window.__tangent_last = (${expression});`
               : `window.__tangent_last = (${expression});`;
           }
-        } else {
-          execBody = code;
         }
 
         // Hoist top-level declarations into the shared scope and wrap execution
         // in `with(scope)` so prior-cell variables are readable as plain names.
-        const transformedBody = this.transformForScope(execBody);
         const globalEval = window.eval as (s: string) => any;
-        const wrapped = `(async () => { with(window.__tangent_scope) {\n${transformedBody}\n} })()`;
+        const wrapped = this.wrapForExecution(execBody, code);
         const iifeResult = globalEval(wrapped);
         let returnedValue: any = undefined;
         if (iifeResult && typeof iifeResult.then === "function") {
@@ -572,6 +611,35 @@ export class JavaScriptExecutor {
         content: `Error: ${error?.message ?? String(error)}`,
         timestamp: Date.now(),
       };
+    }
+  }
+
+  /**
+   * Build the `with(scope)`-wrapped async IIFE that is handed to eval.
+   *
+   * `body` is the (possibly last-expression-rewritten) code; `original` is the
+   * cell exactly as written. If the rewritten body does not parse but the
+   * original does, we execute the original: display of the last value is a
+   * convenience, and losing it is always better than failing the whole cell on a
+   * heuristic misfire.
+   */
+  private wrapForExecution(body: string, original: string): string {
+    const wrap = (b: string) =>
+      `(async () => { with(window.__tangent_scope) {\n${this.transformForScope(b)}\n} })()`;
+    const candidate = wrap(body);
+    if (body === original || this.compiles(candidate)) return candidate;
+    const fallback = wrap(original);
+    return this.compiles(fallback) ? fallback : candidate;
+  }
+
+  /** Parse `src` without running it; false when it is a syntax error. */
+  private compiles(src: string): boolean {
+    try {
+      // `new Function` compiles the source but does not execute it.
+      new Function(src);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -727,36 +795,19 @@ export class JavaScriptExecutor {
       }
 
       const codeForCapture = this.stripTrailingLineComments(codeWithoutImports);
-      const lines = codeForCapture.split("\n");
-      const rawLast = lines[lines.length - 1]?.trim() ?? "";
-      const lastNoSemi = rawLast.replace(/;+$/, "");
-      const isLastExpr = lastNoSemi &&
-        !/^(const|let|var|function|class|if|for|while|switch|return)\b/.test(
-          lastNoSemi,
-        ) &&
-        !lastNoSemi.endsWith("{") &&
-        !lastNoSemi.endsWith("}") &&
-        !/^(?:globalThis|window)\s*(?:\.|\[).*=/.test(lastNoSemi);
 
-      let funcBody: string;
-      if (isLastExpr) {
-        const capture = this.extractLastExpression(codeForCapture);
-        if (capture) {
-          const { before, expression } = capture;
-          const needsNewline = before.length > 0 && !before.endsWith("\n");
-          const prefix = needsNewline ? `${before}\n` : before;
-          funcBody = prefix
-            ? `${prefix}window.__tangent_last = (${expression});`
-            : `window.__tangent_last = (${expression});`;
-        } else {
-          funcBody = codeWithoutImports;
-        }
-      } else {
-        funcBody = codeWithoutImports;
+      let funcBody = codeWithoutImports;
+      const capture = this.extractLastExpression(codeForCapture);
+      if (capture && isDisplayableExpression(capture.expression)) {
+        const { before, expression } = capture;
+        const needsNewline = before.length > 0 && !before.endsWith("\n");
+        const prefix = needsNewline ? `${before}\n` : before;
+        funcBody = prefix
+          ? `${prefix}window.__tangent_last = (${expression});`
+          : `window.__tangent_last = (${expression});`;
       }
 
-      const transformedBody = this.transformForScope(funcBody);
-      const asyncIIFE = `(async () => { with(window.__tangent_scope) {\n${transformedBody}\n} })()`;
+      const asyncIIFE = this.wrapForExecution(funcBody, codeWithoutImports);
       const globalEval = window.eval as (s: string) => any;
       const returnedValue = await globalEval(asyncIIFE);
 

@@ -1,7 +1,12 @@
-import { writable, get, type Writable } from 'svelte/store';
+import { writable, derived, get, type Writable } from 'svelte/store';
 import type { Notebook, NotebookCell, NotebookFile } from '../types/notebook';
 import { saveToLocalStorage } from '../utils/webPersistence';
-import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependencyGraph';
+import {
+  computeStaleCells,
+  findDuplicateDefinitions,
+  hashCode,
+  type RunRecord,
+} from '../utils/dependencyGraph';
 
 // Current notebook being edited
 export const currentNotebook = writable<Notebook | null>(null);
@@ -38,6 +43,38 @@ export function recordCellRun(cellId: string, content: string): void {
 export function recomputeStaleCells(notebook: Notebook | null): void {
   staleCells.set(notebook ? computeStaleCells(notebook.cells, cellRunInfo) : new Set());
 }
+
+/** cellId -> the names it defines that another cell defines too (sorted). */
+export function duplicateDefinitionsByCell(
+  notebook: Notebook | null
+): Map<string, string[]> {
+  const byCell = new Map<string, string[]>();
+  if (!notebook) return byCell;
+  for (const [name, cellIds] of findDuplicateDefinitions(notebook.cells)) {
+    for (const id of cellIds) {
+      const names = byCell.get(id) ?? [];
+      names.push(name);
+      byCell.set(id, names);
+    }
+  }
+  for (const names of byCell.values()) names.sort();
+  return byCell;
+}
+
+// Names defined by two or more cells, per cell — a warning surfaced on the cell,
+// since both definitions write the same shared-scope variable.
+//
+// Derived (not recomputed at call sites) so adding, deleting, skipping and
+// retyping cells all stay in sync, and debounced because the scan re-analyses
+// every cell in the notebook — the same reason staleness is debounced.
+export const duplicateDefinitions = derived<typeof currentNotebook, Map<string, string[]>>(
+  currentNotebook,
+  (notebook, set) => {
+    const timer = setTimeout(() => set(duplicateDefinitionsByCell(notebook)), 250);
+    return () => clearTimeout(timer);
+  },
+  new Map()
+);
 
 // Forget all run history (e.g. on new/imported notebook or kernel reset).
 export function resetStaleTracking(): void {

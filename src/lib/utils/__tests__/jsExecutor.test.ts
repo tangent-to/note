@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractLastExpression as extract } from '../jsExecutor';
+import { extractLastExpression as extract, isDisplayableExpression } from '../jsExecutor';
 
 describe('extractLastExpression', () => {
   it('captures a simple trailing expression', () => {
@@ -70,5 +70,73 @@ describe('extractLastExpression', () => {
     const cap = extract('const s = "a;b";\nrun(`x;${y}`)');
     expect(cap).not.toBeNull();
     expect(cap!.expression.trim()).toBe('run(`x;${y}`)');
+  });
+});
+
+describe('isDisplayableExpression', () => {
+  // A cell that is only a declaration must run as written. Wrapping it for
+  // last-value display produced "expected expression, got keyword 'const'".
+  const MULTILINE_DECL = [
+    'const track = [',
+    '    { pitch: 60, duration: 1, time: 0, velocity: 0.8 }, // C',
+    '    { pitch: 62, duration: 1, time: 1, velocity: 0.8 }, // D',
+    '];',
+  ].join('\n');
+
+  it('rejects a multi-line const declaration (the reported regression)', () => {
+    const cap = extract(MULTILINE_DECL);
+    // The whole cell is the candidate: there is no top-level boundary inside the
+    // array literal, and the final line `];` used to look like an expression.
+    expect(cap!.expression.trim().startsWith('const track')).toBe(true);
+    expect(isDisplayableExpression(cap!.expression)).toBe(false);
+  });
+
+  it('rejects a multi-line let declaration ending in a call', () => {
+    const code = 'let total = xs.reduce(\n  (a, b) => a + b,\n  0\n);';
+    expect(isDisplayableExpression(extract(code)!.expression)).toBe(false);
+  });
+
+  it('still displays a trailing reference after a multi-line declaration', () => {
+    const cap = extract(`${MULTILINE_DECL}\ntrack`);
+    expect(cap!.expression.trim()).toBe('track');
+    expect(isDisplayableExpression(cap!.expression)).toBe(true);
+    expect(cap!.before).toContain('const track = [');
+  });
+
+  it.each([
+    ['const x = 1', false],
+    ['function foo() { return 1 }', false],
+    ['async function foo() {}', false],
+    ['class A {}', false],
+    ['if (a) { b() }', false],
+    ['for (const x of xs) { f(x) }', false],
+    ['return 1', false],
+    ['x = 5', false],
+    ['window.foo = bar', false],
+    ['count += 1', false],
+    ['', false],
+    ['  ;;  ', false],
+    ['a + 2', true],
+    ['track', true],
+    ['a === b', true],
+    ['a <= b', true],
+    ['f(x)', true],
+    ['await load()', true],
+    // Dynamic import is an expression; an `import …` statement is not.
+    ['import("d3")', true],
+    ['import * as d3 from "d3"', false],
+    ['Plot.plot({ marks: [] })', true],
+    // A nested `=` must not suppress display: default params and declarations
+    // inside a callback body are not top-level assignments.
+    ['xs.map((x, i = 0) => x + i)', true],
+    ['xs.map(x => { const y = x * 2; return y })', true],
+  ])('%j → %s', (code, expected) => {
+    expect(isDisplayableExpression(code as string)).toBe(expected);
+  });
+
+  it('ignores = inside strings, templates and comments', () => {
+    expect(isDisplayableExpression('f("a = b")')).toBe(true);
+    expect(isDisplayableExpression('f(`a = ${b}`)')).toBe(true);
+    expect(isDisplayableExpression('f(x) // y = 1')).toBe(true);
   });
 });

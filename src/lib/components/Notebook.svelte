@@ -8,6 +8,7 @@
     addCellAfter,
     deleteCell,
     staleCells,
+    duplicateDefinitions,
     recordCellRun,
     recomputeStaleCells,
     reactiveMode,
@@ -16,6 +17,7 @@
   import { mainExecutor } from '../utils/mainExecutor';
   import { kernel } from '../utils/kernelClient';
   import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
+  import { isEmptyOutput } from '../utils/cellOutput';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
   let isRunningAll = false;
@@ -140,13 +142,17 @@
         output = await mainExecutor.executeCode(cell.content);
       }
 
+      // A cell that displays nothing (a declaration, a loop, an assignment)
+      // stores no output, so it keeps no output frame and exports none either.
+      const storedOutput = isEmptyOutput(output) ? undefined : output;
+
       currentNotebook.update(nb => {
         if (!nb) return nb;
         return {
           ...nb,
           cells: nb.cells.map((c: NotebookCell) =>
             c.id === cellId
-              ? { ...c, isRunning: false, output }
+              ? { ...c, isRunning: false, output: storedOutput }
               : c
           )
         };
@@ -556,6 +562,7 @@
           {cell}
           isSelected={$selectedCellId === cell.id}
           isStale={$staleCells.has(cell.id)}
+          duplicateNames={$duplicateDefinitions.get(cell.id) ?? []}
           isDraggedOver={dragOverCellId === cell.id}
           dragPosition={dragOverCellId === cell.id ? dragOverPosition : null}
           oncontentChange={handleContentChange}

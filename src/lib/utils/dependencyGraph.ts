@@ -227,6 +227,32 @@ export function getDependentsOfName(cells: CellLike[], name: string): Set<string
   return collectDownstream(codeCells, analyses, [name]);
 }
 
+// Names defined by more than one cell, mapped to the ids of the cells defining
+// them (in document order). Returns only the conflicting names.
+//
+// Top-level declarations become plain writes into one shared scope object (see
+// jsExecutor's transformForScope), so a name declared in two cells is a single
+// variable: whichever cell ran last wins, `const` included. Reactive re-runs
+// make that worse — a dependent cell is re-run for ANY producer of a name it
+// reads, so an earlier cell's value can overwrite a later cell's. Observable and
+// Marimo reject duplicate definitions outright; we surface a warning instead, so
+// existing notebooks keep running.
+//
+// Skipped cells are excluded: they never run, so they cannot collide.
+export function findDuplicateDefinitions(cells: CellLike[]): Map<string, string[]> {
+  const codeCells = cells.filter((c) => c.type === 'code' && !c.skipped);
+  const { producersByName } = buildIndex(codeCells);
+
+  const duplicates = new Map<string, string[]>();
+  for (const [name, producers] of producersByName) {
+    // A cell can name the same binding twice (`let x` then `x` via ui.slider);
+    // that is one producer, not a conflict.
+    const distinct = [...new Set(producers)];
+    if (distinct.length > 1) duplicates.set(name, distinct);
+  }
+  return duplicates;
+}
+
 // Compute the set of cell ids that are stale: their last output no longer
 // reflects the current state, because either the cell was edited since it ran,
 // or an upstream dependency changed / ran more recently.

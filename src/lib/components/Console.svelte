@@ -11,6 +11,7 @@
     clearConsole,
     navigateHistory,
   } from '../stores/console';
+  import { isEmptyOutput } from '../utils/cellOutput';
 
   let input = $state('');
   let running = $state(false);
@@ -91,7 +92,9 @@
           <div class="console-in">
             <span class="console-prompt">&gt;</span><code>{entry.input}</code>
           </div>
-          <div class="console-out"><CellOutput output={entry.output} /></div>
+          {#if !isEmptyOutput(entry.output)}
+            <div class="console-out"><CellOutput output={entry.output} /></div>
+          {/if}
         </div>
       {/each}
     {/if}

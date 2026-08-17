@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeCell, computeStaleCells, getDownstreamCells, getDependentsOfName, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
+import { analyzeCell, computeStaleCells, findDuplicateDefinitions, getDownstreamCells, getDependentsOfName, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
 
 describe('analyzeCell', () => {
   it('extracts top-level definitions', () => {
@@ -183,5 +183,59 @@ describe('getDependentsOfName', () => {
     expect(dep.has('show')).toBe(true);  // reads big (transitive)
     expect(dep.has('other')).toBe(false);
     expect(dep.has('s')).toBe(false);    // the input cell itself
+  });
+});
+
+describe('findDuplicateDefinitions', () => {
+  it('reports a name defined by two cells, with both cell ids', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'let x = 1;' },
+      { id: 'b', type: 'code', content: 'let x = 2;' },
+      { id: 'c', type: 'code', content: 'x + 1;' },
+    ];
+    const dup = findDuplicateDefinitions(cells);
+    expect([...dup.keys()]).toEqual(['x']);
+    expect(dup.get('x')).toEqual(['a', 'b']); // document order
+  });
+
+  it('reports const the same way: the transform makes it a plain scope write', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const track = [1];' },
+      { id: 'b', type: 'code', content: 'const track = [2];' },
+    ];
+    expect(findDuplicateDefinitions(cells).get('track')).toEqual(['a', 'b']);
+  });
+
+  it('flags a declaration colliding with a ui.* input binding', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'ui.slider("n", { max: 10 })' },
+      { id: 'b', type: 'code', content: 'const n = 3;' },
+    ];
+    expect(findDuplicateDefinitions(cells).has('n')).toBe(true);
+  });
+
+  it('ignores unique names, nested declarations and markdown cells', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const x = 1;\nfunction f() {\n  const y = 2;\n  return y;\n}' },
+      { id: 'b', type: 'code', content: 'const z = x;\nif (z) {\n  const y = 3;\n}' },
+      { id: 'm', type: 'markdown', content: 'const x = 1;' },
+    ];
+    expect(findDuplicateDefinitions(cells).size).toBe(0);
+  });
+
+  it('ignores skipped cells, which never run', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'let x = 1;' },
+      { id: 'b', type: 'code', content: 'let x = 2;', skipped: true },
+    ];
+    expect(findDuplicateDefinitions(cells).size).toBe(0);
+  });
+
+  it('does not flag one cell that binds the same name twice', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'ui.slider("k", {})\nlet k = 1;' },
+      { id: 'b', type: 'code', content: 'k + 1;' },
+    ];
+    expect(findDuplicateDefinitions(cells).size).toBe(0);
   });
 });

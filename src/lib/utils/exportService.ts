@@ -1,6 +1,7 @@
 import type { Notebook } from "../types/notebook";
 import { formatDate, formatDateTime } from "./format";
 import { serializeNotebook } from "./notebookFormat";
+import { isEmptyOutput } from "./cellOutput";
 
 export interface ExportOptions {
   includeCode: boolean;
@@ -247,31 +248,42 @@ export class ExportService {
 
         // transform simple declarations like: const x = ...  -> globalThis.x = ...
         code = code.replace(/(^|\\n)\\s*(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=/g, '$1globalThis.$2 = ');
+        // The cell as written (declarations promoted), before any last-expression
+        // rewrite — used as a fallback when that rewrite does not parse.
+        const promoted = code;
 
         // detect last-line expression (simple heuristic)
-        const lines = (original || '').trim().split('\n');
+        const lines = (original || '').trim().split('\\n');
         const lastLine = (lines[lines.length - 1] || '').trim();
         const lastWithoutSemicolon = lastLine.replace(/;+$/, '');
-        const isExpr = lastWithoutSemicolon && !/^(const|let|var|function|class|if|for|while|switch|return)\b/.test(lastWithoutSemicolon) && !/\{$/.test(lastWithoutSemicolon);
+        const isExpr = lastWithoutSemicolon && !/^(const|let|var|function|class|if|for|while|switch|return)\\b/.test(lastWithoutSemicolon) && !/\\{$/.test(lastWithoutSemicolon);
         if (isExpr) {
-          const before = lines.slice(0, -1).join('\n');
+          const before = lines.slice(0, -1).join('\\n');
           // If the last expression is an assignment to globalThis/window, execute silently
           // (do not capture into __tn_last) to avoid dumping very large structures.
-          const isAssignToGlobal = /^\s*(?:globalThis|window)\s*(?:\.|\[).*=/.test(lastWithoutSemicolon);
+          const isAssignToGlobal = /^\\s*(?:globalThis|window)\\s*(?:\\.|\\[).*=/.test(lastWithoutSemicolon);
           if (isAssignToGlobal) {
             if (before.trim()) {
-              code = before + '\n' + lastWithoutSemicolon + ';';
+              code = before + '\\n' + lastWithoutSemicolon + ';';
             } else {
               code = lastWithoutSemicolon + ';';
             }
           } else {
             const expr = lastWithoutSemicolon;
             if (before.trim()) {
-              code = before + '\n' + 'globalThis.__tn_last = (' + expr + ');';
+              code = before + '\\n' + 'globalThis.__tn_last = (' + expr + ');';
             } else {
               code = 'globalThis.__tn_last = (' + expr + ');';
             }
           }
+        }
+
+        // The last-line heuristic above misreads a multi-line declaration, whose
+        // final line is just a closing bracket, as an expression — capturing it
+        // produced "expected expression, got keyword 'const'". If the rewrite
+        // does not parse, run the cell as written and skip the value display.
+        if (code !== promoted) {
+          try { new Function(code); } catch (e) { code = promoted; }
         }
 
         try {
@@ -281,12 +293,12 @@ export class ExportService {
           const last = globalThis.__tn_last;
           if (last instanceof Node) {
             outputDiv.appendChild(last);
-          } else {
+          } else if (last !== undefined) {
             const pre = document.createElement('pre');
             pre.style.margin = '0';
             pre.style.whiteSpace = 'pre-wrap';
             pre.style.wordBreak = 'break-word';
-            pre.textContent = last !== undefined ? (typeof last === 'string' ? last : JSON.stringify(last, null, 2)) : 'Executed successfully';
+            pre.textContent = typeof last === 'string' ? last : JSON.stringify(last, null, 2);
             outputDiv.appendChild(pre);
           }
         } catch (err) {
@@ -297,6 +309,9 @@ export class ExportService {
         } finally {
           try { delete globalThis.__tn_last; } catch (e) {}
         }
+
+        // Nothing displayed and nothing appended: drop the empty output frame.
+        if (!outputDiv.childNodes.length) outputDiv.remove();
       } // end for cells
     })().catch(e => {
       const err = document.createElement('pre');
@@ -331,17 +346,20 @@ export class ExportService {
         `;
       }
 
-      if (options.includeOutputs && cell.output) {
+      // Cells that display nothing (declarations, loops, assignments) export
+      // without an Out block, matching how they render in the notebook.
+      const output = cell.output;
+      if (options.includeOutputs && output && !isEmptyOutput(output)) {
         cellContent += `
           <div class="cell-output">
             <div class="cell-label">Out [${index + 1}]:</div>
-            <div class="output-content ${cell.output.type}">
-              ${this.renderOutputHTML(cell.output)}
+            <div class="output-content ${output.type}">
+              ${this.renderOutputHTML(output)}
             </div>
             ${
           options.includeTimestamps
             ? `<div class="timestamp">${
-              new Date(cell.output.timestamp).toLocaleTimeString()
+              new Date(output.timestamp).toLocaleTimeString()
             }</div>`
             : ""
         }
