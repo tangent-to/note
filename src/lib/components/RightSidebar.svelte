@@ -343,7 +343,19 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .tab-bar { display: flex; gap: 0; }
+  /* Five tabs in a panel the reader can drag as narrow as 240px: let the row
+     scroll rather than push the close button out of the panel. */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab-bar::-webkit-scrollbar { display: none; }
+
+  .tab-btn { flex: 0 0 auto; }
 
   .tab-btn {
     background: transparent;

@@ -50,6 +50,11 @@
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas,
         "Liberation Mono", monospace;
 
+    /* Code type, shared by the editor and anything quoting it (console echo,
+       prompts), so they stay in step at any root size. 0.857rem keeps code at
+       the same ratio to the UI as before the root moved to 16px. */
+    --code-font-size: 0.857rem;
+
     /* One soft radius scale: cards 12, inputs/code 8, buttons & badges pill. */
     --radius-card: 12px;
     --radius-input: 8px;
@@ -134,7 +139,11 @@ body {
     padding: 0;
     height: 100%;
     font-family: var(--font-sans);
-    font-size: 14px;
+    /* Root size for every rem in the app. The design system's scale assumes the
+       browser default of 16px (its text-sm is 14px); at the old 14px root the
+       whole interface rendered at 87.5%, which is why it needed ~115% zoom to
+       read comfortably. Code sizes follow via --code-font-size below. */
+    font-size: 16px;
     line-height: 1.6;
     color: var(--text);
     background-color: var(--bg);

@@ -203,12 +203,12 @@
     min-width: 0;
   }
 
-  /* 12px mono, same as the cell editor, so echoed input reads as code. The
+  /* Same size as the cell editor, so echoed input reads as code. The
      echo is a record of what was typed, so it sits back; the value it produced
      is what you actually read, and keeps full contrast. */
   .console-in code {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--code-font-size);
     line-height: 1.55;
     color: var(--text-muted);
     white-space: pre-wrap;
@@ -217,7 +217,7 @@
 
   .console-prompt {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--code-font-size);
     line-height: 1.55;
     font-weight: 600;
     user-select: none;

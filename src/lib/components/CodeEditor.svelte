@@ -73,7 +73,7 @@
   // light/dark theme with no JS theme switching.
   const editorTheme = EditorView.theme({
     '&': {
-      fontSize: '12px',
+      fontSize: 'var(--code-font-size)',
       backgroundColor: 'transparent',
     },
     '&.cm-focused': { outline: 'none' },

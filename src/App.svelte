@@ -63,7 +63,9 @@
   const PANEL_MAX = 720;
   const CHAT_MIN_WIDTH = 380;
   const clampPanel = (w: number) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
-  let rightSidebarWidth = $state(clampPanel(Number(localStorage.getItem(PANEL_WIDTH_KEY)) || 300));
+  // 320 rather than 300: at the 16px root the five sidebar tabs need ~302px, so
+  // the default panel now fits them without scrolling. A stored width wins.
+  let rightSidebarWidth = $state(clampPanel(Number(localStorage.getItem(PANEL_WIDTH_KEY)) || 320));
 
   function startPanelResize(event: PointerEvent) {
     event.preventDefault();
