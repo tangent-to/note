@@ -2,17 +2,12 @@
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
-  import CellNotice from './CellNotice.svelte';
-  import { kernelMode } from '../stores/notebook';
   import '../styles/observable-inspector.css';
 
   let { output }: { output: CellOutput } = $props();
 
   let renderError: string | null = $state(null);
   let copyLabel = $state('Copy');
-  // Derived from the store, not from clicking the button below, so the note reads
-  // correctly however the reader switched kernels (button, or the Info panel).
-  const onMainThread = $derived($kernelMode === 'main');
 
   function formatTimestamp(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString();
@@ -162,25 +157,6 @@
 </script>
 
 <div class="output-container" data-testid="cell-output">
-  <!-- The worker kernel can only send markup, so an output that depended on
-       listeners or its own <script> arrives inert. Say so, rather than leaving
-       the reader clicking a dead control. -->
-  {#if output.needsMainThread}
-    <CellNotice
-      testid="needs-main-thread"
-      actionLabel={onMainThread ? undefined : 'Use main thread'}
-      onaction={() => kernelMode.set('main')}
-    >
-      {#if onMainThread}
-        Now on the main-thread kernel. Variables don't carry across kernels, so use
-        Run All to rebuild them and get a live output.
-      {:else}
-        This output's buttons and tooltips need code that runs after rendering.
-        The background worker can only send static HTML.
-      {/if}
-    </CellNotice>
-  {/if}
-
   {#if renderError}
     <div class="output-content error">
       <div class="error-output">

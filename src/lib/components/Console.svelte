@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
+  import KernelNotice from './KernelNotice.svelte';
   import {
     consoleEntries,
     consoleInputHistory,
@@ -92,6 +93,7 @@
           <div class="console-in">
             <span class="console-prompt">&gt;</span><code>{entry.input}</code>
           </div>
+          <KernelNotice output={entry.output} />
           {#if !isEmptyOutput(entry.output)}
             <div class="console-out"><CellOutput output={entry.output} /></div>
           {/if}

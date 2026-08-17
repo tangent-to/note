@@ -6,6 +6,7 @@
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
   import CellNotice from './CellNotice.svelte';
+  import KernelNotice from './KernelNotice.svelte';
   import { outputPosition } from '../stores/notebook';
   import { isEmptyOutput } from '../utils/cellOutput';
   import type { NotebookCell } from '../types/notebook';
@@ -382,6 +383,10 @@
               {duplicateNames.length === 1 ? 'is' : 'are'} also defined in another cell. The last one to run wins.
             </CellNotice>
           {/if}
+
+          <!-- Notices sit together at the top of the cell, above the code they
+               are about and above the output they explain. -->
+          <KernelNotice output={cell.output} />
           <div class="cell-content">
             <CodeEditor
               bind:this={editorRef}
