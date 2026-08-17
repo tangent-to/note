@@ -67,4 +67,50 @@ describe('executeCode', () => {
     const { output } = await run('const n = 2;\n[1, 2, 3]\n  .map(x => x * n)\n  .join(",")');
     expect(String(output.content)).toContain('2,4,6');
   });
+
+  // Hoisting is driven by the same parse as the dependency analysis, so what a
+  // cell is reported to define and what it actually shares cannot drift apart.
+  it('shares every declarator of a multi-name declaration', async () => {
+    const { vars } = await run('const width = 640, height = 400;');
+    expect(vars.width).toBe(640);
+    expect(vars.height).toBe(400);   // the regex rewrote only the first name
+  });
+
+  it('shares an indented top-level declaration', async () => {
+    const { vars } = await run('  const indented = 7;');
+    expect(vars.indented).toBe(7);
+  });
+
+  it('shares a declaration with no initialiser', async () => {
+    const { vars } = await run('let pending;');
+    expect(Object.prototype.hasOwnProperty.call(vars, 'pending')).toBe(true);
+    expect(vars.pending).toBeUndefined();
+  });
+
+  it('leaves a declaration inside a template literal untouched', async () => {
+    // The regex rewrote this into the string, corrupting the value.
+    const { vars } = await run('const snippet = `\nconst inner = 1\n`;');
+    expect(vars.snippet).toBe('\nconst inner = 1\n');
+    expect(Object.prototype.hasOwnProperty.call(vars, 'inner')).toBe(false);
+  });
+
+  it('keeps declarations nested in a function private to the cell', async () => {
+    const { vars } = await run('function make() {\n  const secret = 1;\n  return secret;\n}\nmake();');
+    expect(typeof vars.make).toBe('function');
+    expect(Object.prototype.hasOwnProperty.call(vars, 'secret')).toBe(false);
+  });
+
+  it('reports a syntax error instead of mangling the cell', async () => {
+    const { output } = await run('const oops = ;');
+    expect(output.type).toBe('error');
+  });
+
+  it('makes a declared variable readable in a later cell', async () => {
+    const { JavaScriptExecutor } = await import('../jsExecutor');
+    const executor = new JavaScriptExecutor();
+    await executor.executeCode('const base = [1, 2, 3];');
+    const second = await executor.executeCode('base.map(n => n * 2)');
+    expect(String(second.content)).toContain('2');
+    expect(String(second.content)).toContain('6');
+  });
 });

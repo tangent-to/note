@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeCell, computeStaleCells, findDuplicateDefinitions, getDownstreamCells, getDependentsOfName, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
+import { analyzeCell, computeStaleCells, executionOrder, findDuplicateDefinitions, getDownstreamCells, getDependentsOfName, hashCode, type CellLike, type RunRecord } from '../dependencyGraph';
 
 describe('analyzeCell', () => {
   it('extracts top-level definitions', () => {
@@ -237,5 +237,102 @@ describe('findDuplicateDefinitions', () => {
       { id: 'b', type: 'code', content: 'k + 1;' },
     ];
     expect(findDuplicateDefinitions(cells).size).toBe(0);
+  });
+});
+
+describe('parser-backed precision (regressions the regex scanner could not fix)', () => {
+  it('does not link a cell whose only use of the name is a callback parameter', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const x = 10;' },
+      { id: 'shadow', type: 'code', content: 'rows.map(x => x * 2)' },
+      { id: 'real', type: 'code', content: 'x * 2' },
+    ];
+    const down = getDownstreamCells(cells, 'a');
+    expect(down.has('real')).toBe(true);
+    expect(down.has('shadow')).toBe(false); // `x` here is the callback's own param
+  });
+
+  it('does not treat a declaration inside a template literal or comment as a definition', () => {
+    const cells: CellLike[] = [
+      { id: 'quoted', type: 'code', content: 'const sql = `\nconst total = 1\n`;\n// const total = 2' },
+      { id: 'reader', type: 'code', content: 'total + 1' },
+    ];
+    expect(findDuplicateDefinitions(cells).size).toBe(0);
+    expect(getDownstreamCells(cells, 'quoted').has('reader')).toBe(false);
+    expect(analyzeCell(cells[0].content).defines.has('total')).toBe(false);
+  });
+
+  it('links a name that only appears inside template interpolation', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const count = 3;' },
+      { id: 'b', type: 'code', content: 'render(`total: ${count}`)' },
+    ];
+    expect(getDownstreamCells(cells, 'a').has('b')).toBe(true);
+  });
+
+  it('sees every declarator of a multi-name declaration', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const width = 640, height = 400;' },
+      { id: 'b', type: 'code', content: 'draw(height);' },
+    ];
+    expect(getDownstreamCells(cells, 'a').has('b')).toBe(true);
+  });
+});
+
+describe('executionOrder', () => {
+  it('keeps document order when it already respects dependencies', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const x = 1;' },
+      { id: 'b', type: 'code', content: 'const y = x + 1;' },
+      { id: 'c', type: 'code', content: 'y * 2' },
+    ];
+    expect(executionOrder(cells)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('runs a producer that sits below its consumer first', () => {
+    const cells: CellLike[] = [
+      { id: 'uses', type: 'code', content: 'const doubled = base * 2;' },
+      { id: 'defines', type: 'code', content: 'const base = 21;' },
+      { id: 'shows', type: 'code', content: 'doubled' },
+    ];
+    expect(executionOrder(cells)).toEqual(['defines', 'uses', 'shows']);
+  });
+
+  it('leaves independent cells in document order', () => {
+    const cells: CellLike[] = [
+      { id: 'p', type: 'code', content: 'const a = 1;' },
+      { id: 'q', type: 'code', content: 'const b = 2;' },
+      { id: 'r', type: 'code', content: 'const c = 3;' },
+    ];
+    expect(executionOrder(cells)).toEqual(['p', 'q', 'r']);
+  });
+
+  it('skips markdown and skipped cells', () => {
+    const cells: CellLike[] = [
+      { id: 'md', type: 'markdown', content: '# title' },
+      { id: 'code', type: 'code', content: 'const a = 1;' },
+      { id: 'off', type: 'code', content: 'const b = 2;', skipped: true },
+    ];
+    expect(executionOrder(cells)).toEqual(['code']);
+  });
+
+  it('breaks a cycle at its earliest cell instead of dropping cells', () => {
+    const cells: CellLike[] = [
+      { id: 'a', type: 'code', content: 'const x = y + 1;' },
+      { id: 'b', type: 'code', content: 'const y = x + 1;' },
+    ];
+    expect(executionOrder(cells).sort()).toEqual(['a', 'b']);
+    expect(executionOrder(cells)[0]).toBe('a'); // deterministic: earliest first
+  });
+
+  it('orders a subset using edges that pass through cells not in it', () => {
+    const cells: CellLike[] = [
+      { id: 'last', type: 'code', content: 'report(summary);' },
+      { id: 'middle', type: 'code', content: 'const summary = summarize(raw);' },
+      { id: 'first', type: 'code', content: 'const raw = load();' },
+    ];
+    // Running only the two ends must still order them by the chain between them.
+    expect(executionOrder(cells, new Set(['last', 'first']))).toEqual(['first', 'last']);
+    expect(executionOrder(cells)).toEqual(['first', 'middle', 'last']);
   });
 });

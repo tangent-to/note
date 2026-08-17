@@ -14,6 +14,12 @@
 
 import type { CellOutput } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
+import {
+  hasSyntaxErrors,
+  topLevelDeclarations,
+  topLevelDefinitions,
+  topLevelFunctionNames,
+} from "./jsSyntax";
 
 /**
  * Split a code cell into its final expression (for last-value display) and the
@@ -647,30 +653,49 @@ export class JavaScriptExecutor {
    * Transform top-level declarations so they write into the shared scope,
    * making variables declared in one cell readable as plain names in the next.
    *
-   * Rules (applied to lines at column 0 — top-level heuristic):
-   *   const x = expr   →  window.__tangent_scope.x = expr
-   *   let   x = expr   →  window.__tangent_scope.x = expr
-   *   var   x = expr   →  window.__tangent_scope.x = expr
-   *   function foo() {} → (unchanged) + appends: scope.foo = foo
+   *   const x = expr    →  window.__tangent_scope.x = expr
+   *   let   x           →  window.__tangent_scope.x = undefined
+   *   const a = 1, b = 2 → …scope.a = 1, …scope.b = 2   (every declarator)
+   *   function foo() {} →  (unchanged) + appends: scope.foo = foo
    *
-   * Destructuring declarations (const { a } = …) and class declarations are
-   * left untransformed and stay private to the cell.
+   * Declarations are located by parsing the cell (see jsSyntax), not by matching
+   * line starts, which is what the dependency analysis reports too — so what a
+   * cell is said to define and what it actually shares cannot drift apart. It
+   * also means an indented top-level declaration is shared like any other, and
+   * that a `const …` sitting at column 0 *inside a template literal* is left
+   * alone instead of being rewritten into the string.
+   *
+   * Left untransformed, and so private to the cell: destructuring declarations
+   * (recovered by syncScopeFromGlobals), class declarations, `export` wrappers,
+   * and anything in a cell that does not parse.
    */
   private transformForScope(code: string): string {
-    // Replace `const/let/var name =` with a direct scope write.
-    // Matches only at column 0 (no leading whitespace) to avoid
-    // rewriting declarations inside function bodies or blocks.
-    const transformed = code.replace(
-      /^(const|let|var)\s+([\w$]+)(\s*=)/gm,
-      'window.__tangent_scope.$2$3',
-    );
+    // A cell with a syntax error can't be analysed meaningfully; run it as
+    // written and let the engine report the error.
+    if (hasSyntaxErrors(code)) return code;
+
+    // Collect edits first, then apply them back-to-front so earlier offsets
+    // stay valid.
+    const edits: { from: number; to: number; text: string }[] = [];
+    for (const decl of topLevelDeclarations(code)) {
+      if (!decl.declarators || decl.exported) continue;
+      const writes = decl.declarators.map((d) =>
+        d.init
+          ? `window.__tangent_scope.${d.name} = ${code.slice(d.init.from, d.init.to)}`
+          : `window.__tangent_scope.${d.name} = undefined`
+      );
+      edits.push({ from: decl.from, to: decl.to, text: writes.join(', ') });
+    }
+
+    let transformed = code;
+    for (const edit of edits.sort((a, b) => b.from - a.from)) {
+      transformed =
+        transformed.slice(0, edit.from) + edit.text + transformed.slice(edit.to);
+    }
 
     // Function declarations hoist to the IIFE scope; copy into shared scope
     // after they are defined so subsequent cells can call them by name.
-    const funcNames: string[] = [];
-    for (const m of code.matchAll(/^function\s+([\w$]+)\s*\(/gm)) {
-      funcNames.push(m[1]);
-    }
+    const funcNames = topLevelFunctionNames(code);
     if (funcNames.length === 0) return transformed;
 
     const syncs = funcNames
@@ -694,10 +719,7 @@ export class JavaScriptExecutor {
    * names the transform did not already capture (e.g. destructuring patterns).
    */
   private syncScopeFromGlobals(code: string): void {
-    const declRegex = /(?:^|\n)\s*(?:const|let|var)\s+([\w$]+)\s*=/g;
-    let match: RegExpExecArray | null;
-    while ((match = declRegex.exec(code)) !== null) {
-      const name = match[1];
+    for (const name of topLevelDefinitions(code)) {
       if (Object.prototype.hasOwnProperty.call(this.scope, name)) continue;
       if (name in window) {
         this.scope[name] = (window as any)[name];

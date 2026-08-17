@@ -16,7 +16,7 @@
   } from '../stores/notebook';
   import { mainExecutor } from '../utils/mainExecutor';
   import { kernel } from '../utils/kernelClient';
-  import { getDownstreamCells, getDependentsOfName } from '../utils/dependencyGraph';
+  import { getDownstreamCells, getDependentsOfName, executionOrder } from '../utils/dependencyGraph';
   import { isEmptyOutput } from '../utils/cellOutput';
   import type { Notebook, NotebookCell } from '../types/notebook';
 
@@ -67,11 +67,9 @@
 
     suppressCascade = true;
     try {
-      for (const cell of notebook.cells) {
-        if (cell.type === 'code' && dependents.has(cell.id)) {
-          await handleRunCell({ cellId: cell.id });
-          await yieldToUI();
-        }
+      for (const cellId of executionOrder(notebook.cells, dependents)) {
+        await handleRunCell({ cellId });
+        await yieldToUI();
       }
     } finally {
       suppressCascade = false;
@@ -200,11 +198,10 @@
 
     suppressCascade = true;
     try {
-      for (const cell of notebook.cells) {
-        if (cell.type === 'code' && downstream.has(cell.id)) {
-          await handleRunCell({ cellId: cell.id });
-          await yieldToUI();
-        }
+      // Dependency order, so a dependent that feeds another dependent runs first.
+      for (const cellId of executionOrder(notebook.cells, downstream)) {
+        await handleRunCell({ cellId });
+        await yieldToUI();
       }
     } finally {
       suppressCascade = false;
@@ -220,16 +217,16 @@
 
     isRunningAll = true;
     suppressCascade = true;
-    // Run stale code cells top-to-bottom (an approximation of dependency order).
-    const total = notebook.cells.filter(c => c.type === 'code' && stale.has(c.id)).length;
+    // Dependency order, resolved across the whole notebook so a stale cell that
+    // feeds another stale cell runs first even if it sits below it.
+    const order = executionOrder(notebook.cells, stale);
+    const total = order.length;
     let done = 0;
     runProgress.set({ done, total });
-    for (const cell of notebook.cells) {
-      if (cell.type === 'code' && stale.has(cell.id)) {
-        await handleRunCell({ cellId: cell.id });
-        await yieldToUI();
-        runProgress.set({ done: ++done, total });
-      }
+    for (const cellId of order) {
+      await handleRunCell({ cellId });
+      await yieldToUI();
+      runProgress.set({ done: ++done, total });
     }
     suppressCascade = false;
     isRunningAll = false;
@@ -247,17 +244,25 @@
     suppressCascade = true;
     resetExecutionCounter();
 
-    const total = notebook.cells.length;
+    // Code cells run in dependency order — a cell that reads `x` runs after the
+    // cell defining `x`, even when it appears above it — with document order as
+    // the tie-break, so an already-ordered notebook behaves exactly as before.
+    // Markdown has no dependencies, so it just re-renders up front.
+    const order = executionOrder(notebook.cells);
+    // Skipped cells are absent from `order`, so count what will actually run —
+    // otherwise the progress bar stops short of full.
+    const markdownCount = notebook.cells.filter(c => c.type === 'markdown').length;
+    const total = markdownCount + order.length;
     let done = 0;
     runProgress.set({ done, total });
     for (const cell of notebook.cells) {
-      if (cell.type === 'code') {
-        await handleRunCell({ cellId: cell.id });
-        await yieldToUI();
-      } else if (cell.type === 'markdown') {
-        const event = new CustomEvent('render-markdown', { detail: { cellId: cell.id } });
-        window.dispatchEvent(event);
-      }
+      if (cell.type !== 'markdown') continue;
+      window.dispatchEvent(new CustomEvent('render-markdown', { detail: { cellId: cell.id } }));
+      runProgress.set({ done: ++done, total });
+    }
+    for (const cellId of order) {
+      await handleRunCell({ cellId });
+      await yieldToUI();
       runProgress.set({ done: ++done, total });
     }
 

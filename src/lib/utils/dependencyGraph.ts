@@ -1,14 +1,19 @@
-// Lightweight static dependency analysis for notebook cells.
+// Static dependency analysis for notebook cells.
 //
-// We don't fully parse JavaScript. Instead we extract, per cell:
+// Per cell, from a real JavaScript parse (see jsSyntax):
 //   - `defines`: top-level names the cell introduces into the shared scope
-//   - `reads`:   identifiers the cell references
+//   - `reads`:   free identifiers — names it uses but does not bind itself
 //
 // A cell B depends on cell A when B reads a name that A defines. This is the
 // same idea Marimo uses for Python, adapted to our imperative shared-scope
-// model. It's deliberately conservative: when in doubt it over-reports a
-// dependency, which at worst marks a cell stale unnecessarily (safe) rather
-// than missing a real staleness (unsafe).
+// model.
+//
+// Remaining imprecision errs toward over-reporting a dependency, which at worst
+// marks a cell stale unnecessarily (safe) rather than missing a real staleness
+// (unsafe): reads include ordinary globals (`console`, `Math`), and a `var`
+// inside a block is treated as block-scoped.
+
+import { freeIdentifiers, topLevelDefinitions } from './jsSyntax';
 
 export interface CellLike {
   id: string;
@@ -36,130 +41,34 @@ export function hashCode(input: string): string {
   return String(hash >>> 0);
 }
 
-// Blank out strings and comments in one left-to-right pass. A single scanner is
-// required (not sequential regexes): a `//` or `/* */` comment may contain a
-// backtick, and a string may contain `//` — so whichever construct opens FIRST
-// wins. The old regex order (comments before strings) left a stray backtick from
-// a commented-out template literal, which then swallowed the rest of the source
-// and corrupted the dependency scan. Newlines are preserved so line-anchored
-// (`^`) declaration regexes downstream still work; every other consumed char
-// becomes a space.
-function stripStringsAndComments(code: string): string {
-  let out = '';
-  let i = 0;
-  const n = code.length;
-  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
-  while (i < n) {
-    const ch = code[i];
-    const next = code[i + 1];
-    // line comment
-    if (ch === '/' && next === '/') {
-      let j = i + 2;
-      while (j < n && code[j] !== '\n') j++;
-      out += blank(code.slice(i, j));
-      i = j;
-      continue;
-    }
-    // block comment
-    if (ch === '/' && next === '*') {
-      let j = i + 2;
-      while (j < n && !(code[j] === '*' && code[j + 1] === '/')) j++;
-      j = Math.min(n, j + 2);
-      out += blank(code.slice(i, j));
-      i = j;
-      continue;
-    }
-    // string / template literal (template interpolation is blanked wholesale too,
-    // which is safe here: it only makes the scan miss reads inside `${…}`, so at
-    // worst a dependency is under-reported for interpolated identifiers — a known,
-    // acceptable limitation of this lightweight analyser)
-    if (ch === '"' || ch === "'" || ch === '`') {
-      const quote = ch;
-      let j = i + 1;
-      while (j < n) {
-        if (code[j] === '\\') { j += 2; continue; }
-        if (code[j] === quote) { j++; break; }
-        j++;
-      }
-      out += blank(code.slice(i, j));
-      i = j;
-      continue;
-    }
-    out += ch;
-    i++;
-  }
-  return out;
-}
-
-// Pull binding names out of a destructuring pattern like `{a, b: c, d = 1}`
-// or `[a, , ...rest]`.
-function extractBindingNames(pattern: string): string[] {
-  const names: string[] = [];
-  const inner = pattern.replace(/^[{[]/, '').replace(/[}\]]$/, '');
-  for (let part of inner.split(',')) {
-    part = part.trim();
-    if (!part) continue;
-    part = part.split('=')[0].trim();          // drop default value
-    if (part.includes(':')) part = part.split(':')[1].trim(); // {key: local}
-    part = part.replace(/^\.\.\./, '');         // rest element
-    const m = part.match(/^[A-Za-z_$][\w$]*/);
-    if (m) names.push(m[0]);
-  }
-  return names;
-}
+// A single staleness pass analyses every cell three or four times over (duplicate
+// names, staleness, execution order, downstream sets), so results are cached by
+// source text. Treat the returned sets as read-only.
+const ANALYSIS_CACHE_LIMIT = 400;
+const analysisCache = new Map<string, CellAnalysis>();
 
 export function analyzeCell(code: string): CellAnalysis {
-  const defines = new Set<string>();
-  const clean = stripStringsAndComments(code);
+  const cached = analysisCache.get(code);
+  if (cached) return cached;
 
-  // Top-level declarations (column 0 — matches how jsExecutor hoists to scope).
-  for (const m of clean.matchAll(/^(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) defines.add(m[1]);
-  for (const m of clean.matchAll(/^function\s+([A-Za-z_$][\w$]*)/gm)) defines.add(m[1]);
-  for (const m of clean.matchAll(/^class\s+([A-Za-z_$][\w$]*)/gm)) defines.add(m[1]);
-  // Top-level destructuring declarations.
-  for (const m of clean.matchAll(/^(?:const|let|var)\s*(\{[^}]*\}|\[[^\]]*\])\s*=/gm)) {
-    for (const name of extractBindingNames(m[1])) defines.add(name);
-  }
-  // Explicit globals: `globalThis.foo = ...` / `window.foo = ...`. These are the
-  // portable way to share mutable state across cells (valid in Deno/Zed too).
-  // Bare assignments (`foo = ...`) are intentionally NOT treated as definitions:
-  // they're implicit globals that throw under strict-mode ESM, so the notebook
-  // format relies on declarations / explicit globals instead.
-  for (const m of clean.matchAll(/^(?:globalThis|window)\s*\.\s*([A-Za-z_$][\w$]*)\s*=(?![=>])/gm)) {
-    defines.add(m[1]);
-  }
-  // Imported bindings (jsExecutor assigns these into the shared scope).
-  for (const m of clean.matchAll(/import\s+(?:\*\s+as\s+([\w$]+)|([\w$]+)|\{([^}]+)\})\s+from\b/g)) {
-    if (m[1]) defines.add(m[1]);
-    if (m[2]) defines.add(m[2]);
-    if (m[3]) {
-      for (let part of m[3].split(',')) {
-        part = part.trim();
-        if (!part) continue;
-        const asMatch = part.match(/\bas\s+([\w$]+)/);
-        const name = asMatch ? asMatch[1] : part.match(/^[\w$]+/)?.[0];
-        if (name) defines.add(name);
-      }
-    }
-  }
+  // `defines` are the names the cell publishes into the shared scope; `reads`
+  // are the free identifiers it expects someone else to provide. Both come from
+  // a real parse (see jsSyntax), so strings, comments, property names and a
+  // callback's own parameters can no longer masquerade as notebook variables.
+  const defines = topLevelDefinitions(code);
+  const reads = freeIdentifiers(code);
 
-  // Reads: every identifier that isn't a property access (`.foo`). We don't
-  // bother filtering keywords/globals — `reads` is only ever intersected with
-  // the set of names other cells define, so noise can't create false edges.
-  const reads = new Set<string>();
-  const noMembers = clean.replace(/\.\s*[A-Za-z_$][\w$]*/g, ' ');
-  for (const m of noMembers.matchAll(/[A-Za-z_$][\w$]*/g)) reads.add(m[0]);
-
-  // Reactive input bindings: `ui.slider("name", ...)` defines `name`. Scan the
-  // ORIGINAL code (not `clean`) because the bound name is a string literal.
-  for (const m of code.matchAll(/\bui\s*\.\s*(?:slider|number|checkbox|select|text)\s*\(\s*["']([A-Za-z_$][\w$]*)["']/g)) {
-    defines.add(m[1]);
-  }
-
-  // A cell never depends on itself.
+  // A cell never depends on itself: a name it both binds and reads (a ui.* input
+  // it also uses, say) is its own.
   for (const name of defines) reads.delete(name);
 
-  return { defines, reads };
+  const analysis: CellAnalysis = { defines, reads };
+  if (analysisCache.size >= ANALYSIS_CACHE_LIMIT) {
+    const oldest = analysisCache.keys().next();
+    if (!oldest.done) analysisCache.delete(oldest.value);
+  }
+  analysisCache.set(code, analysis);
+  return analysis;
 }
 
 // Build per-cell analyses and a name -> producer-cells index in one pass.
@@ -251,6 +160,73 @@ export function findDuplicateDefinitions(cells: CellLike[]): Map<string, string[
     if (distinct.length > 1) duplicates.set(name, distinct);
   }
   return duplicates;
+}
+
+/**
+ * Cell ids in dependency order: every cell comes after the cells that define the
+ * names it reads. Ties are broken by document order, so a notebook whose cells
+ * already read top-to-bottom is unchanged — this only matters when a cell sits
+ * above the cell it depends on, where document order would run it with a stale
+ * (or missing) value and Run All needed a second pass to converge.
+ *
+ * `only` restricts the result without changing the ordering: dependencies are
+ * resolved across the whole notebook, then the result is filtered, so running a
+ * subset (stale cells, reactive dependents) still respects edges that pass
+ * through cells that are not being run.
+ *
+ * Cycles cannot be ordered. Rather than dropping those cells, the earliest one in
+ * document order is emitted to break the cycle and ordering continues — the same
+ * outcome document order would have given, applied only where it is unavoidable.
+ */
+export function executionOrder(cells: CellLike[], only?: Set<string>): string[] {
+  const codeCells = cells.filter((c) => c.type === 'code' && !c.skipped);
+  const { analyses, producersByName } = buildIndex(codeCells);
+
+  const position = new Map<string, number>();
+  codeCells.forEach((cell, index) => position.set(cell.id, index));
+
+  // Edges producer -> consumer, plus an in-degree per consumer.
+  const consumers = new Map<string, Set<string>>();
+  const indegree = new Map<string, number>();
+  for (const cell of codeCells) {
+    indegree.set(cell.id, 0);
+    consumers.set(cell.id, new Set());
+  }
+  for (const cell of codeCells) {
+    const seen = new Set<string>();
+    for (const name of analyses.get(cell.id)!.reads) {
+      for (const producerId of producersByName.get(name) ?? []) {
+        if (producerId === cell.id || seen.has(producerId)) continue;
+        seen.add(producerId);
+        consumers.get(producerId)!.add(cell.id);
+        indegree.set(cell.id, indegree.get(cell.id)! + 1);
+      }
+    }
+  }
+
+  const remaining = new Set(codeCells.map((c) => c.id));
+  const earliest = (ids: Iterable<string>) => {
+    let best: string | null = null;
+    for (const id of ids) {
+      if (best === null || position.get(id)! < position.get(best)!) best = id;
+    }
+    return best;
+  };
+
+  const ordered: string[] = [];
+  while (remaining.size > 0) {
+    const ready = [...remaining].filter((id) => indegree.get(id) === 0);
+    // No ready cell means every remaining cell is in a cycle; break it at the
+    // earliest cell so ordering can continue.
+    const next = earliest(ready.length > 0 ? ready : remaining)!;
+    remaining.delete(next);
+    ordered.push(next);
+    for (const consumer of consumers.get(next)!) {
+      if (remaining.has(consumer)) indegree.set(consumer, indegree.get(consumer)! - 1);
+    }
+  }
+
+  return only ? ordered.filter((id) => only.has(id)) : ordered;
 }
 
 // Compute the set of cell ids that are stale: their last output no longer
