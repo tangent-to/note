@@ -754,11 +754,14 @@
     .drag-handle { display: none; }
   }
 
-  /* Overflow menu tucked into the top-right corner, revealed on hover. */
+  /* Overflow menu in the margin beside the cell, revealed on hover. It used to
+     sit inside the top-right corner, where it overlapped whatever was under it:
+     the markdown editor's border, and long code lines. The notebook column has
+     1.5rem of padding, so the button fits beside the cell without leaving it. */
   .cell-menu {
     position: absolute;
-    top: 0.3rem;
-    right: 0.3rem;
+    top: 0.25rem;
+    right: -1.55rem;
     z-index: 7;
   }
 
@@ -867,10 +870,7 @@
   }
 
   .markdown-editor {
-    /* The overflow menu floats over the cell's top-right corner, and this is the
-       only editor drawn as a bordered box, so its corner ran under the dots.
-       Stop the box short of the menu rather than masking the line. */
-    width: calc(100% - 1.6rem);
+    width: 100%;
     min-height: 48px;
     padding: 0.35rem 0.45rem;
     border: 1px solid var(--border);
@@ -994,5 +994,15 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  /* The notebook column is 900px wide and centred, so beyond ~960px there is
+     real margin beside the cell for the overflow menu. Below that the column
+     fills the window and its 1.5rem of padding is all that is left, which the
+     button would fill edge to edge, so it returns to the cell's corner and the
+     markdown box stops short of it again. */
+  @media (max-width: 960px) {
+    .cell-menu { right: 0.3rem; }
+    .markdown-editor { width: calc(100% - 1.6rem); }
   }
 </style>
