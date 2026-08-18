@@ -6,6 +6,7 @@
   import {
     updateCellContent,
     addCellAfter,
+    addCellBefore,
     deleteCell,
     staleCells,
     duplicateDefinitions,
@@ -353,6 +354,20 @@
     });
   }
 
+  function handleAddCellBefore({ beforeCellId, type = 'code' }: { beforeCellId: string; type?: 'code' | 'markdown' }) {
+    currentNotebook.update(notebook => {
+      if (!notebook) return notebook;
+      const updatedNotebook = addCellBefore(notebook, beforeCellId, type);
+      const newCell = updatedNotebook.cells.find((cell: NotebookCell) =>
+        !notebook.cells.some((oldCell: NotebookCell) => oldCell.id === cell.id)
+      );
+      if (newCell) {
+        selectedCellId.set(newCell.id);
+      }
+      return updatedNotebook;
+    });
+  }
+
   function handleDeleteCell({ cellId }: { cellId: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -562,9 +577,10 @@
     </div>
 
     <div class="cells-container">
-      {#each $currentNotebook.cells as cell (cell.id)}
+      {#each $currentNotebook.cells as cell, cellIndex (cell.id)}
         <Cell
           {cell}
+          isFirst={cellIndex === 0}
           isSelected={$selectedCellId === cell.id}
           isStale={$staleCells.has(cell.id)}
           duplicateNames={$duplicateDefinitions.get(cell.id) ?? []}
@@ -575,6 +591,7 @@
           onrunAndAdvance={handleRunAndAdvance}
           onselect={handleSelectCell}
           onaddCell={handleAddCell}
+          onaddCellBefore={handleAddCellBefore}
           ondeleteCell={handleDeleteCell}
           ontypeChange={handleCellTypeChange}
           ontoggleCollapse={handleToggleCollapse}

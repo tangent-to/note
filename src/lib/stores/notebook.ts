@@ -270,6 +270,23 @@ export function addCellAfter(notebook: Notebook, afterCellId: string, type: 'cod
   };
 }
 
+// Insert a cell directly above `beforeCellId`, for the insert bar over the
+// first cell: without it the only way to open a notebook with a new cell was to
+// add one below and drag it up.
+export function addCellBefore(notebook: Notebook, beforeCellId: string, type: 'code' | 'markdown' = 'code'): Notebook {
+  const cellIndex = notebook.cells.findIndex(cell => cell.id === beforeCellId);
+  if (cellIndex === -1) return notebook;
+  const newCells = [...notebook.cells];
+  newCells.splice(cellIndex, 0, createNewCell(type));
+  markNotebookDirty();
+
+  return {
+    ...notebook,
+    cells: newCells,
+    updatedAt: Date.now()
+  };
+}
+
 // Delete cell (with undo support)
 export function deleteCell(notebook: Notebook, cellId: string): Notebook {
   if (notebook.cells.length <= 1) return notebook; // Don't delete the last cell

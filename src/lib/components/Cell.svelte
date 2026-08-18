@@ -15,6 +15,8 @@
     cell: NotebookCell;
     isSelected?: boolean;
     isStale?: boolean;
+    /** The first cell also gets an insert bar above it. */
+    isFirst?: boolean;
     /** Names this cell defines that another cell defines too. */
     duplicateNames?: string[];
     isDraggedOver?: boolean;
@@ -24,6 +26,7 @@
     onrunAndAdvance?: (detail: { cellId: string }) => void;
     onselect?: (detail: { cellId: string }) => void;
     onaddCell?: (detail: { afterCellId: string; type?: 'code' | 'markdown' }) => void;
+    onaddCellBefore?: (detail: { beforeCellId: string; type?: 'code' | 'markdown' }) => void;
     ondeleteCell?: (detail: { cellId: string }) => void;
     ontypeChange?: (detail: { cellId: string; type: 'code' | 'markdown' }) => void;
     ontoggleCollapse?: (detail: { cellId: string }) => void;
@@ -39,6 +42,7 @@
     cell,
     isSelected = false,
     isStale = false,
+    isFirst = false,
     duplicateNames = [],
     isDraggedOver = false,
     dragPosition = null,
@@ -47,6 +51,7 @@
     onrunAndAdvance,
     onselect,
     onaddCell,
+    onaddCellBefore,
     ondeleteCell,
     ontypeChange,
     ontoggleCollapse,
@@ -284,6 +289,22 @@
   ondragover={onDragOver}
   ondrop={onDrop}
 >
+  <!-- The gap above the first cell has no cell to hang an insert bar from, so
+       the first cell carries one of its own: adding a cell at the very top used
+       to mean adding it below and dragging it up. -->
+  {#if isFirst}
+    <div class="cell-insert cell-insert-top">
+      <button
+        class="cell-insert-btn"
+        onclick={(e) => { e.stopPropagation(); onaddCellBefore?.({ beforeCellId: cell.id, type: 'code' }); }}
+        title="Add cell above"
+        tabindex="-1"
+      >
+        <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3v8M3 7h8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  {/if}
+
   <!-- Clicking anywhere in the cell selects it and focuses the editor. That is a
        mouse convenience, not a control: the cell is a region (the wrapper's
        role="group"), and it holds the editor, the run button and the output's own
@@ -549,6 +570,11 @@
     opacity: 0;
     transition: opacity 0.12s ease;
     z-index: 6;
+  }
+
+  .cell-insert-top {
+    top: -1.05rem;
+    bottom: auto;
   }
 
   .cell-insert::before {
