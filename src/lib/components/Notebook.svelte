@@ -577,10 +577,9 @@
     </div>
 
     <div class="cells-container">
-      {#each $currentNotebook.cells as cell, cellIndex (cell.id)}
+      {#each $currentNotebook.cells as cell (cell.id)}
         <Cell
           {cell}
-          isFirst={cellIndex === 0}
           isSelected={$selectedCellId === cell.id}
           isStale={$staleCells.has(cell.id)}
           duplicateNames={$duplicateDefinitions.get(cell.id) ?? []}
