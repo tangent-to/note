@@ -95,11 +95,18 @@ function persistedStore<T>(key: string, parse: (raw: string | null) => T): Writa
     initial = parse(null);
   }
   const store = writable<T>(initial);
+  let warned = false;
   store.subscribe((value) => {
     try {
       localStorage.setItem(key, String(value));
-    } catch {
-      // ignore persistence failures
+    } catch (error) {
+      // Storage can be unavailable (private mode) or full. Keep working purely
+      // in memory, but say so once: the symptom is a setting that silently
+      // forgets itself on reload, which is otherwise hard to place.
+      if (!warned) {
+        warned = true;
+        console.warn(`Could not persist "${key}"; it will reset when the page reloads.`, error);
+      }
     }
   });
   return store;
