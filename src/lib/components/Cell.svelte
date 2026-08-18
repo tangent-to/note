@@ -867,7 +867,10 @@
   }
 
   .markdown-editor {
-    width: 100%;
+    /* The overflow menu floats over the cell's top-right corner, and this is the
+       only editor drawn as a bordered box, so its corner ran under the dots.
+       Stop the box short of the menu rather than masking the line. */
+    width: calc(100% - 1.6rem);
     min-height: 48px;
     padding: 0.35rem 0.45rem;
     border: 1px solid var(--border);
