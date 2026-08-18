@@ -303,19 +303,29 @@
          handle reveals on hover. No reserved top toolbar row, so content fills
          the cell from the top. -->
     <div class="cell-gutter">
-      <button
-        onclick={(e) => { e.stopPropagation(); handleRun(); }}
-        class="run-btn"
-        disabled={cell.isRunning || cell.skipped}
-        title={cell.skipped ? 'Cell is skipped. Enable it from the cell menu to run' : 'Run cell (Shift+Enter)'}
-        data-testid="run-cell-btn"
-      >
-        {#if cell.isRunning}
-          <span class="loading-spinner"></span>
-        {:else}
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5V2z"/></svg>
-        {/if}
-      </button>
+      <!-- On a text cell the button means "render this", so it only appears
+           while the cell is being edited: on a rendered one it had nothing left
+           to do (the run path returns early for markdown) yet still offered
+           itself to the keyboard as "Run cell". -->
+      {#if cell.type === 'code' || isEditingMarkdown}
+        <button
+          onclick={(e) => { e.stopPropagation(); handleRun(); }}
+          class="run-btn"
+          disabled={cell.isRunning || cell.skipped}
+          title={cell.skipped
+            ? 'Cell is skipped. Enable it from the cell menu to run'
+            : cell.type === 'markdown'
+              ? 'Render text (Shift+Enter)'
+              : 'Run cell (Shift+Enter)'}
+          data-testid="run-cell-btn"
+        >
+          {#if cell.isRunning}
+            <span class="loading-spinner"></span>
+          {:else}
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M3 2l9 5-9 5V2z"/></svg>
+          {/if}
+        </button>
+      {/if}
 
       {#if cell.type === 'code'}
         <span
