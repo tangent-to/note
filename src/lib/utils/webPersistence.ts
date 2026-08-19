@@ -10,7 +10,11 @@ function serializableNotebook(notebook: Notebook): Notebook {
       if (!cell.output) return cell;
       // DOM elements can't be JSON-serialized (circular refs → throws)
       // Strip dom outputs; other types are safe strings/objects
-      if (cell.output.type === 'dom') {
+      // `dom` can't be JSON-serialized at all (circular refs), and `table`
+      // carries a window of rows that dwarfs everything else in the file — a
+      // 50k-row table cost 59KB of markup per autosave. Both are recomputed by
+      // re-running the cell.
+      if (cell.output.type === 'dom' || cell.output.type === 'table') {
         return { ...cell, output: undefined };
       }
       return cell;

@@ -15,8 +15,11 @@ export interface NotebookCell {
 
 export interface CellOutput {
   /** `widget` is a serialized ui.* control spec produced by the worker kernel,
-   *  rendered as a live control on the main thread (see widgetHost.ts). */
-  type: "text" | "html" | "json" | "error" | "dom" | "widget";
+   *  rendered as a live control on the main thread (see widgetHost.ts).
+   *  `table` is the same idea for tabular values: columns, types, a window of
+   *  rows and the true row count (see tableData.ts), rendered as a live sortable
+   *  table on the main thread. */
+  type: "text" | "html" | "json" | "error" | "dom" | "widget" | "table";
   content: string | Element;
   timestamp: number;
   /**

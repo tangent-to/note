@@ -2,6 +2,8 @@
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
+  import TableOutput from './TableOutput.svelte';
+  import type { TableSpec } from '../utils/tableData';
   import '../styles/observable-inspector.css';
 
   let { output }: { output: CellOutput } = $props();
@@ -172,8 +174,13 @@
       </div>
     </div>
   {:else}
-    <div class="output-content {output.type}">
-      {#if output.type === 'dom'}
+    <!-- The type goes in a data attribute, not a class: as a class it collides
+         with Tailwind's utilities, and `table` (display: table) shrink-wrapped
+         the output box so the caption folded into a 47px column. -->
+    <div class="output-content" data-output-type={output.type}>
+      {#if output.type === 'table'}
+        <TableOutput spec={JSON.parse(String(output.content)) as TableSpec} />
+      {:else if output.type === 'dom'}
         <div class="dom-output" use:insertLiveElement={output.content as Element}></div>
       {:else if output.type === 'widget'}
         <div class="widget-output" use:insertWidget={output.content as string}></div>
@@ -281,8 +288,11 @@
     background-color: var(--surface-2);
   }
 
-  .json-output,
-  .text-output {
+  /* `.json-output` is created imperatively by renderInspector's fallback, so it
+     never carries Svelte's scoping class: it has to be reached with :global, or
+     these rules apply to nothing. */
+  .text-output,
+  .inspect-output :global(.json-output) {
     font-size: 0.825rem;
     font-family: var(--font-mono);
     white-space: pre-wrap;
@@ -295,7 +305,7 @@
     line-height: 1.5;
   }
 
-  .json-output {
+  .inspect-output :global(.json-output) {
     color: var(--accent);
   }
 

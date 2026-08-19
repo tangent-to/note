@@ -14,6 +14,7 @@
 
 import type { CellOutput } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
+import { tableSpec, type TableSpec } from "./tableData";
 import {
   hasSyntaxErrors,
   topLevelDeclarations,
@@ -553,11 +554,11 @@ export class JavaScriptExecutor {
           };
         }
 
-        const tableFromSpecial = this.tryRenderTable(lastVal);
-        if (tableFromSpecial) {
+        const table = this.tryTableSpec(lastVal);
+        if (table) {
           return {
-            type: "dom",
-            content: tableFromSpecial,
+            type: "table",
+            content: JSON.stringify(table),
             timestamp: Date.now(),
           };
         }
@@ -860,11 +861,11 @@ export class JavaScriptExecutor {
         } as any;
       }
 
-      const tableFromSpecial = this.tryRenderTable(last);
-      if (tableFromSpecial) {
+      const table = this.tryTableSpec(last);
+      if (table) {
         return {
-          type: "dom",
-          content: tableFromSpecial,
+          type: "table",
+          content: JSON.stringify(table),
           timestamp: Date.now(),
         };
       }
@@ -983,89 +984,8 @@ export class JavaScriptExecutor {
     return `https://cdn.jsdelivr.net/npm/${moduleUrl}/+esm`;
   }
 
-  private tryRenderTable(value: any): Element | null {
-    if (!value || typeof value !== "object") return null;
-
-    const looksLikeTable = typeof (value as any).objects === "function" &&
-      typeof (value as any).columnNames === "function" &&
-      typeof (value as any).numRows === "function";
-    if (!looksLikeTable) return null;
-
-    let rows: any[] | null = null;
-    try {
-      if (typeof value.objects === "function") {
-        const result = value.objects();
-        if (Array.isArray(result)) {
-          rows = result;
-        } else if (result && typeof result[Symbol.iterator] === "function") {
-          rows = Array.from(result);
-        }
-      }
-    } catch {
-      rows = null;
-    }
-
-    if (!Array.isArray(rows) || rows.length === 0) return null;
-    if (rows.length > 1000) rows = rows.slice(0, 1000);
-
-    let keys: string[] = [];
-    try {
-      const cols = value.columnNames();
-      if (Array.isArray(cols)) keys = cols.slice(0, 100);
-    } catch {
-      keys = [];
-    }
-
-    if (!keys.length) {
-      const set = new Set<string>();
-      rows.forEach((row) => {
-        if (row && typeof row === "object" && !Array.isArray(row)) {
-          Object.keys(row).forEach((k) => set.add(k));
-        }
-      });
-      keys = Array.from(set);
-    }
-
-    if (keys.length === 0 || keys.length > 100) return null;
-
-    rows = rows.map((row) => {
-      if (row && typeof row === "object" && !Array.isArray(row)) {
-        return row;
-      }
-      const obj: Record<string, any> = {};
-      keys.forEach((key, idx) => {
-        if (Array.isArray(row)) obj[key] = row[idx];
-        else obj[key] = undefined;
-      });
-      return obj;
-    });
-
-    const table = document.createElement("table");
-    table.className = "tangent-table-output";
-    const thead = document.createElement("thead");
-    const headerRow = document.createElement("tr");
-    keys.forEach((key) => {
-      const th = document.createElement("th");
-      th.textContent = key;
-      headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    const tbody = document.createElement("tbody");
-    rows.slice(0, 500).forEach((row) => {
-      const tr = document.createElement("tr");
-      keys.forEach((key) => {
-        const td = document.createElement("td");
-        const value = (row as any)[key];
-        td.textContent =
-          value === null || value === undefined ? "" : String(value);
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    return table;
+  private tryTableSpec(value: any): TableSpec | null {
+    return tableSpec(value);
   }
 
   /**

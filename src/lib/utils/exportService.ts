@@ -402,6 +402,8 @@ export class ExportService {
             this.escapeHTML(String(output.content))
           }</code></pre>`;
         }
+      case "table":
+        return this.renderTableOutputHTML(output.content);
       case "dom":
         if (output.content && typeof (output.content as any).outerHTML === "string") {
           return (output.content as any).outerHTML;
@@ -414,6 +416,49 @@ export class ExportService {
           this.escapeHTML(String(output.content))
         }</pre>`;
     }
+  }
+
+  /**
+   * A `table` output travels as data (see tableData.ts), so the export builds
+   * the markup itself. Static: an export has no kernel to sort or scroll with,
+   * so it shows the head of the table and says how much it left out.
+   */
+  private renderTableOutputHTML(content: unknown): string {
+    const EXPORT_ROWS = 200;
+    let spec: any;
+    try {
+      spec = typeof content === "string" ? JSON.parse(content) : content;
+    } catch {
+      return `<pre class="text-output">${this.escapeHTML(String(content))}</pre>`;
+    }
+    const columns: string[] = Array.isArray(spec?.columns) ? spec.columns : [];
+    const rows: any[] = Array.isArray(spec?.rows) ? spec.rows : [];
+    if (columns.length === 0 || rows.length === 0) {
+      return `<pre class="text-output">${this.escapeHTML(String(content))}</pre>`;
+    }
+
+    const shown = rows.slice(0, EXPORT_ROWS);
+    const head = columns.map((c) => `<th>${this.escapeHTML(c)}</th>`).join("");
+    const body = shown
+      .map((row) =>
+        `<tr>${
+          columns
+            .map((c) => {
+              const value = row?.[c];
+              return `<td>${this.escapeHTML(value === null || value === undefined ? "" : String(value))}</td>`;
+            })
+            .join("")
+        }</tr>`
+      )
+      .join("");
+
+    const total = Number(spec?.totalRows) || rows.length;
+    const caption = shown.length < total
+      ? `${shown.length.toLocaleString()} of ${total.toLocaleString()} rows`
+      : `${total.toLocaleString()} ${total === 1 ? "row" : "rows"}`;
+
+    return `<table class="tangent-table-output"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` +
+      `<div class="table-note">${caption} \u00b7 ${columns.length} ${columns.length === 1 ? "column" : "columns"}</div>`;
   }
 
   private renderMarkdownHTML(markdown: string): string {
@@ -534,6 +579,11 @@ export class ExportService {
         margin-top: 0.5rem;
       }
 
+      .table-note {
+        margin-top: 0.35rem;
+        font-size: 0.75rem;
+        color: #6b7280;
+      }
       table.tangent-table-output {
         width: 100%;
         border-collapse: collapse;
