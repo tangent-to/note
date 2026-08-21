@@ -113,4 +113,48 @@ describe('executeCode', () => {
     expect(String(second.content)).toContain('2');
     expect(String(second.content)).toContain('6');
   });
+
+  it('shares names pulled out of a library by destructuring', async () => {
+    // Regression: a first cell doing `const { Thing } = lib` published nothing,
+    // because the rewriter cannot turn a pattern into an assignment target and
+    // the window fallback never saw a name that only ever lived in the IIFE.
+    // The next cell then failed with "Thing is not defined" — even though the
+    // dependency graph reported the name as defined.
+    const { JavaScriptExecutor } = await import('../jsExecutor');
+    const executor = new JavaScriptExecutor();
+    const first = await executor.executeCode([
+      'const lib = { harmony: { Ornament: class { tag() { return "grace"; } } } };',
+      'const { Ornament, Missing } = lib.harmony;',
+    ].join('\n'));
+    expect(first.type).not.toBe('error');
+
+    const second = await executor.executeCode('new Ornament().tag()');
+    expect(second.type).not.toBe('error');
+    expect(String(second.content)).toContain('grace');
+
+    // A destructured name whose value is undefined still crosses over, so the
+    // downstream failure is an honest `undefined`, not a ReferenceError.
+    const third = await executor.executeCode('typeof Missing');
+    expect(String(third.content)).toContain('undefined');
+    expect(Object.prototype.hasOwnProperty.call(executor.getVariables(), 'Missing')).toBe(true);
+  });
+
+  it('shares a class declared in an earlier cell', async () => {
+    const { JavaScriptExecutor } = await import('../jsExecutor');
+    const executor = new JavaScriptExecutor();
+    await executor.executeCode('class Voicing {\n  constructor(n) { this.n = n; }\n}');
+    const second = await executor.executeCode('new Voicing(4).n');
+    expect(second.type).not.toBe('error');
+    expect(String(second.content)).toContain('4');
+  });
+
+  it('shares both halves of a mixed plain/destructured declaration', async () => {
+    const { JavaScriptExecutor } = await import('../jsExecutor');
+    const executor = new JavaScriptExecutor();
+    await executor.executeCode('const tempo = 70, { decay } = { decay: 7 };');
+    const second = await executor.executeCode('[tempo, decay]');
+    expect(second.type).not.toBe('error');
+    expect(String(second.content)).toContain('70');
+    expect(String(second.content)).toContain('7');
+  });
 });

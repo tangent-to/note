@@ -4,7 +4,7 @@ import {
   hasSyntaxErrors,
   topLevelDeclarations,
   topLevelDefinitions,
-  topLevelFunctionNames,
+  topLevelNamesToCopy,
 } from '../jsSyntax';
 
 const defs = (code: string) => [...topLevelDefinitions(code)].sort();
@@ -121,11 +121,47 @@ describe('topLevelDeclarations', () => {
   });
 });
 
-describe('topLevelFunctionNames and hasSyntaxErrors', () => {
+describe('topLevelNamesToCopy', () => {
+  const copied = (code: string) => topLevelNamesToCopy(code).sort();
+
   it('lists top-level function declarations only', () => {
-    expect(topLevelFunctionNames('function a() {}\nconst b = function c() {};\nif (1) { function d() {} }'))
+    expect(copied('function a() {}\nconst b = function c() {};\nif (1) { function d() {} }'))
       .toEqual(['a']);
   });
+
+  it('lists class declarations, which the rewriter also leaves in place', () => {
+    expect(copied('class Wide {}\nconst k = new Wide();')).toEqual(['Wide']);
+  });
+
+  it('lists destructuring bindings, which cannot be rewritten in place', () => {
+    // Regression: `const { Ornament } = lib` published nothing, so the next
+    // cell died on "Ornament is not defined" — the whole point of this list.
+    expect(copied('const { Scale, Ornament } = jm.theory.harmony;'))
+      .toEqual(['Ornament', 'Scale']);
+    expect(copied('const { x, y: z, w = 1, ...others } = o;\nconst [p, , q] = arr;'))
+      .toEqual(['others', 'p', 'q', 'w', 'x', 'z']);
+  });
+
+  it('takes every name of a declaration that mixes plain and destructured', () => {
+    // The declaration is left alone as a whole, so `a` needs copying too.
+    expect(copied('const a = 1, { b } = o;')).toEqual(['a', 'b']);
+  });
+
+  it('leaves plain declarations out — the rewriter already shares those', () => {
+    expect(copied('const a = 1, b = 2;\nlet c;\nvar d = 3;')).toEqual([]);
+  });
+
+  it('ignores patterns that are not top-level declarations', () => {
+    expect(copied('function f({ p }) { const { q } = p; }\nfor (const { r } of rs) {}'))
+      .toEqual(['f']);
+  });
+
+  it('ignores export wrappers, which the executor cannot run at all', () => {
+    expect(copied('export const { a } = o;\nexport function fn() {}')).toEqual([]);
+  });
+});
+
+describe('hasSyntaxErrors', () => {
 
   it('detects a broken cell, and accepts a valid one', () => {
     expect(hasSyntaxErrors('const x = ;')).toBe(true);

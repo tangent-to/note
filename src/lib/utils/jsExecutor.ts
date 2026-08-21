@@ -19,7 +19,7 @@ import {
   hasSyntaxErrors,
   topLevelDeclarations,
   topLevelDefinitions,
-  topLevelFunctionNames,
+  topLevelNamesToCopy,
 } from "./jsSyntax";
 
 /**
@@ -658,6 +658,16 @@ export class JavaScriptExecutor {
    *   let   x           →  window.__tangent_scope.x = undefined
    *   const a = 1, b = 2 → …scope.a = 1, …scope.b = 2   (every declarator)
    *   function foo() {} →  (unchanged) + appends: scope.foo = foo
+   *   const {a, b} = o  →  (unchanged) + appends: scope.a = a, scope.b = b
+   *   class Foo {}      →  (unchanged) + appends: scope.Foo = Foo
+   *
+   * A pattern cannot become an assignment target in place, and a `function` or
+   * `class` declaration must stay one, so those three keep their declaration
+   * and get copied out afterwards instead (topLevelNamesToCopy). The copy runs
+   * at the end of the cell body, where every top-level name is bound — so it
+   * needs no `typeof` guard, and a destructured name whose value is genuinely
+   * `undefined` still reaches the next cell as undefined rather than as a
+   * "not defined" ReferenceError.
    *
    * Declarations are located by parsing the cell (see jsSyntax), not by matching
    * line starts, which is what the dependency analysis reports too — so what a
@@ -666,9 +676,8 @@ export class JavaScriptExecutor {
    * that a `const …` sitting at column 0 *inside a template literal* is left
    * alone instead of being rewritten into the string.
    *
-   * Left untransformed, and so private to the cell: destructuring declarations
-   * (recovered by syncScopeFromGlobals), class declarations, `export` wrappers,
-   * and anything in a cell that does not parse.
+   * Left untransformed, and so private to the cell: `export` wrappers, and
+   * anything in a cell that does not parse.
    */
   private transformForScope(code: string): string {
     // A cell with a syntax error can't be analysed meaningfully; run it as
@@ -694,13 +703,13 @@ export class JavaScriptExecutor {
         transformed.slice(0, edit.from) + edit.text + transformed.slice(edit.to);
     }
 
-    // Function declarations hoist to the IIFE scope; copy into shared scope
-    // after they are defined so subsequent cells can call them by name.
-    const funcNames = topLevelFunctionNames(code);
-    if (funcNames.length === 0) return transformed;
+    // Whatever the rewrite left as a declaration binds in the IIFE scope only;
+    // copy those names into the shared scope so subsequent cells can use them.
+    const copied = topLevelNamesToCopy(code);
+    if (copied.length === 0) return transformed;
 
-    const syncs = funcNames
-      .map(n => `if (typeof ${n} !== 'undefined') window.__tangent_scope.${n} = ${n};`)
+    const syncs = copied
+      .map(n => `window.__tangent_scope.${n} = ${n};`)
       .join('\n');
     return `${transformed}\n${syncs}`;
   }
@@ -717,7 +726,8 @@ export class JavaScriptExecutor {
    * clobber the notebook's value with an unrelated global — e.g. `const data =
    * […]` would be replaced by the `data()` dataset accessor, breaking every
    * downstream cell and closure that reads `data`. Only pull from `window` for
-   * names the transform did not already capture (e.g. destructuring patterns).
+   * names the transform did not already capture — `globalThis.x = …`
+   * assignments, `ui.slider("x", …)` bindings, and `export` declarations.
    */
   private syncScopeFromGlobals(code: string): void {
     for (const name of topLevelDefinitions(code)) {

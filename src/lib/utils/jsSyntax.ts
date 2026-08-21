@@ -384,16 +384,51 @@ export function topLevelDeclarations(code: string): TopLevelDeclaration[] {
   return found;
 }
 
-/** Names of top-level `function` declarations, which hoist within the cell. */
-export function topLevelFunctionNames(code: string): string[] {
-  const tree = parse(code);
-  const names: string[] = [];
-  for (let stmt = tree.topNode.firstChild; stmt; stmt = stmt.nextSibling) {
-    const node =
-      stmt.name === 'ExportDeclaration' ? stmt.firstChild?.nextSibling ?? null : stmt;
-    if (!node || node.name !== 'FunctionDeclaration') continue;
-    const name = node.getChild('VariableDefinition');
-    if (name) names.push(code.slice(name.from, name.to));
+/** True when any declarator of `declaration` destructures instead of naming. */
+function bindsPattern(declaration: SyntaxNode): boolean {
+  for (let child = declaration.firstChild; child; child = child.nextSibling) {
+    if (PATTERN.has(child.name)) return true;
   }
-  return names;
+  return false;
+}
+
+/**
+ * Names bound by top-level declarations that stay *declarations* after the
+ * executor's rewrite, and so bind only inside the cell's own function scope:
+ *
+ *   - `function` and `class` declarations, which are never rewritten;
+ *   - destructuring declarations, which `topLevelDeclarations` reports as
+ *     unrewritable (`declarators: null`) because the pattern cannot become a
+ *     plain assignment target.
+ *
+ * The executor copies these into the shared scope once the cell body has run.
+ * Without that copy a `const { Thing } = lib` publishes nothing, and the next
+ * cell fails with "Thing is not defined" even though the dependency graph says
+ * the name is defined — see `topLevelDefinitions`, which counts it.
+ *
+ * `export` wrappers are excluded: the executor's IIFE cannot run an export
+ * statement at all, so such a cell never gets far enough for a copy to matter.
+ */
+export function topLevelNamesToCopy(code: string): string[] {
+  const tree = parse(code);
+  const names = new Set<string>();
+
+  for (let stmt = tree.topNode.firstChild; stmt; stmt = stmt.nextSibling) {
+    switch (stmt.name) {
+      case 'FunctionDeclaration':
+      case 'ClassDeclaration': {
+        const name = stmt.getChild('VariableDefinition');
+        if (name) names.add(code.slice(name.from, name.to));
+        break;
+      }
+      case 'VariableDeclaration':
+        // A declaration mixing plain and destructured declarators
+        // (`const a = 1, { b } = o`) is left alone whole, so both names need
+        // copying — which is exactly what patternNames collects.
+        if (bindsPattern(stmt)) patternNames(stmt, code, names);
+        break;
+    }
+  }
+
+  return [...names];
 }
