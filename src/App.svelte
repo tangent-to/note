@@ -292,10 +292,10 @@
 
   async function loadSampleNotebook() {
     try {
-      const res = await fetch('/sample-notebooks/climate-ecology-data-template.js');
+      const res = await fetch('/sample-notebooks/getting-started.js');
       if (res.ok) {
         const text = await res.text();
-        const sample = parseJSNotebook(text, 'climate-ecology-data-template.js');
+        const sample = parseJSNotebook(text, 'getting-started.js');
         currentNotebook.set(sample);
         markNotebookClean();
       } else {
