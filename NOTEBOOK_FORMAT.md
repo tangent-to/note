@@ -106,6 +106,21 @@ const db = await openDatabase();
 The cell runs normally but its content can't be edited in the UI until
 unlocked from the cell menu (like Jupyter's lock-cell).
 
+#### `#wide` / `#full` — output breakout
+
+```javascript
+// %% [javascript] #wide
+Plot.plot({ width, marks: [ /* … a big faceted chart … */ ] })
+```
+
+The cell's code stays in the reading column, but its **output** breaks out
+of it: `#wide` renders up to ~1200px (shrinking gracefully when a sidebar
+is open or the window is narrow), `#full` spans the whole notebook area.
+Combined with the `width` builtin — which reports the cell's own effective
+output width — charts can fill the layer exactly, with no horizontal
+scrollbars. If both tags are present, `#full` wins. Toggle from the cell
+menu ("Wide output" / "Full-width output").
+
 Unknown tags are ignored, so the format stays forward-compatible.
 
 Because tags live inside a line comment after the `// %%` prefix, files

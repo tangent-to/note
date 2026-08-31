@@ -60,6 +60,8 @@ export function buildSystemPrompt(notebook: Notebook | null = get(currentNoteboo
     'Arquero are available via import. \n' +
     '- Variables declared with const/let are shared across cells; use globalThis.x for ' +
     'mutable cross-cell state.\n' +
+    '- `width` is a builtin holding the current output-area width in pixels (like ' +
+    "Observable's width): size charts with Plot.plot({ width }).\n" +
     '- To display a result, end the cell with an expression, or return a DOM node ' +
     '(e.g. an SVG/chart element) to render it.\n\n' +
     'Use the notebook below as context for your answers.';

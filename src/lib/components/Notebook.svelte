@@ -93,6 +93,33 @@
     }, 250);
   }
 
+  /**
+   * The pixel width THIS cell's output actually gets. For column cells that's
+   * the cell body's inner width; for #wide/#full cells it's the breakout
+   * layer's width — measured from the live layer element when the cell has
+   * rendered output, else mirrored from the CSS formulas in Cell.svelte
+   * (.output-layer.wide/.full). Null when nothing can be measured yet.
+   */
+  function measureOutputWidth(cell?: NotebookCell): number | null {
+    const el = document.querySelector('.cell-main');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const column = el.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
+    const base = Number.isFinite(column) && column > 100 ? Math.floor(column) : null;
+    if (!cell?.outputWidth || !base) return base;
+
+    const live = document.querySelector(`[data-cell-id="${cell.id}"] .output-layer`);
+    if (live instanceof HTMLElement && live.clientWidth > 100) return live.clientWidth;
+
+    const main = document.querySelector('.main-content');
+    if (!(main instanceof HTMLElement)) return base;
+    const cw = main.clientWidth;
+    const w = cell.outputWidth === 'wide'
+      ? Math.min(1200, 0.96 * cw - 72)
+      : 0.98 * cw - 72;
+    return Math.max(base, Math.floor(w));
+  }
+
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -133,11 +160,18 @@
     });
 
     try {
+      // Seed the `width` builtin (like Observable's) so cells can size output
+      // to the real cell width, e.g. Plot.plot({ width }). Re-measured on
+      // every run; a user variable named `width` is never overwritten.
+      const outputWidth = measureOutputWidth(cell);
+
       let output;
       if (get(kernelMode) === 'worker') {
+        if (outputWidth) await kernel.setVariable('width', outputWidth, { builtin: true });
         output = await kernel.execute(cell.content);
       } else {
         await mainExecutor.setupCommonLibraries();
+        if (outputWidth) mainExecutor.setBuiltin('width', outputWidth);
         output = await mainExecutor.executeCode(cell.content);
       }
 
@@ -423,6 +457,20 @@
     recomputeStaleCells(getNotebookSnapshot());
   }
 
+  function handleSetOutputWidth({ cellId, outputWidth }: { cellId: string; outputWidth?: 'wide' | 'full' }) {
+    currentNotebook.update(notebook => {
+      if (!notebook) return notebook;
+      return {
+        ...notebook,
+        cells: notebook.cells.map((cell: NotebookCell) =>
+          cell.id === cellId
+            ? { ...cell, outputWidth }
+            : cell
+        )
+      };
+    });
+  }
+
   function handleToggleReadOnly({ cellId }: { cellId: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -597,6 +645,7 @@
           ontoggleOutputCollapse={handleToggleOutputCollapse}
           ontoggleSkip={handleToggleSkip}
           ontoggleReadOnly={handleToggleReadOnly}
+          onsetOutputWidth={handleSetOutputWidth}
           ondragstart={handleDragStart}
           ondragover={handleDragOver}
           ondragend={handleDragEnd}
@@ -643,7 +692,9 @@
 
 <style>
   .notebook-container {
-    max-width: 900px;
+    /* The reading spine: sized for prose (~70ch) now that cells carry no
+       card padding; wide outputs break out of it via .output-layer. */
+    max-width: 820px;
     margin: 0 auto;
     padding: 1.5rem 1.5rem 2.5rem;
   }
