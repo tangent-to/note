@@ -601,7 +601,11 @@
     opacity: 1;
   }
 
-  /* Bare plus glyph sitting over the hairline. No pill/circle, no accent fill. */
+  /* Bare plus glyph sitting over the hairline. No pill/circle, no accent fill.
+     The background is only there to break the hairline behind the glyph, so it
+     has to be the surface the cells sit on (.main-content) — --bg is the page
+     shell behind that, and showed as an off-white smudge in light mode and a
+     dark notch in dark mode. */
   .cell-insert-btn {
     position: relative;
     z-index: 1;
@@ -609,7 +613,7 @@
     align-items: center;
     justify-content: center;
     padding: 0 0.45rem;
-    background: var(--bg);
+    background: var(--surface);
     border: none;
     color: var(--text-faint);
     cursor: pointer;
@@ -866,11 +870,19 @@
      windows shrink them gracefully; max(100%, …) never lets a "wide" output
      get narrower than the column. Centered on the column via the negative
      half-overhang margin; the 72px allowance covers the cell gutter and
-     paddings so the layer never triggers a horizontal scrollbar. */
+     paddings so the layer never triggers a horizontal scrollbar.
+
+     The layer overhangs the column on the left, which is where the cell's
+     state rail lives (the .cell-container border). A chart paints on
+     transparency, so the rail showed straight through it as a line ruled down
+     the plot. Painting the page surface here puts the breakout over the rail
+     instead: the rail marks the reading column, and stops where the column's
+     content does. */
   .output-layer.wide,
   .output-layer.full {
     width: var(--breakout-w);
     margin-left: calc((100% - var(--breakout-w)) / 2);
+    background-color: var(--surface);
   }
 
   .output-layer.wide { --breakout-w: max(100%, min(1200px, 96cqw - 72px)); }
