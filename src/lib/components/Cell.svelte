@@ -457,6 +457,7 @@
                   onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
                   onrun={handleRun}
                   onrunAndAdvance={handleRunAndAdvance}
+                  onescape={() => { isEditingMarkdown = false; }}
                   oneditorFocus={handleEditorFocus}
                   onfocus={handleEditorFocus}
                 />

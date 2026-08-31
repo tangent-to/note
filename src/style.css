@@ -69,8 +69,11 @@
     --surface-hover: #f0efed;
     --heading: #1c1917;
     --text: #44403c;
-    --text-muted: #78716c;
-    --text-faint: #8a8580;
+    /* muted ≥5.7:1 and faint ≥4.5:1 on both --surface and --surface-2:
+       faint carries real information (execution counters, hints, collapsed
+       previews) at small sizes, so it must clear WCAG AA. */
+    --text-muted: #6b6560;
+    --text-faint: #74706b;
     --border: #e7e5e4;
     --border-strong: #d6d3d1;
 
@@ -107,7 +110,8 @@
     --heading: #ffffff;
     --text: #d6d3d1;
     --text-muted: #a8a29e;
-    --text-faint: #78716c;
+    /* ≥4.5:1 on the dark surface (see the light-theme note). */
+    --text-faint: #918b86;
     --border: #292524;
     --border-strong: #44403c;
 
@@ -250,4 +254,18 @@ progress {
   .cm-content {
     font-size: 16px !important;
   }
+}
+
+/* The focus ring must appear instantly: many buttons transition `all`,
+   which would otherwise ease the outline in over 150ms — a keyboard user
+   tabbing quickly reads that as "no focus indicator". !important because
+   Svelte-scoped component selectors always out-rank this global rule. */
+:focus-visible {
+    transition: none !important;
+}
+
+/* The CodeMirror content area draws its own caret; a ring around the whole
+   editor text would read as a selection box. */
+.cm-content:focus-visible {
+    outline: none;
 }

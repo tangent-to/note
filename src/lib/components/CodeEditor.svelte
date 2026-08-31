@@ -39,6 +39,9 @@
     onchange?: (detail: { value: string }) => void;
     onrun?: () => void;
     onrunAndAdvance?: () => void;
+    /** Escape pressed with nothing to dismiss (completion popups get it
+     *  first): lets the host exit edit mode, e.g. markdown back to preview. */
+    onescape?: () => void;
     onsubmit?: () => void;
     onhistory?: (direction: 'prev' | 'next') => boolean;
     oneditorFocus?: () => void;
@@ -56,6 +59,7 @@
     onchange,
     onrun,
     onrunAndAdvance,
+    onescape,
     onsubmit,
     onhistory,
     oneditorFocus,
@@ -184,6 +188,17 @@
             ...historyKeymap,
             ...completionKeymap,
             indentWithTab,
+          ]),
+          // Last in line so completion/ghost-text Escape handlers win first.
+          keymap.of([
+            {
+              key: 'Escape',
+              run: () => {
+                if (!onescape) return false;
+                onescape();
+                return true;
+              },
+            },
           ]),
           readOnlyCompartment.of([
             EditorState.readOnly.of(readOnly),

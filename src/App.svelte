@@ -156,6 +156,13 @@
     }
   }
 
+  // Mirror the notebook name into the browser tab so multiple notebooks are
+  // tellable apart; falls back to the app name.
+  $effect(() => {
+    const name = $currentNotebook?.name?.trim();
+    document.title = name ? `${name} · tangent/note` : 'tangent/note';
+  });
+
   export function runAllCells() {
     window.dispatchEvent(new CustomEvent('run-all-cells'));
   }
