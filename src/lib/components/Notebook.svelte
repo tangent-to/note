@@ -93,6 +93,19 @@
     }, 250);
   }
 
+  /**
+   * The pixel width a cell output actually gets: a cell body's inner width
+   * (the notebook column is responsive, so this varies with the viewport).
+   * Null when it can't be measured (e.g. before first paint).
+   */
+  function measureOutputWidth(): number | null {
+    const el = document.querySelector('.cell-main');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    const w = el.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
+    return Number.isFinite(w) && w > 100 ? Math.floor(w) : null;
+  }
+
   function handleContentChange({ cellId, content }: { cellId: string; content: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -133,11 +146,18 @@
     });
 
     try {
+      // Seed the `width` builtin (like Observable's) so cells can size output
+      // to the real cell width, e.g. Plot.plot({ width }). Re-measured on
+      // every run; a user variable named `width` is never overwritten.
+      const outputWidth = measureOutputWidth();
+
       let output;
       if (get(kernelMode) === 'worker') {
+        if (outputWidth) await kernel.setVariable('width', outputWidth, { builtin: true });
         output = await kernel.execute(cell.content);
       } else {
         await mainExecutor.setupCommonLibraries();
+        if (outputWidth) mainExecutor.setBuiltin('width', outputWidth);
         output = await mainExecutor.executeCode(cell.content);
       }
 

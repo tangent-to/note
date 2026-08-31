@@ -197,6 +197,7 @@ interface KernelRequest {
   code?: string;
   name?: string;
   value?: any;
+  builtin?: boolean;
 }
 
 self.onmessage = async (event: MessageEvent<KernelRequest>) => {
@@ -219,7 +220,11 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
         break;
       }
       case 'set-var': {
-        if (msg.name) (g.__tangent_scope ?? {})[msg.name] = msg.value;
+        if (msg.name) {
+          // Builtins (e.g. the `width` seed) must never stomp a user variable.
+          if (msg.builtin) executor.setBuiltin(msg.name, msg.value);
+          else (g.__tangent_scope ?? {})[msg.name] = msg.value;
+        }
         self.postMessage({ id: msg.id, type: 'result' });
         break;
       }

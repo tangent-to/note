@@ -397,6 +397,17 @@ export class JavaScriptExecutor {
     (window as any).__tangent_scope = this.scope;
   }
 
+  /** Values the app seeded into the scope (e.g. the `width` builtin). */
+  private builtinValues: Record<string, any> = {};
+
+  /**
+   * Seed an app-provided scope value, like Observable's `width`, without
+   * stomping a user variable of the same name (see seedBuiltin).
+   */
+  setBuiltin(name: string, value: any): void {
+    seedBuiltin(this.scope, this.builtinValues, name, value);
+  }
+
   /** Get current variable names and values from shared scope */
   getVariables(): Record<string, any> {
     const vars: Record<string, any> = {};
@@ -1029,4 +1040,25 @@ export class JavaScriptExecutor {
     }
   }
 
+}
+
+/**
+ * Write an app-seeded value (a "builtin", like Observable's `width`) into the
+ * notebook scope without clobbering user work: the slot is only written when
+ * it is empty or still holds exactly what the app last seeded there. Once a
+ * cell assigns its own value to the name, the app backs off until the scope
+ * is reset. Pure and separate from the class so it can be unit-tested without
+ * a DOM.
+ */
+export function seedBuiltin(
+  scope: Record<string, any>,
+  owned: Record<string, any>,
+  name: string,
+  value: any,
+): void {
+  const current = scope[name];
+  if (current === undefined || current === owned[name]) {
+    scope[name] = value;
+    owned[name] = value;
+  }
 }

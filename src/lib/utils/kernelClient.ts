@@ -111,8 +111,8 @@ class KernelClient {
 
   /** Push a widget value into the kernel scope (no re-run; the caller
    *  dispatches `tangent-input-change` to trigger dependents). */
-  async setVariable(name: string, value: any): Promise<void> {
-    await this.request('set-var', { name, value });
+  async setVariable(name: string, value: any, opts?: { builtin?: boolean }): Promise<void> {
+    await this.request('set-var', { name, value, builtin: opts?.builtin });
   }
 
   /** Clear the kernel scope, keeping the worker alive. */
