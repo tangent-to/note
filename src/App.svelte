@@ -905,6 +905,34 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Header controls never wrap their own text into two lines ("Reactive
+     on", "16 cells"); when the row gets tight the media query below drops
+     the labels instead. */
+  .notebooks-btn,
+  .run-all-header-btn,
+  .run-stale-btn,
+  .reactive-toggle,
+  .header-meta,
+  .sync-badge {
+    white-space: nowrap;
+  }
+
+  /* Awkward middle widths (sidebar open, split screens): collapse the
+     button labels to icons well before anything is forced to wrap. The
+     ≤640px block below tightens paddings further for phones. */
+  @media (max-width: 960px) {
+    .btn-label,
+    .kbd-hint {
+      display: none;
+    }
+    .notebooks-btn,
+    .run-all-header-btn,
+    .run-stale-btn,
+    .reactive-toggle {
+      gap: 0;
+    }
+  }
+
   .header-divider {
     width: 1px;
     height: 18px;
