@@ -221,13 +221,13 @@ export class JavaScriptExecutor {
     (window as any).nb = this.scope;
     // Reactive input widgets (sliders, etc.) available to cells as `ui.*`.
     this.setupInputs();
-    // `data(name)` accessor for files dropped into the Data panel.
+    // `data(name)` accessor for files dropped into the Storage panel.
     this.setupDataAccess();
   }
 
   /**
    * Expose `data(name)` to cells: reads a file cached in IndexedDB (dropped into
-   * the Data panel) and parses it by extension. `.csv`/`.tsv` use d3 with type
+   * the Storage panel) and parses it by extension. `.csv`/`.tsv` use d3 with type
    * coercion, `.json` uses JSON.parse, anything else falls back to raw text.
    * Use `data.text(name)` for the raw string and `data.list()` for the names.
    *
@@ -259,7 +259,7 @@ export class JavaScriptExecutor {
     const readText = async (name: string): Promise<string> => {
       const rec = await getDataset(name);
       if (!rec) {
-        throw new Error(`No dataset "${name}". Drop the file into the Data panel (right sidebar) first.`);
+        throw new Error(`No dataset "${name}". Drop the file into the Storage panel (right sidebar) first.`);
       }
       return rec.text;
     };

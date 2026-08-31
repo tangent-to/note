@@ -1,6 +1,6 @@
 import { writable, derived, get, type Writable } from 'svelte/store';
 import type { Notebook, NotebookCell, NotebookFile } from '../types/notebook';
-import { saveToLocalStorage } from '../utils/webPersistence';
+import { putNotebook, rememberActiveNotebook, type NotebookOrigin } from '../utils/notebookLibrary';
 import {
   computeStaleCells,
   findDuplicateDefinitions,
@@ -20,7 +20,20 @@ export const recentFiles = writable<Array<{path: string; name: string; timestamp
 // Currently selected cell
 export const selectedCellId = writable<string | null>(null);
 
+/**
+ * The notebook differs from its **origin** — the file a `note serve` companion
+ * owns, or the last exported `.js`. This is what Ctrl+S clears and what the
+ * header's "modified" mark reflects.
+ *
+ * It is deliberately NOT "unsaved work". Every edit is written to the local
+ * library a moment later (see scheduleAutosave), so nothing is ever at risk of
+ * being lost by closing or switching notebooks. Conflating the two is what made
+ * the old app prompt "save first?" before every navigation.
+ */
 export const notebookDirty = writable(false);
+
+/** Where the current notebook came from; carried into its library entry. */
+export const currentOrigin = writable<NotebookOrigin>({ kind: 'local' });
 
 // Progress of a "run all" / "run stale" batch, for the thin bar on the header's
 // bottom edge. `null` when idle; otherwise how many cells have finished of the
@@ -187,25 +200,40 @@ export function markNotebookDirty(): void {
   scheduleAutosave();
 }
 
+// Any change to the notebook schedules a library write, not just the ones that
+// go through markNotebookDirty. Running a cell stores its output straight into
+// the notebook without marking it dirty — an output is not an edit — so
+// hanging the autosave off dirtiness alone would have persisted every keystroke
+// and no result at all.
+currentNotebook.subscribe((notebook) => {
+  if (notebook) scheduleAutosave();
+});
+
+// Mark the notebook as matching its origin (just saved to disk, or just
+// loaded from one). It does NOT cancel a pending library write: the two are
+// independent now, and cancelling here used to mean a notebook loaded from a
+// file never reached the library at all.
 export function markNotebookClean(): void {
   notebookDirty.set(false);
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-    autosaveTimer = null;
-  }
 }
 
-// Schedule autosave with debouncing
+// Write the current notebook to the local library, debounced.
+//
+// This is the "saved to the library" half of the split described on
+// notebookDirty: automatic, silent, and never something the user is asked
+// about. It does not clear notebookDirty — that tracks the origin, not this.
 function scheduleAutosave(): void {
   if (autosaveTimer) {
     clearTimeout(autosaveTimer);
   }
 
   autosaveTimer = window.setTimeout(() => {
-    // Save to localStorage for web persistence
     const notebook = get(currentNotebook);
     if (notebook) {
-      saveToLocalStorage(notebook);
+      rememberActiveNotebook(notebook.id);
+      // Fire-and-forget: a library that cannot write degrades to memory and
+      // says so through libraryPersistent, rather than failing an edit.
+      void putNotebook(notebook, get(currentOrigin));
     }
     // Dispatch autosave event that the App component can listen to
     window.dispatchEvent(new CustomEvent('autosave-notebook'));

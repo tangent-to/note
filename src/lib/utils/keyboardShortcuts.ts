@@ -29,7 +29,7 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
     return true;
   }
 
-  // Toggle Data panel: Ctrl/Cmd + Shift + D
+  // Toggle Storage panel: Ctrl/Cmd + Shift + D
   if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'd') {
     event.preventDefault();
     handlers.toggleData();

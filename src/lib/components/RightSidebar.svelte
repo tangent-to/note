@@ -4,6 +4,13 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import {
+    libraryEntries,
+    libraryPersistent,
+    originLabel,
+    refreshLibrary,
+    type LibraryEntry,
+  } from '../utils/notebookLibrary';
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
   import Console from './Console.svelte';
@@ -11,16 +18,31 @@
 
   interface Props {
     onclose?: () => void;
-    activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'data';
+    activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'storage';
     oninsertCode?: (detail: { code: string }) => void;
+    onopenNotebook?: (detail: { id: string }) => void;
+    ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
+    onclearBrowserData?: () => void;
   }
 
-  let { onclose, activeTab = $bindable('info'), oninsertCode }: Props = $props();
+  let {
+    onclose,
+    activeTab = $bindable('info'),
+    oninsertCode,
+    onopenNotebook,
+    ondeleteNotebook,
+    onclearBrowserData,
+  }: Props = $props();
 
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
 
-  // Data panel: drag-and-drop file cache.
+  // Storage panel: the notebook library and the drag-and-drop dataset cache.
+  //
+  // The panel is deliberately housekeeping, not navigation — opening a notebook
+  // day to day is Ctrl+K. That is what lets notebooks and datasets share one
+  // panel: here they are both just bytes kept on this machine, listed with a
+  // size and a way to delete them.
   let dragActive = $state(false);
   let fileInput: HTMLInputElement = $state(null as any);
 
@@ -53,6 +75,25 @@
   async function removeDataset(name: string) {
     await deleteDataset(name);
     toast(`Removed ${name}`, 'info');
+  }
+
+  function refreshStorage() {
+    refreshDatasets();
+    refreshLibrary();
+  }
+
+  const notebooksSize = $derived($libraryEntries.reduce((n, e) => n + e.size, 0));
+  const datasetsSize = $derived($datasets.reduce((n, d) => n + d.size, 0));
+
+  const openId = $derived($currentNotebook?.id ?? null);
+  /** The open notebook may sit under any origin's key, so match on its own id. */
+  const isOpen = (entry: LibraryEntry) => entry.notebookId === openId;
+
+  function confirmDelete(entry: LibraryEntry) {
+    // Deleting is the one irreversible thing this panel does, and a notebook is
+    // worth more than a cached CSV, so it asks. Datasets do not.
+    if (!confirm(`Remove “${entry.name}” from the library? This cannot be undone.`)) return;
+    ondeleteNotebook?.({ entry });
   }
 
   function copyUsage(name: string) {
@@ -107,13 +148,13 @@
 
   onMount(() => {
     refreshVariables();
-    refreshDatasets();
+    refreshStorage();
     refreshTimer = window.setInterval(refreshVariables, 2000);
   });
 
-  // Refresh when the tab changes (e.g. opened to Data via the keyboard shortcut).
+  // Refresh when the tab changes (e.g. opened to Storage via its shortcut).
   $effect(() => {
-    if (activeTab === 'data') refreshDatasets();
+    if (activeTab === 'storage') refreshStorage();
     else if (activeTab === 'variables') refreshVariables();
   });
 
@@ -140,7 +181,7 @@
       <button class="tab-btn" class:active={activeTab === 'variables'} onclick={() => { activeTab = 'variables'; refreshVariables(); }}>Variables</button>
       <button class="tab-btn" class:active={activeTab === 'console'} onclick={() => activeTab = 'console'}>Console</button>
       <button class="tab-btn" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
-      <button class="tab-btn" class:active={activeTab === 'data'} onclick={() => { activeTab = 'data'; refreshDatasets(); }}>Data</button>
+      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>Storage</button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -228,7 +269,7 @@
           </div>
           <div class="shortcut-item">
             <span class="shortcut-key">Ctrl+Shift+D</span>
-            <span class="shortcut-desc">Data panel</span>
+            <span class="shortcut-desc">Storage panel</span>
           </div>
           <div class="shortcut-item">
             <span class="shortcut-key">Ctrl+Z</span>
@@ -237,63 +278,134 @@
         </div>
       </div>
     {/if}
-  {:else if activeTab === 'data'}
+  {:else if activeTab === 'storage'}
     <div class="sidebar-content">
-      <!-- Files are read in the browser and cached in IndexedDB. Nothing is
-           uploaded or served publicly. -->
-      <div
-        class="dropzone"
-        class:active={dragActive}
-        role="button"
-        tabindex="0"
-        ondragover={onDragOver}
-        ondragleave={onDragLeave}
-        ondrop={onDrop}
-        onclick={() => fileInput?.click()}
-        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-        </svg>
-        <p class="dropzone-text">Drop CSV, TSV or JSON here</p>
-        <p class="dropzone-hint">or click to browse. Stays in your browser.</p>
+      <div class="storage-total">
+        <span>Kept in this browser</span>
+        <span class="storage-total-size">{formatBytes(notebooksSize + datasetsSize)}</span>
       </div>
-      <input
-        bind:this={fileInput}
-        type="file"
-        multiple
-        accept=".csv,.tsv,.json,.ndjson,.txt"
-        class="hidden-input"
-        onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
-      />
 
-      {#if $datasets.length === 0}
-        <div class="empty-vars">No data yet. Drop a file, then read it in a cell with <code>await data("name")</code>.</div>
-      {:else}
-        <div class="dataset-list">
-          {#each $datasets as ds (ds.name)}
-            <div class="dataset-item">
-              <div class="dataset-main">
-                <div class="dataset-name" title={ds.name}>{ds.name}</div>
-                <div class="dataset-meta">{formatBytes(ds.size)}</div>
-              </div>
-              <div class="dataset-actions">
-                <button class="ds-btn" title="Copy usage snippet" onclick={() => copyUsage(ds.name)} aria-label="Copy snippet">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                  </svg>
-                </button>
-                <button class="ds-btn ds-danger" title="Remove" onclick={() => removeDataset(ds.name)} aria-label="Remove dataset">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          {/each}
+      {#if !$libraryPersistent}
+        <div class="storage-warning">
+          This browser refused persistent storage (private window, or another tab
+          holds an older database). Notebooks are kept in memory and will be gone
+          when you close this tab — export anything you want to keep.
         </div>
       {/if}
+
+      <!-- Notebooks. Every notebook opened or created lands here; closing one
+           never removes it. Opening day to day is Ctrl+K, so these rows are for
+           finding something you had forgotten and for clearing out. -->
+      <div class="storage-section">
+        <div class="storage-section-head">
+          <h4 class="section-title">Notebooks ({$libraryEntries.length})</h4>
+          <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
+        </div>
+
+        {#if $libraryEntries.length === 0}
+          <div class="empty-vars">No notebooks stored yet.</div>
+        {:else}
+          <div class="dataset-list">
+            {#each $libraryEntries as entry (entry.id)}
+              <div class="dataset-item" class:current={isOpen(entry)}>
+                <button
+                  class="notebook-main"
+                  onclick={() => onopenNotebook?.({ id: entry.id })}
+                  title={`Open “${entry.name}”`}
+                >
+                  <div class="dataset-name">{entry.name}</div>
+                  <div class="dataset-meta">
+                    {formatDate(entry.lastOpenedAt)} · {originLabel(entry.origin)} ·
+                    {entry.cellCount} cell{entry.cellCount === 1 ? '' : 's'} · {formatBytes(entry.size)}
+                    {#if isOpen(entry)} · open{/if}
+                  </div>
+                </button>
+                <div class="dataset-actions">
+                  <button class="ds-btn ds-danger" title="Remove from library" onclick={() => confirmDelete(entry)} aria-label="Remove notebook">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Datasets. Files are read in the browser and cached in IndexedDB.
+           Nothing is uploaded or served publicly. -->
+      <div class="storage-section">
+        <div class="storage-section-head">
+          <h4 class="section-title">Datasets ({$datasets.length})</h4>
+          <span class="storage-section-size">{formatBytes(datasetsSize)}</span>
+        </div>
+
+        <div
+          class="dropzone"
+          class:active={dragActive}
+          role="button"
+          tabindex="0"
+          ondragover={onDragOver}
+          ondragleave={onDragLeave}
+          ondrop={onDrop}
+          onclick={() => fileInput?.click()}
+          onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click(); } }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          <p class="dropzone-text">Drop CSV, TSV or JSON here</p>
+          <p class="dropzone-hint">or click to browse. Stays in your browser.</p>
+        </div>
+        <input
+          bind:this={fileInput}
+          type="file"
+          multiple
+          accept=".csv,.tsv,.json,.ndjson,.txt"
+          class="hidden-input"
+          onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
+        />
+
+        {#if $datasets.length === 0}
+          <div class="empty-vars">No data yet. Drop a file, then read it in a cell with <code>await data("name")</code>.</div>
+        {:else}
+          <div class="dataset-list">
+            {#each $datasets as ds (ds.name)}
+              <div class="dataset-item">
+                <div class="dataset-main">
+                  <div class="dataset-name" title={ds.name}>{ds.name}</div>
+                  <div class="dataset-meta">{formatBytes(ds.size)}</div>
+                </div>
+                <div class="dataset-actions">
+                  <button class="ds-btn" title="Copy usage snippet" onclick={() => copyUsage(ds.name)} aria-label="Copy snippet">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                  </button>
+                  <button class="ds-btn ds-danger" title="Remove" onclick={() => removeDataset(ds.name)} aria-label="Remove dataset">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- The rest of what this origin keeps. Settings live in Info, so they are
+           not duplicated here; what this answers is "what else is on my machine,
+           and how do I get rid of it" — the AI key in particular, which is
+           stored unencrypted and had no way out until now. -->
+      <div class="storage-section">
+        <h4 class="section-title">Other browser data</h4>
+        <p class="storage-note">Chat history, AI key and preferences, in localStorage.</p>
+        <button class="storage-clear" onclick={() => onclearBrowserData?.()}>Clear…</button>
+      </div>
     </div>
+
   {:else if activeTab === 'console'}
     <div class="console-tab">
       <Console />
@@ -491,7 +603,86 @@
     color: var(--accent);
   }
 
-  /* Data panel */
+  /* Storage panel: two lists that happen to share a home, so they are visibly
+     two sections rather than one merged pile. */
+  .storage-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .storage-total-size { font-family: var(--font-mono); color: var(--text); }
+
+  .storage-warning {
+    margin-top: 0.75rem;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--warn-fg);
+    background-color: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-input);
+  }
+
+  .storage-section { margin-top: 1.25rem; }
+
+  .storage-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  /* The head already carries the section's bottom spacing. */
+  .storage-section-head .section-title { margin-bottom: 0; }
+
+  .storage-section-size {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-faint);
+  }
+
+  /* A notebook row is a target, not a label: the whole row opens it. */
+  .notebook-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
+    text-align: left;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+
+  .dataset-item.current { border-color: var(--accent); }
+
+  .storage-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 0;
+    line-height: 1.4;
+  }
+
+  .storage-clear {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    background-color: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    cursor: pointer;
+  }
+
+  .storage-clear:hover {
+    background-color: var(--surface-hover);
+    border-color: var(--border-strong);
+  }
+
   .dropzone {
     display: flex;
     flex-direction: column;

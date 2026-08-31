@@ -154,7 +154,9 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
   };
 }
 
-export function importNotebookFromFile(callback: (notebook: any) => void) {
+// The filename is handed back too: it is what the library shows as the
+// notebook's origin, and the browser gives no path to show instead.
+export function importNotebookFromFile(callback: (notebook: any, filename: string) => void) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json,.js';
@@ -177,7 +179,7 @@ export function importNotebookFromFile(callback: (notebook: any) => void) {
         return;
       }
 
-      callback(notebook);
+      callback(notebook, file.name);
     } catch (err: any) {
       console.error('Import failed:', err);
       toast('Couldn’t import the notebook: ' + err.message, 'error');

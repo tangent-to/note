@@ -89,11 +89,26 @@ Serving from localhost keeps the page same-origin with the companion, so this wo
 | `Shift + Enter` | Run Cell and Select Next |
 | `Alt + Enter` | Run Cell and Insert Below |
 | `` Ctrl/Cmd + ` `` | Toggle Console |
-| `Ctrl/Cmd + Shift + D` | Toggle Data Panel |
+| `Ctrl/Cmd + Shift + D` | Toggle Storage Panel |
 
 ### The side panel
 
-Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console, Chat and Data. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
+Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console, Chat and Storage. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
+
+### The notebook library
+
+Every notebook you open or create is kept in this browser, in IndexedDB. Opening another one never loses it, and there is nothing to confirm before you navigate: what is on screen is already stored.
+
+That splits "saved" into two things that used to be one:
+
+- **Saved to the library** happens on its own, a couple of seconds after you stop typing. It is not something you do.
+- **Saved to its origin** — the file a `note serve` companion owns, or an exported `.js` — is what `Ctrl/Cmd + S` does, and what the "modified" mark in the header means.
+
+Open another notebook with `Ctrl/Cmd + K` and type its name: the library is listed in the command palette alongside the commands. The Storage tab is for housekeeping instead — what is stored, how big it is, and deleting what you no longer want. It lists notebooks and cached datasets side by side, since both are just bytes this browser is holding for you, plus a way to clear the chat history, the AI key and the preferences kept in `localStorage`.
+
+Notebook ids travel in the `.js` file's frontmatter, so re-importing a file you already have reopens its entry rather than making a second copy. A notebook opened from a link gets an entry of its own, keyed by the link, so clicking a `/gh/…` URL can never overwrite the copy you have been editing — and clicking the same link twice lands back on the same entry rather than piling up duplicates.
+
+In a private window, or when another tab holds an older version of the database, IndexedDB is unavailable: the library then keeps notebooks in memory for the session only. It says so in the Storage tab, and the browser's "leave this page?" prompt comes back, because there closing the tab really does lose the work.
 
 ### Console
 

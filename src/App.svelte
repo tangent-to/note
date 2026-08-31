@@ -22,20 +22,41 @@
     resetExecutionCounter,
     resetStaleTracking,
     outputPosition,
-    kernelMode
+    kernelMode,
+    currentOrigin
   } from './lib/stores/notebook';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, exportNotebookSource, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
-  import { loadFromLocalStorage, getLocalStorageMeta, saveToLocalStorage } from './lib/utils/webPersistence';
-  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, notebooksEquivalent, type ImportRequest } from './lib/utils/urlImport';
+  import {
+    deleteNotebook,
+    getNotebookRecord,
+    lastActiveNotebookId,
+    libraryEntries,
+    libraryPersistent,
+    migrateLegacyAutosave,
+    putNotebook,
+    refreshLibrary,
+    rememberActiveNotebook,
+    type LibraryEntry,
+    type NotebookOrigin,
+  } from './lib/utils/notebookLibrary';
+  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, type ImportRequest } from './lib/utils/urlImport';
   import { connectSync, isSyncConnected, saveThroughSync, syncFile, syncStatus } from './lib/utils/serverSync';
   import type { Notebook as NotebookDoc } from './lib/types/notebook';
 
-  type PanelTab = 'info' | 'variables' | 'console' | 'chat' | 'data';
+  type PanelTab = 'info' | 'variables' | 'console' | 'chat' | 'storage';
   let rightSidebarOpen = $state(false);
   let rightSidebarTab = $state<PanelTab>('info');
+
+  /**
+   * Resolves once the notebook library has migrated the legacy autosave slot
+   * and listed itself. Everything that opens or restores a notebook awaits it,
+   * so nothing races the migration. It never rejects.
+   */
+  let libraryReady: Promise<void> = Promise.resolve();
+
 
   /**
    * Open the panel on `tab`, or close it if it is already showing that tab.
@@ -112,50 +133,6 @@
     { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
   ];
 
-  // Pending destructive navigation (New / Import / open-from-link) awaiting a
-  // save decision. When set, the confirmation modal is shown. `message`
-  // overrides the default unsaved-changes wording; `onCancel` runs when the
-  // user backs out.
-  let pendingNav: { run: () => void; label: string; message?: string; onCancel?: () => void } | null = $state(null);
-  let savingPending = $state(false);
-
-  // Run `action` immediately if there's nothing to lose, otherwise ask the user
-  // whether to save first. `label` describes what's about to happen.
-  function guardUnsaved(action: () => void, label: string) {
-    if (get(notebookDirty)) {
-      pendingNav = { run: action, label };
-    } else {
-      action();
-    }
-  }
-
-  function cancelPending() {
-    const onCancel = pendingNav?.onCancel;
-    pendingNav = null;
-    onCancel?.();
-  }
-
-  function discardAndContinue() {
-    const action = pendingNav?.run;
-    pendingNav = null;
-    action?.();
-  }
-
-  async function saveAndContinue() {
-    if (!pendingNav) return;
-    savingPending = true;
-    try {
-      await performSaveShortcut();
-      const action = pendingNav.run;
-      pendingNav = null;
-      action();
-    } catch (err) {
-      console.error('Save before continuing failed', err);
-    } finally {
-      savingPending = false;
-    }
-  }
-
   // Mirror the notebook name into the browser tab so multiple notebooks are
   // tellable apart; falls back to the app name.
   $effect(() => {
@@ -177,8 +154,18 @@
     const target = redirect ?? { pathname: window.location.pathname, search: window.location.search };
     const importRequest = parseImportRequest(target.pathname, target.search);
 
-    // A `note serve` companion owns a file on disk and wins over the cache: it
-    // is the git-tracked source of truth. When none answers, nothing changes.
+    // Everything that opens a notebook needs the library first: the legacy
+    // single-slot autosave is folded into it, and what to restore is looked up
+    // in it. Failures are non-fatal — the library degrades to memory and says
+    // so — so this promise never rejects.
+    libraryReady = migrateLegacyAutosave()
+      .then(() => refreshLibrary())
+      .catch((error) => {
+        console.warn('Notebook library unavailable:', error);
+      });
+
+    // A `note serve` companion owns a file on disk and wins over the library:
+    // it is the git-tracked source of truth. When none answers, nothing changes.
     connectSync({
       onLoad: (content, reason) => applySyncedContent(content, reason),
       onConflict: (diskContent) => handleSyncConflict(diskContent),
@@ -186,7 +173,8 @@
         markNotebookClean();
         showToast('Saved to disk', 'info');
       },
-    }).then((connected) => {
+    }).then(async (connected) => {
+      await libraryReady;
       if (connected) return;
       if (importRequest) loadNotebookFromUrl(importRequest);
       else restoreOrLoadSample();
@@ -194,15 +182,14 @@
 
     loadNotebookFiles();
 
-    const unsubscribe = currentNotebook.subscribe(notebook => {
-      if (notebook) {
-        saveToLocalStorage(notebook);
-      }
-    });
-
-    // Warn before closing/reloading the tab if there are unsaved changes.
+    // Warn before closing the tab only when something is genuinely at risk.
+    // Edits reach the library on their own, so a "modified" notebook is not
+    // unsaved work — it just differs from the file on disk. The exception is a
+    // session whose library had to fall back to memory: there, closing really
+    // does lose it.
     const beforeUnload = (e: BeforeUnloadEvent) => {
-      if (get(notebookDirty)) {
+      const atRisk = !get(libraryPersistent) || (get(notebookDirty) && isSyncConnected());
+      if (atRisk) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -220,7 +207,6 @@
     window.addEventListener('tangent-toast', onToast);
 
     return () => {
-      unsubscribe();
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('request-import-notebook', onImportRequest);
       window.removeEventListener('tangent-toast', onToast);
@@ -228,66 +214,124 @@
     };
   });
 
-  function restoreOrLoadSample() {
-    const meta = getLocalStorageMeta();
-    const saved = loadFromLocalStorage();
+  /**
+   * Adopt `notebook` as the open one. Every path that opens a notebook — boot,
+   * restore, companion, URL link, file import, new, the library picker — goes
+   * through here, so "opened" means one thing: published to the stores, its
+   * origin recorded, and present in the library under that origin's key.
+   */
+  async function openNotebook(notebook: NotebookDoc, origin: NotebookOrigin) {
+    resetExecutionCounter();
+    resetStaleTracking();
+    currentOrigin.set(origin);
+    currentNotebook.set(notebook);
+    markNotebookClean();
+    await libraryReady;
+    const id = await putNotebook(notebook, origin, { opened: true });
+    rememberActiveNotebook(id);
+  }
 
-    if (saved && meta) {
-      currentNotebook.set(saved);
-      markNotebookClean();
-      console.info('Notebook restored from previous session');
-    } else {
-      loadSampleNotebook();
+  /** Reopen the notebook this browser was last on, else the newest, else the sample. */
+  async function restoreOrLoadSample() {
+    await libraryReady;
+
+    const remembered = lastActiveNotebookId();
+    const record = remembered ? await getNotebookRecord(remembered) : undefined;
+    if (record) {
+      await openNotebook(record.notebook, record.origin);
+      console.info('Notebook restored from the library');
+      return;
+    }
+
+    // No pointer (or it names an entry since deleted): fall back to whatever
+    // the library lists first rather than dropping the user on the sample.
+    const [newest] = get(libraryEntries);
+    if (newest) {
+      const fallback = await getNotebookRecord(newest.id);
+      if (fallback) {
+        await openNotebook(fallback.notebook, fallback.origin);
+        return;
+      }
+    }
+
+    loadSampleNotebook();
+  }
+
+  /** Open a library entry by key, from the picker or the Storage panel. */
+  async function openFromLibrary(id: string) {
+    const record = await getNotebookRecord(id);
+    if (!record) {
+      showToast('That notebook is no longer in the library.', 'error');
+      await refreshLibrary();
+      return;
+    }
+    await openNotebook(record.notebook, record.origin);
+    showToast(`Opened “${record.name}”`, 'info');
+  }
+
+  /**
+   * Clear what this origin keeps in localStorage besides the library: the chat
+   * transcript, the AI key (stored unencrypted, and until now with no way out
+   * of the app) and the UI preferences. Notebooks and datasets are in
+   * IndexedDB and are deliberately untouched — they have their own rows.
+   */
+  function clearBrowserData() {
+    if (!confirm('Clear the chat history, AI key and preferences kept in this browser? Notebooks and datasets are not affected.')) return;
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith('tangent-')) continue;
+        // The library's pointer to the open notebook is not "browser data" in
+        // this sense: dropping it would silently reopen something else.
+        if (key === 'tangent-active-notebook') continue;
+        localStorage.removeItem(key);
+      }
+      showToast('Cleared. Reload to start from defaults.', 'info');
+    } catch (error) {
+      console.warn('Could not clear local storage:', error);
+      showToast('Could not clear this browser’s stored data.', 'error');
     }
   }
 
+  /**
+   * Delete a library entry for good. When it is the open one, the notebook
+   * stays on screen — deleting the stored copy is not the same as closing what
+   * you are working in — but it is no longer the notebook to restore.
+   */
+  async function removeFromLibrary(entry: LibraryEntry) {
+    await deleteNotebook(entry.id);
+    if (lastActiveNotebookId() === entry.id) rememberActiveNotebook(null);
+    showToast(`Removed “${entry.name}” from the library`, 'info');
+  }
+
+  /**
+   * Open a notebook a link points at.
+   *
+   * This used to ask "opening this link replaces your notebook, save first?",
+   * because the single autosave slot meant the link really did overwrite the
+   * only copy. It no longer can: the notebook already on screen is in the
+   * library, and the imported one gets its own entry keyed by the link it came
+   * from (see libraryId). So the link just opens, and both keep existing.
+   */
   async function loadNotebookFromUrl(request: ImportRequest) {
-    // Show the locally saved notebook while the link is fetched — it's also
-    // what's at stake if the import replaces it.
-    const cached = getLocalStorageMeta() ? loadFromLocalStorage() : null;
-    if (cached) {
-      currentNotebook.set(cached);
-      markNotebookClean();
-    }
+    await libraryReady;
+    // Keep something on screen while the link is fetched — and something to
+    // fall back to if it fails.
+    const hadNotebook = get(currentNotebook) !== null;
+    if (!hadNotebook) await restoreOrLoadSample();
 
     try {
       const notebook = await fetchNotebookFromUrl(request);
       const hostname = new URL(request.fetchUrl).hostname;
-
-      if (cached && !notebooksEquivalent(cached, notebook)) {
-        // Opening the link would replace local work: ask first.
-        pendingNav = {
-          run: () => applyImportedNotebook(notebook, hostname),
-          label: `open “${notebook.name}”`,
-          message: `This link opens “${notebook.name}”, which will replace your current notebook “${cached.name}”. Save the current one first?`,
-          // Keep the local notebook; drop the import URL so a refresh
-          // doesn't re-ask.
-          onCancel: () => history.replaceState(null, '', '/'),
-        };
-      } else {
-        applyImportedNotebook(notebook, hostname);
-      }
+      await openNotebook(notebook, { kind: 'url', href: request.fetchUrl });
+      // Drop the import URL so a refresh reopens the library copy — with any
+      // edits made since — instead of re-fetching over them.
+      history.replaceState(null, '', '/');
+      showToast(`Loaded “${notebook.name}” from ${hostname}`, 'info');
     } catch (err: any) {
       console.error('URL import failed:', err);
-      showToast(
-        cached
-          ? `Couldn’t open the notebook from the link: ${err.message}. Showing your last local notebook instead.`
-          : `Couldn’t open the notebook from the link: ${err.message}.`,
-        'error'
-      );
-      if (!cached) loadSampleNotebook();
+      showToast(`Couldn’t open the notebook from the link: ${err.message}.`, 'error');
+      if (!get(currentNotebook)) loadSampleNotebook();
     }
-  }
-
-  function applyImportedNotebook(notebook: NotebookDoc, hostname: string) {
-    resetExecutionCounter();
-    resetStaleTracking();
-    currentNotebook.set(notebook);
-    markNotebookClean();
-    // Drop the import URL so a refresh reopens the autosaved copy instead
-    // of re-fetching and overwriting any edits made since.
-    history.replaceState(null, '', '/');
-    showToast(`Loaded “${notebook.name}” from ${hostname}`, 'info');
   }
 
   async function loadSampleNotebook() {
@@ -295,45 +339,33 @@
       const res = await fetch('/sample-notebooks/getting-started.js');
       if (res.ok) {
         const text = await res.text();
-        const sample = parseJSNotebook(text, 'getting-started.js');
-        currentNotebook.set(sample);
-        markNotebookClean();
-      } else {
-        const newNotebook = createNewNotebook();
-        currentNotebook.set(newNotebook);
-        markNotebookClean();
+        // The sample's id comes from its own frontmatter, so it lands on the
+        // same library entry every time instead of piling up copies.
+        await openNotebook(parseJSNotebook(text, 'getting-started.js'), { kind: 'sample' });
+        return;
       }
     } catch (e) {
-      const newNotebook = createNewNotebook();
-      currentNotebook.set(newNotebook);
-      markNotebookClean();
+      console.warn('Could not load the sample notebook:', e);
     }
+    await openNotebook(createNewNotebook(), { kind: 'local' });
   }
 
   async function loadNotebookFiles() {
     notebookFiles.set([]);
   }
 
+  // No unsaved-work guard on either of these any more: whatever is open is
+  // already in the library, so opening something else cannot lose it.
   function handleNewNotebook() {
-    guardUnsaved(() => {
-      const newNotebook = createNewNotebook();
-      resetExecutionCounter();
-      currentNotebook.set(newNotebook);
-      markNotebookClean();
-      console.info('New notebook created');
-    }, 'create a new notebook');
+    void openNotebook(createNewNotebook(), { kind: 'local' });
   }
 
   function handleImportNotebook() {
-    guardUnsaved(() => {
-      importNotebookFromFile((notebook) => {
-        resetExecutionCounter();
-        resetStaleTracking();
-        currentNotebook.set(notebook);
-        markNotebookClean();
-        console.info('Notebook imported successfully');
-      });
-    }, 'import another notebook');
+    importNotebookFromFile((notebook, filename) => {
+      // The id travels in the file's frontmatter, so re-importing a file you
+      // already have reopens its entry rather than forking a duplicate.
+      void openNotebook(notebook, { kind: 'import', filename: filename ?? `${notebook.name}.js` });
+    });
   }
 
   function handleExportNotebook() {
@@ -344,7 +376,7 @@
     handleGlobalKeydown(event, {
       showCommandPalette: () => { showCommandPalette = !showCommandPalette; },
       toggleChat: () => togglePanelTab('chat'),
-      toggleData: () => togglePanelTab('data'),
+      toggleData: () => togglePanelTab('storage'),
       toggleConsole: () => togglePanelTab('console'),
       save: () => performSaveShortcut(),
       newNotebook: () => handleNewNotebook(),
@@ -360,12 +392,10 @@
       showToast('The file changed on disk. Save or reload to take the new version.', 'error');
       return;
     }
-    const name = get(syncFile)?.split('/').pop() ?? 'notebook.js';
+    const path = get(syncFile);
+    const name = path?.split('/').pop() ?? 'notebook.js';
     const notebook = parseJSNotebook(content, name);
-    currentNotebook.set(notebook);
-    resetStaleTracking();
-    resetExecutionCounter();
-    markNotebookClean();
+    void openNotebook(notebook, path ? { kind: 'disk', path } : { kind: 'local' });
     if (reason === 'disk-change') showToast('Reloaded from disk', 'info');
   }
 
@@ -406,6 +436,12 @@
   }
 
   function handleCommand({ id: commandId }: { id: string }) {
+    // The palette lists the library alongside its fixed commands, so opening
+    // another notebook is "Ctrl+K, type its name".
+    if (commandId.startsWith('open-library:')) {
+      void openFromLibrary(commandId.slice('open-library:'.length));
+      return;
+    }
     switch (commandId) {
       case 'new-notebook':
         handleNewNotebook();
@@ -448,8 +484,8 @@
       case 'toggle-chat':
         togglePanelTab('chat');
         break;
-      case 'open-data':
-        togglePanelTab('data');
+      case 'open-storage':
+        togglePanelTab('storage');
         break;
       case 'open-console':
         togglePanelTab('console');
@@ -704,6 +740,9 @@
           bind:activeTab={rightSidebarTab}
           onclose={() => rightSidebarOpen = false}
           oninsertCode={handleInsertCode}
+          onopenNotebook={({ id }) => openFromLibrary(id)}
+          ondeleteNotebook={({ entry }) => removeFromLibrary(entry)}
+          onclearBrowserData={clearBrowserData}
         />
       </aside>
     {/if}
@@ -716,34 +755,6 @@
 
   {#if showExportDialog}
     <ExportDialog onclose={() => showExportDialog = false} />
-  {/if}
-
-  {#if pendingNav}
-    <div
-      class="unsaved-overlay"
-      role="presentation"
-      onclick={(e) => { if (e.target === e.currentTarget) cancelPending(); }}
-    >
-      <div class="unsaved-modal" role="dialog" aria-modal="true" aria-labelledby="unsaved-title">
-        <h3 id="unsaved-title">{pendingNav.message ? 'Replace your notebook?' : 'Unsaved changes'}</h3>
-        <p>
-          {#if pendingNav.message}
-            {pendingNav.message}
-            Discarding will permanently lose your current work.
-          {:else}
-            You have unsaved changes. Save them before you {pendingNav.label}?
-            Discarding will permanently lose your current work.
-          {/if}
-        </p>
-        <div class="unsaved-actions">
-          <button class="btn-ghost" onclick={cancelPending} disabled={savingPending}>Cancel</button>
-          <button class="btn-danger" onclick={discardAndContinue} disabled={savingPending}>Discard</button>
-          <button class="btn-confirm" onclick={saveAndContinue} disabled={savingPending}>
-            {savingPending ? 'Saving…' : 'Save & continue'}
-          </button>
-        </div>
-      </div>
-    </div>
   {/if}
 
   {#if showShortcuts}
@@ -1113,6 +1124,9 @@
     }
   }
 
+  /* Modal backdrop. Named for the save-before-you-navigate dialog it was
+     written for; that dialog is gone (the library made it unnecessary) and the
+     shortcuts sheet is the remaining user. */
   .unsaved-overlay {
     position: fixed;
     inset: 0;
@@ -1122,57 +1136,6 @@
     justify-content: center;
     z-index: 1000;
   }
-
-  .unsaved-modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    width: 90%;
-    max-width: 420px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow-lg);
-  }
-
-  .unsaved-modal h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--heading);
-  }
-
-  .unsaved-modal p {
-    margin: 0 0 1.25rem 0;
-    font-size: 0.875rem;
-    line-height: 1.5;
-    color: var(--text);
-  }
-
-  .unsaved-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-
-  .unsaved-actions button {
-    padding: 0.5rem 0.9rem;
-    border-radius: var(--radius-pill);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: all 0.15s;
-  }
-
-  .unsaved-actions button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
-  .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); }
-
-  .btn-danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
-  .btn-danger:hover:not(:disabled) { filter: brightness(0.97); }
-
-  .btn-confirm { background: var(--accent-solid); color: var(--accent-on-solid); }
-  .btn-confirm:hover:not(:disabled) { background: var(--accent-solid-hover); }
 
   .shortcuts-modal {
     background: var(--surface);

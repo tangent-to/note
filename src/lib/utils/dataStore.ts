@@ -1,11 +1,15 @@
 import { writable } from 'svelte/store';
+import { DATASETS, idbRequest } from './idb';
 
 // Local, private dataset cache.
 //
-// Files dropped into the Data panel are read in the browser (File API) and
+// Files dropped into the Storage panel are read in the browser (File API) and
 // stored in IndexedDB. Nothing is uploaded or bundled into the deployed site,
 // so CSV/JSON data never has to be served publicly. The cache survives reloads;
 // cells read it through the `data()` accessor (see jsExecutor.setupDataAccess).
+//
+// The database is shared with the notebook library, so it is opened in one
+// place (idb.ts) rather than here.
 
 export interface DatasetMeta {
   name: string;
@@ -18,34 +22,8 @@ export interface DatasetRecord extends DatasetMeta {
   text: string;
 }
 
-const DB_NAME = 'tangent';
-const STORE = 'datasets';
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        db.createObjectStore(STORE, { keyPath: 'name' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
 function request<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T> {
-  return openDB().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const tx = db.transaction(STORE, mode);
-        const req = run(tx.objectStore(STORE));
-        req.onsuccess = () => resolve(req.result as T);
-        req.onerror = () => reject(req.error);
-        tx.oncomplete = () => db.close();
-      })
-  );
+  return idbRequest<T>(DATASETS, mode, run);
 }
 
 // Reactive list of dataset metadata (no text payload) for the UI.
