@@ -162,6 +162,28 @@ describe('parseNotebook', () => {
     expect(parsed.cells[3].readOnly).toBeUndefined();
   });
 
+  it('round-trips the output breakout layer via #wide/#full', () => {
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'a', outputWidth: 'wide' },
+        { id: 'cell-2', type: 'code', content: 'b', outputWidth: 'full' },
+        { id: 'cell-3', type: 'code', content: 'c' },
+      ],
+    });
+    const serialized = serializeNotebook(original);
+    expect(serialized).toContain('// %% [javascript] #wide\na');
+    expect(serialized).toContain('// %% [javascript] #full\nb');
+    const parsed = parseNotebook(serialized, 'test.js');
+    expect(parsed.cells[0].outputWidth).toBe('wide');
+    expect(parsed.cells[1].outputWidth).toBe('full');
+    expect(parsed.cells[2].outputWidth).toBeUndefined();
+  });
+
+  it('lets #full win when both #wide and #full are present', () => {
+    const parsed = parseNotebook('// %% [javascript] #wide #full\na', 'test.js');
+    expect(parsed.cells[0].outputWidth).toBe('full');
+  });
+
   it('does not confuse #collapse-output with #collapse-cell', () => {
     const parsed = parseNotebook('// %% [javascript] #collapse-output\nconst x = 1;', 'test.js');
     expect(parsed.cells[0].outputCollapsed).toBe(true);

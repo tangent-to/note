@@ -1018,6 +1018,13 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    /* De-chromed cells sit directly on the paper surface (both themes' vars
+       keep the page/surface layering consistent in dark mode). */
+    background-color: var(--surface);
+    /* Named size container: #wide/#full output layers size themselves with
+       cqw units against the actual notebook area, so open sidebars and
+       narrow windows shrink breakouts instead of overflowing. */
+    container-type: inline-size;
   }
 
   .right-sidebar-container {

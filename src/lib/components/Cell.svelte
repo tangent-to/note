@@ -31,6 +31,7 @@
     ontoggleOutputCollapse?: (detail: { cellId: string }) => void;
     ontoggleSkip?: (detail: { cellId: string }) => void;
     ontoggleReadOnly?: (detail: { cellId: string }) => void;
+    onsetOutputWidth?: (detail: { cellId: string; outputWidth?: 'wide' | 'full' }) => void;
     ondragstart?: (detail: { cellId: string }) => void;
     ondragover?: (detail: { cellId: string; position: 'above' | 'below' }) => void;
     ondragend?: () => void;
@@ -55,6 +56,7 @@
     ontoggleOutputCollapse,
     ontoggleSkip,
     ontoggleReadOnly,
+    onsetOutputWidth,
     ondragstart,
     ondragover,
     ondragend,
@@ -281,6 +283,7 @@
   class:drag-above={isDraggedOver && dragPosition === 'above'}
   class:drag-below={isDraggedOver && dragPosition === 'below'}
   data-testid="cell-{cell.id}"
+  data-cell-id={cell.id}
   role="group"
   aria-label="Notebook cell"
   ondragover={onDragOver}
@@ -387,9 +390,16 @@
          (Observable-style). -->
     {#snippet outputBlock()}
       <!-- Nothing to display (a declaration, a loop, an assignment) renders no
-           output frame at all — not an empty box with a copy button. -->
+           output frame at all — not an empty box with a copy button. The layer
+           div lets #wide/#full outputs break out of the notebook column. -->
       {#if hasOutput && !cell.outputCollapsed}
-        <CellOutput output={cell.output!} />
+        <div
+          class="output-layer"
+          class:wide={cell.outputWidth === 'wide'}
+          class:full={cell.outputWidth === 'full'}
+        >
+          <CellOutput output={cell.output!} />
+        </div>
       {:else if hasOutput && cell.outputCollapsed}
         <div class="collapsed-output-indicator">
           <span>Output hidden ({cell.output!.type})</span>
@@ -513,6 +523,8 @@
             <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleOutputCollapse?.({ cellId: cell.id }))}>{cell.outputCollapsed ? 'Show output' : 'Hide output'}</button>
           {/if}
           {#if cell.type === 'code'}
+            <button role="menuitem" class="menu-item" data-testid="wide-output-btn" onclick={runMenu(() => onsetOutputWidth?.({ cellId: cell.id, outputWidth: cell.outputWidth === 'wide' ? undefined : 'wide' }))}>{cell.outputWidth === 'wide' ? '✓ Wide output' : 'Wide output'}</button>
+            <button role="menuitem" class="menu-item" data-testid="full-output-btn" onclick={runMenu(() => onsetOutputWidth?.({ cellId: cell.id, outputWidth: cell.outputWidth === 'full' ? undefined : 'full' }))}>{cell.outputWidth === 'full' ? '✓ Full-width output' : 'Full-width output'}</button>
             <button role="menuitem" class="menu-item" data-testid="skip-cell-btn" onclick={runMenu(() => ontoggleSkip?.({ cellId: cell.id }))}>{cell.skipped ? 'Enable cell' : 'Skip cell (never runs)'}</button>
           {/if}
           <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleReadOnly?.({ cellId: cell.id }))}>{cell.readOnly ? 'Unlock cell' : 'Lock cell (read-only)'}</button>
@@ -625,21 +637,23 @@
     padding-bottom: 0;
   }
 
-  /* A persistent hairline gives every cell a solid edge; selection is shown by
-     an accent border (no separate indicator line that collides with the gutter). */
+  /* No card chrome at rest: cells sit directly on the page, separated by
+     whitespace (Observable/marimo style). State is a left edge only — faint
+     on hover, accent when selected, warn when stale — so the reading column
+     stays calm and outputs never look boxed-in. */
   .cell-container {
     display: flex;
     align-items: stretch;
-    background-color: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+    background-color: transparent;
+    border-left: 2px solid transparent;
+    border-radius: 2px;
     transition: border-color 0.15s ease;
     position: relative;
   }
 
-  .cell-wrapper:hover .cell-container { border-color: var(--border-strong); }
-  .cell-wrapper.selected .cell-container { border-color: var(--accent); }
-  .cell-wrapper.stale .cell-container { border-color: var(--warn-border); }
+  .cell-wrapper:hover .cell-container { border-left-color: var(--border-strong); }
+  .cell-wrapper.selected .cell-container { border-left-color: var(--accent); }
+  .cell-wrapper.stale .cell-container { border-left-color: var(--warn-border); }
 
   /* Left gutter: a fixed column for run + execution count + drag, so content
      fills the cell from the top with no reserved toolbar row. */
@@ -835,6 +849,31 @@
     padding: 0;
     min-height: 0;
   }
+
+  /* With the card gone, code gets a soft block of its own (Observable-style):
+     prose flows on the page, code reads as a distinct artifact. Both colors
+     are theme vars, so dark mode follows. */
+  .cell-content:not(.markdown-wrapper) {
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    padding: 0.3rem 0.2rem;
+  }
+
+  /* Output breakout layers (#wide / #full). Sized with container-query units
+     against .main-content (see App.svelte), so open sidebars and narrow
+     windows shrink them gracefully; max(100%, …) never lets a "wide" output
+     get narrower than the column. Centered on the column via the negative
+     half-overhang margin; the 72px allowance covers the cell gutter and
+     paddings so the layer never triggers a horizontal scrollbar. */
+  .output-layer.wide,
+  .output-layer.full {
+    width: var(--breakout-w);
+    margin-left: calc((100% - var(--breakout-w)) / 2);
+  }
+
+  .output-layer.wide { --breakout-w: max(100%, min(1200px, 96cqw - 72px)); }
+  .output-layer.full { --breakout-w: max(100%, calc(98cqw - 72px)); }
 
   .collapsed-indicator {
     padding: 0.1rem 0;

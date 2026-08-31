@@ -11,6 +11,9 @@ export interface NotebookCell {
   skipped?: boolean;
   /** Read-only cells can be run but not edited (tag: #readonly). */
   readOnly?: boolean;
+  /** Output breakout layer: the output escapes the notebook column and
+   *  renders wide (~1200px) or full-width (tags: #wide, #full). */
+  outputWidth?: "wide" | "full";
 }
 
 export interface CellOutput {
