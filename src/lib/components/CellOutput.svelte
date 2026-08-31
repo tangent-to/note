@@ -254,6 +254,17 @@
     height: auto;
   }
 
+  /* No Tailwind preflight reaches these (v4 ignores the legacy `@tailwind
+     base` directive), so user-agent defaults leak into rendered output.
+     The worst is <figure>'s default 16px 40px margin: chart libraries wrap
+     plots in figures (Observable Plot does for titled plots), and the 40px
+     side margins either squeeze the chart or overflow the cell into a
+     horizontal scrollbar. Neutralize the horizontal part inside outputs. */
+  .dom-output :global(figure),
+  .html-output :global(figure) {
+    margin: 0.5rem 0;
+  }
+
   .output-content :global(.tangent-table-output) {
     width: 100%;
     border-collapse: collapse;
