@@ -108,7 +108,7 @@ Open another notebook with `Ctrl/Cmd + K` and type its name: the library is list
 
 Notebook ids travel in the `.js` file's frontmatter, so re-importing a file you already have reopens its entry rather than making a second copy. A notebook opened from a link gets an entry of its own, keyed by the link, so clicking a `/gh/…` URL can never overwrite the copy you have been editing — and clicking the same link twice lands back on the same entry rather than piling up duplicates.
 
-In a private window, or when another tab holds an older version of the database, IndexedDB is unavailable: the library then keeps notebooks in memory for the session only. It says so in the Storage tab, and the browser's "leave this page?" prompt comes back, because there closing the tab really does lose the work.
+In a private window, or when another tab holds an older version of the database, IndexedDB is unavailable. The library then keeps notebooks in memory for the session, and mirrors the one you are working in to `localStorage` so a reload still finds it — the same single slot, and the same last-write-wins limits, as before the library existed. The Storage tab says so, and the browser's "leave this page?" prompt comes back, because a second notebook really would be lost there.
 
 ### Console
 

@@ -69,6 +69,11 @@ export const libraryPersistent = writable(true);
 /** Timestamp of the last successful library write, for the "saved" indicator. */
 export const librarySavedAt = writable<number | null>(null);
 
+// The single autosave slot the library replaces. Still read on first run to
+// migrate it, and still written as a lifeboat when IndexedDB is unavailable.
+const LEGACY_KEY = 'tangent-notebook-autosave';
+const LEGACY_META_KEY = 'tangent-notebook-meta';
+
 // Session-only fallback. Populated instead of IndexedDB when it is unavailable,
 // so a private-mode session still behaves like a library until it is closed.
 const memory = new Map<string, LibraryRecord>();
@@ -235,11 +240,41 @@ function upsertEntry(record: LibraryRecord): void {
 async function write(record: LibraryRecord): Promise<void> {
   memory.set(record.id, record);
   upsertEntry(record);
-  if (!persistent) return;
+  if (!persistent) {
+    mirrorToLegacySlot(record);
+    return;
+  }
   try {
     await idbRequest(NOTEBOOKS, 'readwrite', (s) => s.put(record));
   } catch (error) {
     degrade(error);
+    mirrorToLegacySlot(record);
+  }
+}
+
+/**
+ * Lifeboat for a session with no IndexedDB.
+ *
+ * Firefox's private windows have no IndexedDB but do have localStorage, and
+ * that is where the old single-slot autosave lived — so without this, moving to
+ * the library would have *taken away* durability from exactly the users who had
+ * the least. One slot, last write wins: the old behaviour, no better and no
+ * worse, and migrateLegacyAutosave reads it back on the next load.
+ */
+function mirrorToLegacySlot(record: LibraryRecord): void {
+  try {
+    localStorage.setItem(LEGACY_KEY, JSON.stringify(record.notebook));
+    localStorage.setItem(
+      LEGACY_META_KEY,
+      JSON.stringify({
+        savedAt: Date.now(),
+        name: record.name,
+        cellCount: record.cellCount,
+      })
+    );
+  } catch {
+    // Storage full or blocked too. Nothing left to try; the in-memory copy
+    // still serves this session, and libraryPersistent already says so.
   }
 }
 
@@ -320,9 +355,6 @@ export function lastActiveNotebookId(): string | null {
 }
 
 // ─── Migration from the single-slot autosave ─────────────────────────────────
-
-const LEGACY_KEY = 'tangent-notebook-autosave';
-const LEGACY_META_KEY = 'tangent-notebook-meta';
 
 /**
  * Move the one notebook the old autosave slot could hold into the library.
