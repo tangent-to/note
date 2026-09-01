@@ -93,7 +93,7 @@ Serving from localhost keeps the page same-origin with the companion, so this wo
 
 ### The side panel
 
-Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console, Chat and Storage. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
+Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console │ Chat, Storage. The rule marks where the panel stops following the notebook on screen — Variables and Console read that notebook's own kernel, while Chat is one conversation for the whole app and Storage is about the browser. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
 
 ### The notebook library
 
