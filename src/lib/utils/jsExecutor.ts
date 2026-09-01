@@ -211,6 +211,22 @@ export class JavaScriptExecutor {
     this.setupExecutionEnvironment();
   }
 
+  /**
+   * Point the page's shared-scope globals at THIS executor.
+   *
+   * With one executor per notebook there are several scopes on the main
+   * thread, but `with(window.__tangent_scope)` and the `nb` alias can only
+   * name one. The active notebook's executor claims them before it runs
+   * anything. This is safe across `await`: the `with` block captures the scope
+   * object when it is entered, so a cell that suspends keeps evaluating
+   * against its own notebook's scope even if another has claimed the global
+   * since.
+   */
+  activate(): void {
+    (window as any).__tangent_scope = this.scope;
+    (window as any).nb = this.scope;
+  }
+
   private setupExecutionEnvironment() {
     (window as any).__tangent_loadedModules =
       (window as any).__tangent_loadedModules || {};
@@ -221,13 +237,13 @@ export class JavaScriptExecutor {
     (window as any).nb = this.scope;
     // Reactive input widgets (sliders, etc.) available to cells as `ui.*`.
     this.setupInputs();
-    // `data(name)` accessor for files dropped into the Data panel.
+    // `data(name)` accessor for files dropped into the Storage panel.
     this.setupDataAccess();
   }
 
   /**
    * Expose `data(name)` to cells: reads a file cached in IndexedDB (dropped into
-   * the Data panel) and parses it by extension. `.csv`/`.tsv` use d3 with type
+   * the Storage panel) and parses it by extension. `.csv`/`.tsv` use d3 with type
    * coercion, `.json` uses JSON.parse, anything else falls back to raw text.
    * Use `data.text(name)` for the raw string and `data.list()` for the names.
    *
@@ -259,7 +275,7 @@ export class JavaScriptExecutor {
     const readText = async (name: string): Promise<string> => {
       const rec = await getDataset(name);
       if (!rec) {
-        throw new Error(`No dataset "${name}". Drop the file into the Data panel (right sidebar) first.`);
+        throw new Error(`No dataset "${name}". Drop the file into the Storage panel (right sidebar) first.`);
       }
       return rec.text;
     };
@@ -394,7 +410,7 @@ export class JavaScriptExecutor {
     for (const key of Object.keys(this.scope)) {
       delete this.scope[key];
     }
-    (window as any).__tangent_scope = this.scope;
+    this.activate();
   }
 
   /** Values the app seeded into the scope (e.g. the `width` builtin). */

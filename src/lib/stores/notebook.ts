@@ -1,15 +1,31 @@
-import { writable, derived, get, type Writable } from 'svelte/store';
+import { derived, writable, type Writable } from 'svelte/store';
 import type { Notebook, NotebookCell, NotebookFile } from '../types/notebook';
-import { saveToLocalStorage } from '../utils/webPersistence';
+import {
+  current,
+  nextExecutionOrder,
+  popDeletedCell,
+  pushDeletedCell,
+  sessionStore,
+} from './sessions';
 import {
   computeStaleCells,
   findDuplicateDefinitions,
-  hashCode,
-  type RunRecord,
 } from '../utils/dependencyGraph';
 
-// Current notebook being edited
-export const currentNotebook = writable<Notebook | null>(null);
+/**
+ * The notebook stores, as the app has always read them.
+ *
+ * Every one of these is now a view onto the *active session* (see
+ * stores/sessions): reading gives the notebook on screen, writing lands on it.
+ * Keeping the names and the shapes is what let several notebooks be open at
+ * once without touching Notebook.svelte, Cell.svelte or the export service.
+ */
+export const currentNotebook = sessionStore<Notebook | null>(
+  // A session always holds a notebook, so the null is only ever the "no
+  // notebook open" reading; nothing writes null through this store.
+  (s) => s.notebook as unknown as Writable<Notebook | null>,
+  null
+);
 
 // List of available notebook files
 export const notebookFiles = writable<NotebookFile[]>([]);
@@ -17,31 +33,49 @@ export const notebookFiles = writable<NotebookFile[]>([]);
 // Recently opened files
 export const recentFiles = writable<Array<{path: string; name: string; timestamp: number}>>([]);
 
-// Currently selected cell
-export const selectedCellId = writable<string | null>(null);
+// Currently selected cell, in the notebook on screen.
+export const selectedCellId = sessionStore<string | null>((s) => s.selectedCellId, null);
 
-export const notebookDirty = writable(false);
+/**
+ * The notebook differs from its **origin** — the file a `note serve` companion
+ * owns, or the last exported `.js`. This is what Ctrl+S clears and what the
+ * header's "modified" mark reflects.
+ *
+ * It is deliberately NOT "unsaved work". Every edit is written to the local
+ * library a moment later (see sessions.startAutosave), so nothing is ever at
+ * risk of being lost by closing a tab or switching notebooks. Conflating the
+ * two is what made the old app prompt "save first?" before every navigation.
+ */
+export const notebookDirty = sessionStore<boolean>((s) => s.dirty, false);
+
+/** Where the current notebook came from; carried into its library entry. */
+export const currentOrigin = sessionStore((s) => s.origin, { kind: 'local' as const });
 
 // Progress of a "run all" / "run stale" batch, for the thin bar on the header's
 // bottom edge. `null` when idle; otherwise how many cells have finished of the
-// total in the current batch.
-export const runProgress = writable<{ done: number; total: number } | null>(null);
+// total in the current batch. Per session, so a tab left running can report it.
+export const runProgress = sessionStore<{ done: number; total: number } | null>(
+  (s) => s.runProgress,
+  null
+);
 
 // Set of cell ids whose output is stale: an upstream dependency changed or ran
 // more recently, or the cell was edited since it last ran.
-export const staleCells = writable<Set<string>>(new Set());
+export const staleCells = sessionStore<Set<string>>((s) => s.stale, new Set());
 
-// Per-cell record of the last run (when + content hash). Not persisted.
-const cellRunInfo = new Map<string, RunRecord>();
+export {
+  recordCellRun,
+  resetStaleTracking,
+  hasDeletedCells,
+  resetExecutionCounter,
+} from './sessions';
+export { popDeletedCell, pushDeletedCell };
 
-// Record that a cell just ran with the given content.
-export function recordCellRun(cellId: string, content: string): void {
-  cellRunInfo.set(cellId, { at: Date.now(), hash: hashCode(content) });
-}
-
-// Recompute which cells are stale and publish to the store.
+// Recompute which cells are stale and publish to the session's store.
 export function recomputeStaleCells(notebook: Notebook | null): void {
-  staleCells.set(notebook ? computeStaleCells(notebook.cells, cellRunInfo) : new Set());
+  const session = current();
+  if (!session) return;
+  session.stale.set(notebook ? computeStaleCells(notebook.cells, session.cellRunInfo) : new Set());
 }
 
 /** cellId -> the names it defines that another cell defines too (sorted). */
@@ -75,12 +109,6 @@ export const duplicateDefinitions = derived<typeof currentNotebook, Map<string, 
   },
   new Map()
 );
-
-// Forget all run history (e.g. on new/imported notebook or kernel reset).
-export function resetStaleTracking(): void {
-  cellRunInfo.clear();
-  staleCells.set(new Set());
-}
 
 // A writable store backed by localStorage under `key`. The initial value comes
 // from `parse` (which receives the raw stored string, or null when absent or
@@ -142,75 +170,21 @@ export const outputPosition = persistedStore<OutputPosition>(
 // Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 
-// Execution order counter
-let executionCounter = 0;
-
+/** Next execution counter value, for the notebook on screen. */
 export function getNextExecutionOrder(): number {
-  return ++executionCounter;
+  return nextExecutionOrder();
 }
-
-export function resetExecutionCounter(): void {
-  executionCounter = 0;
-}
-
-// Undo stack for deleted cells
-interface DeletedCellEntry {
-  cell: NotebookCell;
-  index: number;
-  timestamp: number;
-}
-
-const deletedCellsStack: DeletedCellEntry[] = [];
-const MAX_UNDO_STACK = 20;
-
-export function pushDeletedCell(cell: NotebookCell, index: number): void {
-  deletedCellsStack.push({ cell, index, timestamp: Date.now() });
-  if (deletedCellsStack.length > MAX_UNDO_STACK) {
-    deletedCellsStack.shift();
-  }
-}
-
-export function popDeletedCell(): DeletedCellEntry | null {
-  return deletedCellsStack.pop() || null;
-}
-
-export function hasDeletedCells(): boolean {
-  return deletedCellsStack.length > 0;
-}
-
-// Autosave debounce timer
-let autosaveTimer: number | null = null;
-const AUTOSAVE_DELAY = 2000; // 2 seconds
 
 export function markNotebookDirty(): void {
   notebookDirty.set(true);
-  scheduleAutosave();
 }
 
+// Mark the notebook as matching its origin (just saved to disk, or just loaded
+// from one). It does not touch the library autosave: the two are independent,
+// and cancelling one here used to mean a notebook loaded from a file never
+// reached the library at all.
 export function markNotebookClean(): void {
   notebookDirty.set(false);
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-    autosaveTimer = null;
-  }
-}
-
-// Schedule autosave with debouncing
-function scheduleAutosave(): void {
-  if (autosaveTimer) {
-    clearTimeout(autosaveTimer);
-  }
-
-  autosaveTimer = window.setTimeout(() => {
-    // Save to localStorage for web persistence
-    const notebook = get(currentNotebook);
-    if (notebook) {
-      saveToLocalStorage(notebook);
-    }
-    // Dispatch autosave event that the App component can listen to
-    window.dispatchEvent(new CustomEvent('autosave-notebook'));
-    autosaveTimer = null;
-  }, AUTOSAVE_DELAY);
 }
 
 // Add file to recent files list
@@ -224,20 +198,17 @@ export function addToRecentFiles(path: string, name: string): void {
   });
 }
 
-// Create a new notebook
+// Create a new notebook. A pure factory: the session it will live in does not
+// exist yet, so there is no counter, staleness or dirty flag here to reset.
 export function createNewNotebook(): Notebook {
   const now = Date.now();
-  resetExecutionCounter();
-  resetStaleTracking();
-  const notebook = {
-    id: `notebook-${now}`,
+  return {
+    id: `notebook-${now}-${Math.random().toString(36).slice(2, 8)}`,
     name: 'Untitled Notebook',
     cells: [createNewCell()],
     createdAt: now,
     updatedAt: now
   };
-  markNotebookClean();
-  return notebook;
 }
 
 // Create a new cell

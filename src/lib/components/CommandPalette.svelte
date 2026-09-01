@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { formatDate } from '../utils/format';
+  import { libraryEntries, originLabel } from '../utils/notebookLibrary';
 
   interface Props {
     visible?: boolean;
@@ -7,6 +8,9 @@
   }
 
   let { visible = $bindable(false), oncommand }: Props = $props();
+
+  /** Command id prefix for "open this notebook from the library". */
+  const OPEN_PREFIX = 'open-library:';
 
   interface Command {
     id: string;
@@ -37,6 +41,13 @@
       shortcut: 'Ctrl+O',
       icon: 'folder-open',
       action: () => oncommand?.({ id: 'open-notebook' })
+    },
+    {
+      id: 'close-notebook',
+      name: 'Close Notebook',
+      description: 'Close this tab. The notebook stays in the library.',
+      icon: 'x-circle',
+      action: () => oncommand?.({ id: 'close-notebook' })
     },
     {
       id: 'save-notebook',
@@ -115,12 +126,12 @@
       action: () => oncommand?.({ id: 'open-console' })
     },
     {
-      id: 'open-data',
-      name: 'Open Data Panel',
-      description: 'Drag-and-drop CSV, TSV or JSON to use in cells',
+      id: 'open-storage',
+      name: 'Open Storage Panel',
+      description: 'Notebooks and datasets kept in this browser',
       shortcut: 'Ctrl+Shift+D',
       icon: 'database',
-      action: () => oncommand?.({ id: 'open-data' })
+      action: () => oncommand?.({ id: 'open-storage' })
     },
     {
       id: 'clear-outputs',
@@ -139,12 +150,33 @@
     }
   ];
 
+  // The library, as commands. This is how you open another notebook day to day
+  // — type its name here — which is what leaves the Storage panel free to be
+  // housekeeping rather than navigation.
+  let notebookCommands = $derived(
+    $libraryEntries.map((entry): Command => ({
+      id: `${OPEN_PREFIX}${entry.id}`,
+      name: entry.name,
+      description: `Notebook · ${originLabel(entry.origin)} · ${formatDate(entry.lastOpenedAt)}`,
+      icon: 'book',
+      action: () => oncommand?.({ id: `${OPEN_PREFIX}${entry.id}` }),
+    }))
+  );
+
+  // Notebooks come after the fixed commands: with an empty query the palette
+  // should still read as a command list, and a typed notebook name matches
+  // almost nothing above it anyway.
   let filteredCommands = $derived(
-    commands.filter(cmd =>
+    [...commands, ...notebookCommands].filter(cmd =>
       cmd.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       cmd.description.toLowerCase().includes(searchQuery.toLowerCase())
     )
   );
+
+  // Keep the highlight on a row that still exists when the query narrows.
+  $effect(() => {
+    if (selectedIndex >= filteredCommands.length) selectedIndex = 0;
+  });
 
   // Focus input when palette opens
   $effect(() => {
@@ -211,6 +243,7 @@
     'terminal': 'M4 17l6-6-6-6M12 19h8',
     'cpu': 'M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2M6 6h12v12H6zM9 9h6v6H9z',
     'arrows-up-down': 'M7 4v16M7 4L4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3',
+    'book': 'M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z',
     'database': 'M21 5c0 1.66-4.03 3-9 3S3 6.66 3 5s4.03-3 9-3 9 1.34 9 3zM3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3'
   };
 </script>

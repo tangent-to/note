@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
-  import { currentNotebook, selectedCellId, markNotebookDirty, getNextExecutionOrder, resetExecutionCounter, createNewNotebook, markNotebookClean, runProgress } from '../stores/notebook';
+  import { currentNotebook, selectedCellId, markNotebookDirty } from '../stores/notebook';
   import {
     updateCellContent,
     addCellAfter,
@@ -15,8 +15,16 @@
     reactiveMode,
     kernelMode
   } from '../stores/notebook';
-  import { mainExecutor } from '../utils/mainExecutor';
-  import { kernel } from '../utils/kernelClient';
+  import { executorFor } from '../utils/mainExecutor';
+  import { kernelFor } from '../utils/kernelClient';
+  import {
+    activeSessionId,
+    current as currentSession,
+    nextExecutionOrderIn,
+    recomputeStaleIn,
+    recordCellRunIn,
+    type NotebookSession,
+  } from '../stores/sessions';
   import { getDownstreamCells, getDependentsOfName, executionOrder } from '../utils/dependencyGraph';
   import { isEmptyOutput } from '../utils/cellOutput';
   import type { Notebook, NotebookCell } from '../types/notebook';
@@ -38,17 +46,25 @@
     if (name) runDependentsOfName(name);
   };
 
-  onMount(async () => {
+  onMount(() => {
     window.addEventListener('run-all-cells', handleRunAllEvent);
     window.addEventListener('run-stale-cells', handleRunStaleEvent);
     window.addEventListener('tangent-input-change', handleInputChangeEvent);
-    if (get(kernelMode) === 'worker') {
-      // Worker kernel: preload common libraries in the background.
-      void kernel.setup();
-    } else {
-      await mainExecutor.setupCommonLibraries();
-    }
   });
+
+  // Each notebook has its own kernel, so each needs its own preload of the
+  // common libraries. Doing it when a notebook comes on screen rather than
+  // when it is opened is what keeps a restored tab you never look at from
+  // spawning a worker: the client only starts one on its first request.
+  const warmed = new Set<string>();
+  $: warmKernel($activeSessionId);
+
+  function warmKernel(id: string | null): void {
+    if (!id || warmed.has(id)) return;
+    warmed.add(id);
+    if (get(kernelMode) === 'worker') void kernelFor(id).setup();
+    else void executorFor(id).setupCommonLibraries();
+  }
 
   onDestroy(() => {
     window.removeEventListener('run-all-cells', handleRunAllEvent);
@@ -129,11 +145,21 @@
     scheduleStaleRecompute();
   }
 
-  async function handleRunCell({ cellId }: { cellId: string }) {
-    let notebook: Notebook | null = null;
-    const unsubscribe = currentNotebook.subscribe(n => notebook = n);
-    unsubscribe();
-
+  /**
+   * Run one cell.
+   *
+   * `session` pins the run to the notebook it started in. Without it, switching
+   * tabs mid-run would file the outputs — and the execution counter, and the
+   * staleness — under whichever notebook the reader had moved to, because the
+   * stores this component reads always mean "the active notebook". A long run
+   * is precisely when someone goes to look at something else.
+   */
+  async function handleRunCell(
+    { cellId }: { cellId: string },
+    session: NotebookSession | null = currentSession()
+  ) {
+    if (!session) return;
+    const notebook = get(session.notebook);
     if (!notebook) return;
 
     const cell = notebook.cells.find((c: NotebookCell) => c.id === cellId);
@@ -145,9 +171,11 @@
     // run-all, stale runs, reactive cascades, input-driven reruns).
     if (cell.skipped) return;
 
-    const execOrder = getNextExecutionOrder();
+    const execOrder = nextExecutionOrderIn(session);
+    const kernel = kernelFor(session.id);
+    const executor = executorFor(session.id);
 
-    currentNotebook.update(nb => {
+    session.notebook.update(nb => {
       if (!nb) return nb;
       return {
         ...nb,
@@ -170,16 +198,19 @@
         if (outputWidth) await kernel.setVariable('width', outputWidth, { builtin: true });
         output = await kernel.execute(cell.content);
       } else {
-        await mainExecutor.setupCommonLibraries();
-        if (outputWidth) mainExecutor.setBuiltin('width', outputWidth);
-        output = await mainExecutor.executeCode(cell.content);
+        // Claim window.__tangent_scope for this notebook: the reader may have
+        // switched tabs since the run started, pointing it at another one.
+        executor.activate();
+        await executor.setupCommonLibraries();
+        if (outputWidth) executor.setBuiltin('width', outputWidth);
+        output = await executor.executeCode(cell.content);
       }
 
       // A cell that displays nothing (a declaration, a loop, an assignment)
       // stores no output, so it keeps no output frame and exports none either.
       const storedOutput = isEmptyOutput(output) ? undefined : output;
 
-      currentNotebook.update(nb => {
+      session.notebook.update(nb => {
         if (!nb) return nb;
         return {
           ...nb,
@@ -191,10 +222,10 @@
         };
       });
 
-      recordCellRun(cellId, cell.content);
-      recomputeStaleCells(getNotebookSnapshot());
+      recordCellRunIn(session, cellId, cell.content);
+      recomputeStaleIn(session);
     } catch (error: any) {
-      currentNotebook.update(nb => {
+      session.notebook.update(nb => {
         if (!nb) return nb;
         return {
           ...nb,
@@ -214,19 +245,19 @@
         };
       });
 
-      recordCellRun(cellId, cell.content);
-      recomputeStaleCells(getNotebookSnapshot());
+      recordCellRunIn(session, cellId, cell.content);
+      recomputeStaleIn(session);
     }
 
     // Reactive mode: re-run everything that depends on this cell.
     if ($reactiveMode && !suppressCascade) {
-      await cascadeFrom(cellId);
+      await cascadeFrom(cellId, session);
     }
   }
 
   // Run the transitive downstream dependents of `originId` in document order.
-  async function cascadeFrom(originId: string) {
-    const notebook = getNotebookSnapshot();
+  async function cascadeFrom(originId: string, session: NotebookSession) {
+    const notebook = get(session.notebook);
     if (!notebook) return;
     const downstream = getDownstreamCells(notebook.cells, originId);
     if (downstream.size === 0) return;
@@ -235,7 +266,7 @@
     try {
       // Dependency order, so a dependent that feeds another dependent runs first.
       for (const cellId of executionOrder(notebook.cells, downstream)) {
-        await handleRunCell({ cellId });
+        await handleRunCell({ cellId }, session);
         await yieldToUI();
       }
     } finally {
@@ -244,10 +275,12 @@
   }
 
   async function handleRunStale() {
-    const notebook = getNotebookSnapshot();
-    if (!notebook || isRunningAll) return;
+    const session = currentSession();
+    if (!session || isRunningAll) return;
+    const notebook = get(session.notebook);
+    if (!notebook) return;
 
-    const stale = get(staleCells);
+    const stale = get(session.stale);
     if (stale.size === 0) return;
 
     isRunningAll = true;
@@ -257,27 +290,26 @@
     const order = executionOrder(notebook.cells, stale);
     const total = order.length;
     let done = 0;
-    runProgress.set({ done, total });
+    session.runProgress.set({ done, total });
     for (const cellId of order) {
-      await handleRunCell({ cellId });
+      await handleRunCell({ cellId }, session);
       await yieldToUI();
-      runProgress.set({ done: ++done, total });
+      session.runProgress.set({ done: ++done, total });
     }
     suppressCascade = false;
     isRunningAll = false;
-    setTimeout(() => runProgress.set(null), 500);
+    setTimeout(() => session.runProgress.set(null), 500);
   }
 
   async function handleRunAll() {
-    let notebook: Notebook | null = null;
-    const unsubscribe = currentNotebook.subscribe(n => notebook = n);
-    unsubscribe();
-
-    if (!notebook || isRunningAll) return;
+    const session = currentSession();
+    if (!session || isRunningAll) return;
+    const notebook = get(session.notebook);
+    if (!notebook) return;
 
     isRunningAll = true;
     suppressCascade = true;
-    resetExecutionCounter();
+    session.execCounter = 0;
 
     // Code cells run in dependency order — a cell that reads `x` runs after the
     // cell defining `x`, even when it appears above it — with document order as
@@ -289,23 +321,23 @@
     const markdownCount = notebook.cells.filter(c => c.type === 'markdown').length;
     const total = markdownCount + order.length;
     let done = 0;
-    runProgress.set({ done, total });
+    session.runProgress.set({ done, total });
     for (const cell of notebook.cells) {
       if (cell.type !== 'markdown') continue;
       window.dispatchEvent(new CustomEvent('render-markdown', { detail: { cellId: cell.id } }));
-      runProgress.set({ done: ++done, total });
+      session.runProgress.set({ done: ++done, total });
     }
     for (const cellId of order) {
-      await handleRunCell({ cellId });
+      await handleRunCell({ cellId }, session);
       await yieldToUI();
-      runProgress.set({ done: ++done, total });
+      session.runProgress.set({ done: ++done, total });
     }
 
     suppressCascade = false;
     isRunningAll = false;
-    recomputeStaleCells(getNotebookSnapshot());
+    recomputeStaleIn(session);
     // Let the filled bar linger a moment, then fade out.
-    setTimeout(() => runProgress.set(null), 500);
+    setTimeout(() => session.runProgress.set(null), 500);
   }
 
   async function handleRunAndAdvance({ cellId }: { cellId: string }) {
@@ -326,12 +358,11 @@
     selectedCellId.set(cellId);
   }
 
+  // The empty state shows when no notebook is open — which means there is no
+  // session to write into either, so this asks the app to open one rather than
+  // setting a store that would drop the write on the floor.
   function startNewNotebook() {
-    resetExecutionCounter();
-    const nb = createNewNotebook();
-    currentNotebook.set(nb);
-    markNotebookClean();
-    selectedCellId.set(nb.cells[0]?.id ?? null);
+    window.dispatchEvent(new CustomEvent('request-new-notebook'));
   }
 
   const UNTITLED = 'Untitled Notebook';
@@ -355,6 +386,30 @@
         updatedAt: Date.now()
       };
     });
+  }
+
+  let titleEl: HTMLElement | null = null;
+
+  /**
+   * Fill the title heading by hand.
+   *
+   * It is contenteditable, so the browser — and the blur handler below, which
+   * normalises whitespace — replace its child nodes freely. A `{name}` in the
+   * template would hand Svelte a text node that the first rename detaches;
+   * every later update then wrote into that orphan, and the heading froze on
+   * whichever title was typed. Opening another notebook left the previous
+   * one's name above it, over the right cells.
+   *
+   * `titleEl` is an argument rather than a closed-over variable so that binding
+   * the element re-runs this, not only a change of name.
+   */
+  $: setTitleText(titleEl, $currentNotebook?.name ?? '');
+
+  function setTitleText(el: HTMLElement | null, name: string): void {
+    // Never fight the caret: until blur commits the new name, the store still
+    // holds the old one, and rewriting here would undo what is being typed.
+    if (!el || el === document.activeElement) return;
+    if (el.textContent !== name) el.textContent = name;
   }
 
   function handleTitleBlur(event: FocusEvent) {
@@ -611,7 +666,9 @@
 <div class="notebook-container">
   {#if $currentNotebook}
     <div class="notebook-header">
+      <!-- No `{name}` in here on purpose: see the effect that fills it. -->
       <h1
+        bind:this={titleEl}
         class="notebook-title"
         contenteditable="true"
         spellcheck="false"
@@ -619,9 +676,7 @@
         data-testid="notebook-title"
         onkeydown={handleTitleKeydown}
         onblur={handleTitleBlur}
-      >
-        {$currentNotebook.name}
-      </h1>
+      ></h1>
     </div>
 
     <div class="cells-container">
