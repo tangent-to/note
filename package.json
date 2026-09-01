@@ -21,6 +21,7 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tsconfig/svelte": "^3.0.0",
+    "fake-indexeddb": "^6.2.5",
     "gh-pages": "^6.3.0",
     "svelte": "^5.54.0",
     "svelte-check": "^4.4.5",
