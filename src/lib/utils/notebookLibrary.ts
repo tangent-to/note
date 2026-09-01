@@ -339,27 +339,55 @@ export async function deleteNotebook(id: string): Promise<void> {
 
 // ─── The active notebook, across reloads ─────────────────────────────────────
 
-const ACTIVE_KEY = 'tangent-active-notebook';
+const SESSION_KEY = 'tangent-open-notebooks';
+/** The pre-tabs pointer to a single notebook. Read once, to migrate. */
+const LEGACY_ACTIVE_KEY = 'tangent-active-notebook';
+
+export interface OpenSessions {
+  /** Library keys of the open tabs, in tab order. */
+  open: string[];
+  /** Which of them is on screen. */
+  active: string | null;
+}
 
 /**
- * Which notebook to reopen on load. Kept in localStorage, not in the library:
- * it has to be readable before IndexedDB has opened, and it is one short string.
+ * Which notebooks are open, and which is on screen.
+ *
+ * In localStorage rather than the library: it has to be readable before
+ * IndexedDB has opened, and it is a handful of short strings. It records
+ * *identity only* — reopening a tab still reads the notebook itself from the
+ * library, so a change made in another tab is never overwritten by a stale
+ * copy carried in the session index.
  */
-export function rememberActiveNotebook(id: string | null): void {
+export function rememberOpenSessions(open: string[], active: string | null): void {
   try {
-    if (id) localStorage.setItem(ACTIVE_KEY, id);
-    else localStorage.removeItem(ACTIVE_KEY);
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ open, active } satisfies OpenSessions));
   } catch {
-    // Non-fatal: the session just opens on whatever the library lists first.
+    // Non-fatal: the next load just opens whatever the library lists first.
   }
 }
 
-export function lastActiveNotebookId(): string | null {
+export function lastOpenSessions(): OpenSessions {
   try {
-    return localStorage.getItem(ACTIVE_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.open)) {
+        return {
+          open: parsed.open.filter((id: unknown) => typeof id === 'string'),
+          active: typeof parsed.active === 'string' ? parsed.active : null,
+        };
+      }
+    }
+    // Before tabs there was one pointer to one notebook. Carry it over so an
+    // upgrade reopens what the reader had, rather than dropping them on the
+    // sample notebook.
+    const legacy = localStorage.getItem(LEGACY_ACTIVE_KEY);
+    if (legacy) return { open: [legacy], active: legacy };
   } catch {
-    return null;
+    // fall through
   }
+  return { open: [], active: null };
 }
 
 // ─── Migration from the single-slot autosave ─────────────────────────────────

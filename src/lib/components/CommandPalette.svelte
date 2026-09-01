@@ -43,6 +43,13 @@
       action: () => oncommand?.({ id: 'open-notebook' })
     },
     {
+      id: 'close-notebook',
+      name: 'Close Notebook',
+      description: 'Close this tab. The notebook stays in the library.',
+      icon: 'x-circle',
+      action: () => oncommand?.({ id: 'close-notebook' })
+    },
+    {
       id: 'save-notebook',
       name: 'Save Notebook',
       description: 'Save the current notebook',

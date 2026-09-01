@@ -211,6 +211,22 @@ export class JavaScriptExecutor {
     this.setupExecutionEnvironment();
   }
 
+  /**
+   * Point the page's shared-scope globals at THIS executor.
+   *
+   * With one executor per notebook there are several scopes on the main
+   * thread, but `with(window.__tangent_scope)` and the `nb` alias can only
+   * name one. The active notebook's executor claims them before it runs
+   * anything. This is safe across `await`: the `with` block captures the scope
+   * object when it is entered, so a cell that suspends keeps evaluating
+   * against its own notebook's scope even if another has claimed the global
+   * since.
+   */
+  activate(): void {
+    (window as any).__tangent_scope = this.scope;
+    (window as any).nb = this.scope;
+  }
+
   private setupExecutionEnvironment() {
     (window as any).__tangent_loadedModules =
       (window as any).__tangent_loadedModules || {};
@@ -394,7 +410,7 @@ export class JavaScriptExecutor {
     for (const key of Object.keys(this.scope)) {
       delete this.scope[key];
     }
-    (window as any).__tangent_scope = this.scope;
+    this.activate();
   }
 
   /** Values the app seeded into the scope (e.g. the `width` builtin). */

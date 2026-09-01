@@ -104,6 +104,10 @@ That splits "saved" into two things that used to be one:
 - **Saved to the library** happens on its own, a couple of seconds after you stop typing. It is not something you do.
 - **Saved to its origin** — the file a `note serve` companion owns, or an exported `.js` — is what `Ctrl/Cmd + S` does, and what the "modified" mark in the header means.
 
+Several notebooks can be open at once. They appear as tabs above the notebook — the strip is hidden while only one is open — and each tab shows what its notebook is doing even when you are not looking at it: a dot while it differs from its file, a spinner while its own cells are running. Closing a tab does not delete anything; the notebook stays in the library. The set of open tabs is restored when you come back.
+
+Each notebook has its **own kernel**, and so its own variables. Opening a second notebook cannot inherit the first one's scope, stopping a runaway cell in one leaves the others untouched, and a run keeps writing into the notebook it started in even if you switch tabs while it works. Kernels start on first use, so a restored tab you never open costs nothing.
+
 Open another notebook with `Ctrl/Cmd + K` and type its name: the library is listed in the command palette alongside the commands. The Storage tab is for housekeeping instead — what is stored, how big it is, and deleting what you no longer want. It lists notebooks and cached datasets side by side, since both are just bytes this browser is holding for you, plus a way to clear the chat history, the AI key and the preferences kept in `localStorage`.
 
 Notebook ids travel in the `.js` file's frontmatter, so re-importing a file you already have reopens its entry rather than making a second copy. A notebook opened from a link gets an entry of its own, keyed by the link, so clicking a `/gh/…` URL can never overwrite the copy you have been editing — and clicking the same link twice lands back on the same entry rather than piling up duplicates.

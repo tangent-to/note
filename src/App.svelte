@@ -5,6 +5,7 @@
   import Notebook from './lib/components/Notebook.svelte';
   import RightSidebar from './lib/components/RightSidebar.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
+  import TabStrip from './lib/components/TabStrip.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
     currentNotebook,
@@ -26,22 +27,28 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
-  import { mainExecutor } from './lib/utils/mainExecutor';
-  import { clearConsole } from './lib/stores/console';
+  import {
+    activeSessionId,
+    closeSession,
+    openSession,
+    sessionById,
+    sessions,
+    setActive,
+    startPersistingSessions,
+  } from './lib/stores/sessions';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, exportNotebookSource, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
   import {
     deleteNotebook,
     getNotebookRecord,
-    lastActiveNotebookId,
+    lastOpenSessions,
     libraryEntries,
     libraryPersistent,
     libraryId,
     migrateLegacyAutosave,
     putNotebook,
     refreshLibrary,
-    rememberActiveNotebook,
     type LibraryEntry,
     type NotebookOrigin,
   } from './lib/utils/notebookLibrary';
@@ -178,9 +185,14 @@
       },
     }).then(async (connected) => {
       await libraryReady;
-      if (connected) return;
-      if (importRequest) loadNotebookFromUrl(importRequest);
-      else restoreOrLoadSample();
+      // A companion already pushed its file through applySyncedContent.
+      if (!connected) {
+        if (importRequest) await loadNotebookFromUrl(importRequest);
+        else await restoreSessions();
+      }
+      // Only now may the session index be written: until this point it is
+      // still the record of what to restore.
+      startPersistingSessions();
     });
 
     loadNotebookFiles();
@@ -191,7 +203,10 @@
     // session whose library had to fall back to memory: there, closing really
     // does lose it.
     const beforeUnload = (e: BeforeUnloadEvent) => {
-      const atRisk = !get(libraryPersistent) || (get(notebookDirty) && isSyncConnected());
+      // Across every open tab, not just the one on screen.
+      const anyUnwritten =
+        isSyncConnected() && get(sessions).some((session) => get(session.dirty));
+      const atRisk = !get(libraryPersistent) || anyUnwritten;
       if (atRisk) {
         e.preventDefault();
         e.returnValue = '';
@@ -201,6 +216,8 @@
 
     const onImportRequest = () => handleImportNotebook();
     window.addEventListener('request-import-notebook', onImportRequest);
+    const onNewRequest = () => handleNewNotebook();
+    window.addEventListener('request-new-notebook', onNewRequest);
 
     // Any component can surface a toast instead of a blocking alert().
     const onToast = (e: Event) => {
@@ -212,82 +229,77 @@
     return () => {
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('request-import-notebook', onImportRequest);
+      window.removeEventListener('request-new-notebook', onNewRequest);
       window.removeEventListener('tangent-toast', onToast);
       clearTimeout(toastTimer);
     };
   });
 
   /**
-   * Hand the kernel back empty before another notebook moves in.
+   * Adopt `notebook` as a tab, or focus the tab already holding it.
    *
-   * One kernel serves whichever notebook is open, so without this the incoming
-   * one inherited the outgoing one's variables: the Variables panel listed
-   * them, `nb` in the console listed them, and a cell referencing a name it
-   * never defines found the *other* notebook's value instead of failing.
-   * Opening a notebook is a kernel restart, as it is in Jupyter — and the
-   * console transcript goes with it, since it describes a scope that no longer
-   * exists.
+   * Every path that opens a notebook — boot, restore, companion, URL link,
+   * file import, new, the palette — goes through here, so "opened" means one
+   * thing: a session exists for it, it is on screen, and the library has it
+   * under its origin's key.
    *
-   * Skipped when nothing is open yet (boot), and when the same library entry is
-   * simply being reloaded: neither has a scope worth clearing, and the reset
-   * would spawn the worker for a notebook nobody has run.
+   * There is no kernel to clear on the way in any more. Each notebook owns its
+   * own worker and its own scope, so what used to be a mandatory reset — and,
+   * before that, a silent leak of one notebook's variables into the next — is
+   * simply not a question that arises.
    */
-  async function leaveCurrentNotebook(next: NotebookDoc, nextOrigin: NotebookOrigin) {
-    const previous = get(currentNotebook);
-    if (!previous) return;
-    if (libraryId(previous.id, get(currentOrigin)) === libraryId(next.id, nextOrigin)) return;
-
-    try {
-      if (get(kernelMode) === 'worker') await kernel.reset();
-      else mainExecutor.resetScope();
-    } catch (error) {
-      console.warn('Could not clear the kernel scope for the incoming notebook:', error);
-    }
-    clearConsole();
+  async function openNotebook(
+    notebook: NotebookDoc,
+    origin: NotebookOrigin,
+    opts: { replaceContent?: boolean; focus?: boolean } = {}
+  ) {
+    const session = openSession(notebook, origin, { replaceContent: opts.replaceContent });
+    if (opts.focus === false) setActive(get(activeSessionId));
+    await libraryReady;
+    await putNotebook(get(session.notebook), get(session.origin), { opened: true });
   }
 
   /**
-   * Adopt `notebook` as the open one. Every path that opens a notebook — boot,
-   * restore, companion, URL link, file import, new, the library picker — goes
-   * through here, so "opened" means one thing: published to the stores, its
-   * origin recorded, and present in the library under that origin's key.
+   * Reopen the tabs this browser had, in order. Falls back to the newest entry
+   * in the library, then to the sample: an empty screen is never the answer to
+   * "the pointer named something that has since been deleted".
    */
-  async function openNotebook(notebook: NotebookDoc, origin: NotebookOrigin) {
-    await leaveCurrentNotebook(notebook, origin);
-    resetExecutionCounter();
-    resetStaleTracking();
-    currentOrigin.set(origin);
-    currentNotebook.set(notebook);
-    markNotebookClean();
+  async function restoreSessions() {
     await libraryReady;
-    const id = await putNotebook(notebook, origin, { opened: true });
-    rememberActiveNotebook(id);
-  }
+    const { open, active } = lastOpenSessions();
 
-  /** Reopen the notebook this browser was last on, else the newest, else the sample. */
-  async function restoreOrLoadSample() {
-    await libraryReady;
-
-    const remembered = lastActiveNotebookId();
-    const record = remembered ? await getNotebookRecord(remembered) : undefined;
-    if (record) {
+    let restored = 0;
+    for (const id of open) {
+      const record = await getNotebookRecord(id);
+      if (!record) continue;
       await openNotebook(record.notebook, record.origin);
-      console.info('Notebook restored from the library');
+      restored++;
+    }
+
+    if (restored > 0) {
+      if (active && sessionById(active)) setActive(active);
+      console.info(`Restored ${restored} notebook${restored === 1 ? '' : 's'} from the library`);
       return;
     }
 
-    // No pointer (or it names an entry since deleted): fall back to whatever
-    // the library lists first rather than dropping the user on the sample.
     const [newest] = get(libraryEntries);
-    if (newest) {
-      const fallback = await getNotebookRecord(newest.id);
-      if (fallback) {
-        await openNotebook(fallback.notebook, fallback.origin);
-        return;
-      }
+    const fallback = newest ? await getNotebookRecord(newest.id) : undefined;
+    if (fallback) {
+      await openNotebook(fallback.notebook, fallback.origin);
+      return;
     }
 
-    loadSampleNotebook();
+    await loadSampleNotebook();
+  }
+
+  /**
+   * Close a tab. The notebook stays in the library — closing is not deleting —
+   * but its kernel does not: the worker is terminated rather than left running
+   * for a notebook nobody can see.
+   */
+  function closeTab(id: string) {
+    closeSession(id);
+    if (get(sessions).length === 0) void loadSampleNotebook();
   }
 
   /** Open a library entry by key, from the picker or the Storage panel. */
@@ -331,8 +343,10 @@
    * you are working in — but it is no longer the notebook to restore.
    */
   async function removeFromLibrary(entry: LibraryEntry) {
+    // Its tab, if open, goes too: a tab onto a notebook that no longer exists
+    // would autosave it straight back into the library on the next keystroke.
+    if (sessionById(entry.id)) closeTab(entry.id);
     await deleteNotebook(entry.id);
-    if (lastActiveNotebookId() === entry.id) rememberActiveNotebook(null);
     showToast(`Removed “${entry.name}” from the library`, 'info');
   }
 
@@ -350,7 +364,7 @@
     // Keep something on screen while the link is fetched — and something to
     // fall back to if it fails.
     const hadNotebook = get(currentNotebook) !== null;
-    if (!hadNotebook) await restoreOrLoadSample();
+    if (!hadNotebook) await restoreSessions();
 
     try {
       const notebook = await fetchNotebookFromUrl(request);
@@ -428,7 +442,11 @@
     const path = get(syncFile);
     const name = path?.split('/').pop() ?? 'notebook.js';
     const notebook = parseJSNotebook(content, name);
-    void openNotebook(notebook, path ? { kind: 'disk', path } : { kind: 'local' });
+    // The companion owns this file, so an edit made on disk replaces the tab's
+    // content rather than opening a second tab onto the same path.
+    void openNotebook(notebook, path ? { kind: 'disk', path } : { kind: 'local' }, {
+      replaceContent: true,
+    });
     if (reason === 'disk-change') showToast('Reloaded from disk', 'info');
   }
 
@@ -482,6 +500,11 @@
       case 'open-notebook':
         handleImportNotebook();
         break;
+      case 'close-notebook': {
+        const id = get(activeSessionId);
+        if (id) closeTab(id);
+        break;
+      }
       case 'save-notebook':
         performSaveShortcut();
         break;
@@ -757,6 +780,10 @@
 
   <div class="content-wrapper">
     <main class="main-content">
+      <TabStrip
+        onclose={({ id }) => closeTab(id)}
+        onnew={handleNewNotebook}
+      />
       <Notebook />
     </main>
 
