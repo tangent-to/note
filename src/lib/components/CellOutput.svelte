@@ -3,10 +3,27 @@
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
   import TableOutput from './TableOutput.svelte';
-  import type { TableSpec } from '../utils/tableData';
+  import { reviveRows, type TableSpec } from '../utils/tableData';
   import '../styles/observable-inspector.css';
 
-  let { output }: { output: CellOutput } = $props();
+  let { output, inspect = false }: { output: CellOutput; inspect?: boolean } = $props();
+
+  /**
+   * A tabular output the cell asked to see as a structure (#inspect).
+   *
+   * Decided here rather than when the cell ran, so turning it on and off never
+   * re-executes anything: the spec already carries the rows, and the inspector
+   * gets the same ones the table would have shown.
+   */
+  const asStructure = $derived.by(() => {
+    if (!inspect || output.type !== 'table') return null;
+    try {
+      const spec = JSON.parse(String(output.content)) as TableSpec;
+      return { rows: reviveRows(spec), total: spec.totalRows };
+    } catch {
+      return null;
+    }
+  });
 
   let renderError: string | null = $state(null);
   let copyLabel = $state('Copy');
@@ -183,7 +200,17 @@
       {#if output.logs && output.logs.length > 0}
         <pre class="log-output">{#each output.logs as log}<span class="log-line log-{log.level}">{log.text}</span>{/each}</pre>
       {/if}
-      {#if output.type === 'table'}
+      {#if asStructure}
+        <div class="inspect-output" use:renderInspector={asStructure.rows}></div>
+        {#if asStructure.total > asStructure.rows.length}
+          <!-- The window is the same one the table would have shown; saying so
+               keeps the structure from looking like the whole array. -->
+          <div class="inspect-note">
+            first {asStructure.rows.length.toLocaleString()} of
+            {asStructure.total.toLocaleString()} rows
+          </div>
+        {/if}
+      {:else if output.type === 'table'}
         <TableOutput spec={JSON.parse(String(output.content)) as TableSpec} />
       {:else if output.type === 'dom'}
         <div class="dom-output" use:insertLiveElement={output.content as Element}></div>
@@ -260,6 +287,12 @@
     word-break: break-word;
     max-height: 240px;
     overflow: auto;
+  }
+
+  .inspect-note {
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    color: var(--text-faint);
   }
 
   .log-warn { color: var(--warn-fg); }

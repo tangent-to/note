@@ -9,32 +9,18 @@
    */
   import * as Inputs from '@observablehq/inputs';
   import '@observablehq/inputs/dist/index.css';
-  import type { TableSpec } from '../utils/tableData';
+  import { reviveRows, type TableSpec } from '../utils/tableData';
 
   let { spec }: { spec: TableSpec } = $props();
 
   const shown = $derived(spec.rows.length);
   const truncated = $derived(spec.totalRows > shown);
 
-  /** JSON flattens Dates to ISO strings; revive them so they sort and format. */
-  function revive(rows: Record<string, unknown>[]) {
-    const dateColumns = spec.columns.filter((c) => spec.types[c] === 'date');
-    if (dateColumns.length === 0) return rows;
-    return rows.map((row) => {
-      const out = { ...row };
-      for (const column of dateColumns) {
-        const value = out[column];
-        if (typeof value === 'string') out[column] = new Date(value);
-      }
-      return out;
-    });
-  }
-
   function mount(node: HTMLElement, initial: TableSpec) {
     const render = (current: TableSpec) => {
       node.innerHTML = '';
       node.appendChild(
-        Inputs.table(revive(current.rows), {
+        Inputs.table(reviveRows(current), {
           columns: current.columns,
           rows: 12,          // bounds the height; more load as you scroll
           select: false,     // display, not a selection input

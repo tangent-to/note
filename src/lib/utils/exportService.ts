@@ -354,7 +354,7 @@ export class ExportService {
           <div class="cell-output">
             <div class="cell-label">Out [${index + 1}]:</div>
             <div class="output-content ${output.type}">
-              ${this.renderOutputHTML(output)}
+              ${this.renderOutputHTML(output, cell.outputView)}
             </div>
             ${
           options.includeTimestamps
@@ -377,7 +377,7 @@ export class ExportService {
     return `<div class="${cellClass}">${cellContent}</div>`;
   }
 
-  private renderOutputHTML(output: any): string {
+  private renderOutputHTML(output: any, outputView?: "inspector"): string {
     // What the cell printed travels beside the value now rather than being
     // glued to the front of it, so the export has to put it back.
     const logs = Array.isArray(output.logs) && output.logs.length > 0
@@ -391,10 +391,22 @@ export class ExportService {
           .join("\n")
       }</pre>`
       : "";
-    return logs + this.renderOutputBody(output);
+    return logs + this.renderOutputBody(output, outputView);
   }
 
-  private renderOutputBody(output: any): string {
+  private renderOutputBody(output: any, outputView?: "inspector"): string {
+    // A cell tagged #inspect asked to see its rows as a structure; an export
+    // that showed a table anyway would contradict the notebook it came from.
+    if (outputView === "inspector" && output.type === "table") {
+      try {
+        const spec = JSON.parse(String(output.content));
+        return `<pre class="json-output"><code class="language-json">${
+          this.escapeHTML(JSON.stringify(spec.rows, null, 2))
+        }</code></pre>`;
+      } catch {
+        // fall through to the table
+      }
+    }
     switch (output.type) {
       case "html":
         return output.content;

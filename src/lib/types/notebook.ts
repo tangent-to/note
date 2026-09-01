@@ -14,6 +14,17 @@ export interface NotebookCell {
   /** Output breakout layer: the output escapes the notebook column and
    *  renders wide (~1200px) or full-width (tags: #wide, #full). */
   outputWidth?: "wide" | "full";
+  /**
+   * Force this cell's output to be shown as a structure rather than a frame
+   * (tag: #inspect).
+   *
+   * An array of records renders as a sortable table, which is what you want for
+   * rows and exactly not what you want when the question is "what shape is this
+   * thing". A display choice, so it lives on the cell like the width tags do
+   * rather than in the code — and it is applied when the output is rendered,
+   * not when it runs, so toggling it never re-executes anything.
+   */
+  outputView?: "inspector";
 }
 
 export interface CellOutput {

@@ -5,7 +5,7 @@ import type { Notebook, NotebookCell } from "../types/notebook";
  * `// %% [javascript] #collapse-cell #skip`. Unknown tags are ignored so
  * the format stays forward-compatible.
  */
-export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly" | "outputWidth">): string {
+export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly" | "outputWidth" | "outputView">): string {
   const tags = [
     cell.collapsed ? "#collapse-cell" : null,
     cell.outputCollapsed ? "#collapse-output" : null,
@@ -13,6 +13,7 @@ export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skippe
     cell.readOnly ? "#readonly" : null,
     cell.outputWidth === "wide" ? "#wide" : null,
     cell.outputWidth === "full" ? "#full" : null,
+    cell.outputView === "inspector" ? "#inspect" : null,
   ].filter(Boolean);
   return tags.length ? ` ${tags.join(" ")}` : "";
 }
@@ -30,6 +31,8 @@ export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
   // Output breakout layer; #full wins if both are present.
   if (tags.has("wide")) cell.outputWidth = "wide";
   if (tags.has("full")) cell.outputWidth = "full";
+  // Show the value as a structure even when it would render as a table.
+  if (tags.has("inspect")) cell.outputView = "inspector";
 }
 
 /**

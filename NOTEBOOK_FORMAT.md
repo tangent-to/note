@@ -121,6 +121,21 @@ output width — charts can fill the layer exactly, with no horizontal
 scrollbars. If both tags are present, `#full` wins. Toggle from the cell
 menu ("Wide output" / "Full-width output").
 
+#### `#inspect` — show a table as a structure
+
+```javascript
+// %% [javascript] #inspect
+rows
+```
+
+An array of records renders as a sortable table, which is what you want for
+rows and exactly what you don't want when the question is what shape the
+thing is. `#inspect` shows the same values through the Observable inspector
+instead, expandable field by field. It is applied when the output is drawn,
+not when the cell runs, so toggling it never re-executes anything. Toggle
+from the cell menu ("Inspect as object"), which offers itself only on a cell
+whose output is a table.
+
 Unknown tags are ignored, so the format stays forward-compatible.
 
 Because tags live inside a line comment after the `// %%` prefix, files

@@ -161,3 +161,23 @@ export function tableSpec(value: any): TableSpec | null {
 
   return { columns, types, rows: windowed, totalRows: Math.max(totalRows, windowed.length) };
 }
+
+/**
+ * Bring a spec's rows back to live values.
+ *
+ * JSON flattens Dates to ISO strings on the way through the kernel; the column
+ * types say which ones to put back, so the table sorts and formats them and the
+ * inspector shows a Date rather than a string that looks like one.
+ */
+export function reviveRows(spec: TableSpec): Record<string, unknown>[] {
+  const dateColumns = spec.columns.filter((c) => spec.types[c] === 'date');
+  if (dateColumns.length === 0) return spec.rows;
+  return spec.rows.map((row) => {
+    const out = { ...row };
+    for (const column of dateColumns) {
+      const value = out[column];
+      if (typeof value === 'string') out[column] = new Date(value);
+    }
+    return out;
+  });
+}
