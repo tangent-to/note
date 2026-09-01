@@ -4,7 +4,7 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
-  import { syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
+  import { syncFiles } from '../utils/serverSync';
   import {
     libraryEntries,
     libraryPersistent,
@@ -367,21 +367,15 @@
       {/if}
 
       <!-- One list. A notebook is one thing; where it lives is something it
-           has, so that is a line on the row rather than a separate section.
-           Rows with a path are files the companion serves — those are what
-           Ctrl/Cmd+S writes; rows without one exist only in this browser. -->
+           has, so that is a line on the row rather than a separate section:
+           a path, or "in this browser". The row says it; nothing has to
+           explain it. -->
       <div class="storage-section">
         <div class="storage-section-head">
           <h4 class="section-title">Notebooks ({rows.length})</h4>
           <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
         </div>
 
-        {#if $syncStatus === 'connected'}
-          <p class="storage-note">
-            <code>note serve</code> is serving <span title={$syncRoot ?? ''}>{$syncRoot?.split('/').pop() ?? ''}</span>.
-            Notebooks with a file there are written in place by Ctrl/Cmd+S.
-          </p>
-        {/if}
 
         {#if rows.length >= FILTER_FROM}
           <input
