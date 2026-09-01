@@ -4,11 +4,30 @@ import { writable } from 'svelte/store';
 // survives the sidebar being closed and reopened, and is persisted to
 // localStorage so it also survives a page reload.
 
+/**
+ * A cell rewrite the assistant offered, kept next to the reply that produced it.
+ *
+ * It stays inert until the reader applies it, and it keeps `before` so the same
+ * button can put the cell back. Living in the persisted history means a proposal
+ * survives closing the panel — the thing you were half-way through deciding
+ * about is still there when you come back.
+ */
+export interface ProposedEdit {
+  cellId: string;
+  /** The cell's number when it was proposed, for the label. Cells renumber. */
+  cellNumber: number;
+  before: string;
+  after: string;
+  applied: boolean;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  /** Present when this reply was a cell rewrite rather than prose. */
+  edit?: ProposedEdit;
 }
 
 const STORAGE_KEY = 'tangent-chat-history';

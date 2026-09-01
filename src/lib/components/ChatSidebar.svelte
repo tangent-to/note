@@ -3,18 +3,23 @@
   import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, isLocalBase, type ChatMessage } from '../utils/aiService';
   import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
-  import { chatMessages, clearChatHistory, type Message } from '../stores/chat';
+  import { buildCellEditPrompt, extractCodeFromMessage, targetCell } from '../utils/cellEdit';
+  import { diffLines, diffStat } from '../utils/lineDiff';
+  import { currentNotebook, selectedCellId } from '../stores/notebook';
+  import { chatMessages, clearChatHistory, type Message, type ProposedEdit } from '../stores/chat';
   import { loadAIContext, saveAIContext, resetAIContext, DEFAULT_AI_CONTEXT } from '../utils/aiContext';
 
   interface Props {
     onclose?: () => void;
     oninsertCode?: (detail: { code: string }) => void;
+    /** Write a cell's content, for applying and reverting a proposed edit. */
+    oneditCell?: (detail: { cellId: string; content: string }) => void;
     /** Rendered inside the right panel's tab shell, which supplies the tab bar
      *  and the close button, so this drops its own heavy header chrome. */
     embedded?: boolean;
   }
 
-  let { onclose, oninsertCode, embedded = false }: Props = $props();
+  let { onclose, oninsertCode, oneditCell, embedded = false }: Props = $props();
 
   // Chat history is held in a persisted module store (src/lib/stores/chat),
   // accessed below as $chatMessages, so it survives closing/reopening the
@@ -34,6 +39,16 @@
   let baseUrl = $state('');
   let model = $state('');
   let rememberKey = $state(false);
+
+  // Edit mode: the next message is a request to rewrite the selected cell,
+  // answered with a proposal rather than prose. The target is always the cell
+  // the reader has selected in the notebook — asking them to pick one twice, in
+  // two places, would be one place too many.
+  let editMode = $state(false);
+  const editTarget = $derived(targetCell($currentNotebook, $selectedCellId));
+  // Nothing selected, nothing to rewrite: the switch has no meaning then, and
+  // leaving it on would silently send an ordinary question.
+  const canEdit = $derived(Boolean(editTarget));
 
   // User-editable reference text appended to the assistant's system prompt.
   let aiContext = $state('');
@@ -119,6 +134,12 @@
 
     setTimeout(scrollToBottom, 0);
 
+    // Pin the target now. The reply takes seconds to arrive and the reader may
+    // well click another cell meanwhile; an edit that landed on whichever cell
+    // happened to be selected on arrival would be the worst kind of bug here.
+    const target = editMode ? editTarget : null;
+    const notebook = $currentNotebook;
+
     try {
       // Send the recent conversation, with the current notebook injected as the
       // system prompt so the assistant can reason about the user's cells.
@@ -126,7 +147,10 @@
         .slice(-10)
         .map(m => ({ role: m.role, content: m.content }));
 
-      const reply = await aiService.chat(conversation, buildSystemPrompt());
+      const system = target && notebook
+        ? buildCellEditPrompt(notebook, target)
+        : buildSystemPrompt();
+      const reply = await aiService.chat(conversation, system);
 
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-${Math.random()}`,
@@ -134,6 +158,21 @@
         content: reply || '(no response)',
         timestamp: Date.now()
       };
+
+      if (target && reply) {
+        const after = extractCodeFromMessage(reply);
+        // A reply identical to the cell is not a proposal; showing an empty
+        // diff with an Apply button under it would be theatre.
+        if (after && after !== target.cell.content) {
+          assistantMessage.edit = {
+            cellId: target.cell.id,
+            cellNumber: target.number,
+            before: target.cell.content,
+            after,
+            applied: false,
+          };
+        }
+      }
 
       $chatMessages = [...$chatMessages, assistantMessage];
     } catch (error: any) {
@@ -149,6 +188,36 @@
       isLoading = false;
       setTimeout(scrollToBottom, 0);
     }
+  }
+
+  /** The cell as it stands now, or null if it has since been deleted. */
+  function liveContent(edit: ProposedEdit): string | null {
+    const cell = $currentNotebook?.cells.find(c => c.id === edit.cellId);
+    return cell ? cell.content : null;
+  }
+
+  /**
+   * Has the cell moved on since this proposal was made?
+   *
+   * Worth saying out loud rather than silently overwriting: a proposal survives
+   * a page reload, so the cell underneath it may have been edited by hand in
+   * between. Applying anyway is a fair choice; putting back a "before" that is
+   * no longer what is there is not, so that direction is refused.
+   */
+  function isStaleEdit(edit: ProposedEdit): boolean {
+    const live = liveContent(edit);
+    if (live === null) return true;
+    return live !== (edit.applied ? edit.after : edit.before);
+  }
+
+  function toggleEdit(message: Message) {
+    const edit = message.edit;
+    if (!edit) return;
+    if (edit.applied && isStaleEdit(edit)) return;
+    oneditCell?.({ cellId: edit.cellId, content: edit.applied ? edit.before : edit.after });
+    $chatMessages = $chatMessages.map(m =>
+      m.id === message.id ? { ...m, edit: { ...edit, applied: !edit.applied } } : m
+    );
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -354,18 +423,58 @@
               {/if}
             </div>
             <div class="message-content">
-              <div class="message-text">{message.content}</div>
-              {#if message.role === 'assistant' && message.content && !message.content.startsWith('Error:') && !message.content.startsWith('Could not reach')}
-                <button
-                  class="insert-btn"
-                  onclick={() => oninsertCode?.({ code: message.content })}
-                  title="Insert into notebook"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 5v14M5 12l7 7 7-7"/>
-                  </svg>
-                  Insert into notebook
-                </button>
+              {#if message.edit}
+                {@const edit = message.edit}
+                {@const lines = diffLines(edit.before, edit.after)}
+                {@const stat = diffStat(lines)}
+                {@const gone = liveContent(edit) === null}
+                {@const stale = isStaleEdit(edit)}
+                <div class="proposal" class:applied={edit.applied}>
+                  <div class="proposal-head">
+                    <span class="proposal-title">Cell {edit.cellNumber}</span>
+                    <span class="proposal-stat">+{stat.added} −{stat.removed}</span>
+                  </div>
+                  <!-- The diff, not the new version: a model asked to fix one
+                       line will also reword a comment, and side by side nobody
+                       sees it. -->
+                  <div class="diff">
+                    {#each lines as line}
+                      <div class="diff-line diff-{line.op}"><span class="diff-sign"
+                        >{line.op === 'add' ? '+' : line.op === 'remove' ? '−' : ' '}</span
+                      >{line.text || ' '}</div>
+                    {/each}
+                  </div>
+                  {#if gone}
+                    <p class="proposal-note">That cell has been deleted.</p>
+                  {:else if stale}
+                    <p class="proposal-note">
+                      {edit.applied
+                        ? 'The cell has been edited since. Reverting would discard that work.'
+                        : 'The cell has been edited since this was proposed.'}
+                    </p>
+                  {/if}
+                  <div class="proposal-actions">
+                    <button
+                      class="apply-btn"
+                      onclick={() => toggleEdit(message)}
+                      disabled={gone || (edit.applied && stale)}
+                    >{edit.applied ? 'Revert' : 'Apply to cell ' + edit.cellNumber}</button>
+                  </div>
+                </div>
+              {:else}
+                <div class="message-text">{message.content}</div>
+                {#if message.role === 'assistant' && message.content && !message.content.startsWith('Error:') && !message.content.startsWith('Could not reach')}
+                  <button
+                    class="insert-btn"
+                    onclick={() => oninsertCode?.({ code: message.content })}
+                    title="Insert into notebook"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 5v14M5 12l7 7 7-7"/>
+                    </svg>
+                    Insert into notebook
+                  </button>
+                {/if}
               {/if}
             </div>
           </div>
@@ -388,6 +497,26 @@
         {/if}
       </div>
 
+      <div class="target-bar">
+        <button
+          class="target-toggle"
+          class:active={editMode && canEdit}
+          disabled={!canEdit}
+          onclick={() => (editMode = !editMode)}
+          title={canEdit
+            ? 'Answer with a rewrite of the selected cell instead of prose'
+            : 'Select a cell in the notebook first'}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>
+          </svg>
+          {editTarget ? `Edit cell ${editTarget.number}` : 'Edit cell'}
+        </button>
+        {#if editMode && canEdit}
+          <span class="target-hint">The reply becomes a proposed change you can apply.</span>
+        {/if}
+      </div>
+
       <div class="chat-input-container">
         {#if $chatMessages.length > 0}
           <button class="clear-btn" onclick={clearChat} title="Clear chat">
@@ -400,7 +529,9 @@
           bind:this={inputEl}
           bind:value={inputValue}
           onkeydown={handleKeydown}
-          placeholder="Ask anything... (Enter to send, Shift+Enter for new line)"
+          placeholder={editMode && editTarget
+            ? `What should cell ${editTarget.number} do differently?`
+            : 'Ask anything... (Enter to send, Shift+Enter for new line)'}
           class="chat-input"
           rows="1"
           disabled={isLoading}
@@ -740,6 +871,136 @@
   @keyframes typing {
     0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
     30% { opacity: 1; transform: translateY(-8px); }
+  }
+
+  /* Proposed cell rewrite: a diff plus one button, sitting where the reply's
+     text would be. Deliberately quiet — this is a suggestion until accepted. */
+  .proposal {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    overflow: hidden;
+    background-color: var(--surface);
+  }
+
+  .proposal.applied { border-color: var(--accent); }
+
+  .proposal-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .proposal-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .proposal-stat {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text-faint);
+  }
+
+  .diff {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    line-height: 1.5;
+    max-height: 320px;
+    overflow: auto;
+    padding: 0.3rem 0;
+  }
+
+  .diff-line {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0 0.6rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .diff-sign {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    user-select: none;
+  }
+
+  /* Colour carries the sign, but the sign is there too: a diff read with no
+     colour vision still has to be readable. */
+  .diff-add { background-color: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .diff-remove {
+    background-color: color-mix(in srgb, var(--danger-fg) 12%, transparent);
+    color: var(--text-muted);
+  }
+
+  .proposal-note {
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+  }
+
+  .proposal-actions {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.45rem 0.6rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .apply-btn {
+    padding: 0.3rem 0.7rem;
+    background-color: var(--accent-solid);
+    color: var(--accent-on-solid);
+    border: none;
+    border-radius: var(--radius-pill);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .target-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem 0;
+    background-color: var(--surface);
+  }
+
+  .target-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+    padding: 0.25rem 0.6rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .target-toggle:hover:not(:disabled) { background-color: var(--surface-hover); color: var(--text); }
+  .target-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .target-toggle.active {
+    background-color: var(--accent-weak-bg);
+    border-color: var(--accent);
+    color: var(--heading);
+  }
+
+  .target-hint {
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    min-width: 0;
   }
 
   .chat-input-container {

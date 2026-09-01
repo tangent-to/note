@@ -21,6 +21,8 @@
     onclose?: () => void;
     activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'storage';
     oninsertCode?: (detail: { code: string }) => void;
+    /** Chat applying (or reverting) a proposed rewrite of one cell. */
+    oneditCell?: (detail: { cellId: string; content: string }) => void;
     onopenNotebook?: (detail: { id: string }) => void;
     onopenDiskFile?: (detail: { path: string }) => void;
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
@@ -31,6 +33,7 @@
     onclose,
     activeTab = $bindable('info'),
     oninsertCode,
+    oneditCell,
     onopenNotebook,
     onopenDiskFile,
     ondeleteNotebook,
@@ -535,7 +538,7 @@
     </div>
   {:else if activeTab === 'chat'}
     <div class="console-tab">
-      <ChatSidebar embedded {oninsertCode} />
+      <ChatSidebar embedded {oninsertCode} {oneditCell} />
     </div>
   {:else}
     <div class="sidebar-content">

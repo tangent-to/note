@@ -22,11 +22,14 @@
     undoDeleteCell,
     resetExecutionCounter,
     resetStaleTracking,
+    recomputeStaleCells,
+    updateCellContent,
     outputPosition,
     kernelMode,
     notebookWidth,
     currentOrigin
   } from './lib/stores/notebook';
+  import { extractCodeFromMessage } from './lib/utils/cellEdit';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import {
     activeSessionId,
@@ -717,19 +720,6 @@
     });
   }
 
-  // Pull runnable code out of an AI chat reply. If the reply contains fenced
-  // ```code blocks```, use their contents (joined); otherwise treat the whole
-  // message as code. This keeps prose/explanations out of the inserted cell.
-  function extractCodeFromMessage(message: string): string {
-    const fence = /```[^\n]*\n([\s\S]*?)```/g;
-    const blocks: string[] = [];
-    let match: RegExpExecArray | null;
-    while ((match = fence.exec(message)) !== null) {
-      blocks.push(match[1].replace(/\s+$/, ''));
-    }
-    return blocks.length > 0 ? blocks.join('\n\n') : message.trim();
-  }
-
   function handleInsertCode({ code }: { code: string }) {
     const notebook = get(currentNotebook);
     if (!notebook) return;
@@ -750,6 +740,24 @@
 
     currentNotebook.set(updatedNotebook);
     selectedCellId.set(newCell.id);
+  }
+
+  /**
+   * Write a cell's content on the chat's behalf — applying a proposed rewrite,
+   * or putting the previous version back.
+   *
+   * It goes through updateCellContent like a keystroke does, so the notebook is
+   * marked dirty and autosaved on the usual path; nothing here reaches the file
+   * on disk, which still changes only on Ctrl/Cmd+S. Staleness is recomputed
+   * because a rewritten cell's dependents are now out of date, and that is the
+   * signal telling the reader what to re-run.
+   */
+  function handleEditCell({ cellId, content }: { cellId: string; content: string }) {
+    currentNotebook.update(notebook =>
+      notebook ? updateCellContent(notebook, cellId, content) : notebook
+    );
+    selectedCellId.set(cellId);
+    recomputeStaleCells(get(currentNotebook));
   }
 </script>
 
@@ -937,6 +945,7 @@
           bind:activeTab={rightSidebarTab}
           onclose={() => rightSidebarOpen = false}
           oninsertCode={handleInsertCode}
+          oneditCell={handleEditCell}
           onopenNotebook={({ id }) => openFromLibrary(id)}
           onopenDiskFile={({ path }) => openDiskFile(path)}
           ondeleteNotebook={({ entry }) => removeFromLibrary(entry)}
