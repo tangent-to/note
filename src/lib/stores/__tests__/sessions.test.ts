@@ -193,3 +193,36 @@ describe('execution counters', () => {
     expect(nextExecutionOrderIn(a)).toBe(3);
   });
 });
+
+describe('the console belongs to a notebook', () => {
+  it('keeps a transcript and a recall history per session', () => {
+    // Regression: one shared transcript across tabs read as a single
+    // conversation with a single scope while addressing several — `a` typed
+    // twice, answering 3 then 6, with nothing on screen saying why.
+    const a = openSession(makeNotebook('a'), local);
+    const b = openSession(makeNotebook('b'), local);
+
+    const entry = (id: number, input: string, value: string) => ({
+      id, input, output: { type: 'text' as const, content: value, timestamp: 0 },
+    });
+
+    a.consoleEntries.set([entry(1, 'a', '3')]);
+    a.consoleHistory.set(['a']);
+    b.consoleEntries.set([entry(2, 'a', '6')]);
+    b.consoleHistory.set(['a']);
+
+    const entries = sessionStore<any[]>((s) => s.consoleEntries, []);
+    const history = sessionStore<string[]>((s) => s.consoleHistory, []);
+
+    setActive(a.id);
+    expect(get(entries).map((e) => e.output.content)).toEqual(['3']);
+
+    setActive(b.id);
+    expect(get(entries).map((e) => e.output.content)).toEqual(['6']);
+    expect(get(history)).toEqual(['a']);
+
+    // Closing a notebook takes its transcript with it.
+    closeSession(b.id);
+    expect(get(entries).map((e) => e.output.content)).toEqual(['3']);
+  });
+});

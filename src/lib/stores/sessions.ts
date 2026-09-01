@@ -15,7 +15,7 @@
  * entirely: they still read one notebook, it is just no longer the only one.
  */
 import { derived, get, writable, type Writable } from 'svelte/store';
-import type { Notebook, NotebookCell } from '../types/notebook';
+import type { ConsoleEntry, Notebook, NotebookCell } from '../types/notebook';
 import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependencyGraph';
 import { disposeKernel, setActiveKernel } from '../utils/kernelClient';
 import { disposeExecutor, setActiveExecutor } from '../utils/mainExecutor';
@@ -42,6 +42,14 @@ export interface NotebookSession {
   readonly dirty: Writable<boolean>;
   readonly stale: Writable<Set<string>>;
   readonly runProgress: Writable<{ done: number; total: number } | null>;
+  /**
+   * The console REPL evaluates in this notebook's scope, so its transcript and
+   * its recall history belong to this notebook too. Shared, they read as one
+   * conversation with one scope while actually addressing several: `a` typed
+   * twice in a row, answering 3 and then 6, with nothing on screen saying why.
+   */
+  readonly consoleEntries: Writable<ConsoleEntry[]>;
+  readonly consoleHistory: Writable<string[]>;
   /** Per-cell record of the last run (when + content hash). Not persisted. */
   readonly cellRunInfo: Map<string, RunRecord>;
   execCounter: number;
@@ -155,6 +163,8 @@ function createSession(notebook: Notebook, origin: NotebookOrigin): NotebookSess
     dirty: writable(false),
     stale: writable(new Set<string>()),
     runProgress: writable(null),
+    consoleEntries: writable<ConsoleEntry[]>([]),
+    consoleHistory: writable<string[]>([]),
     cellRunInfo: new Map(),
     execCounter: 0,
     undoStack: [],

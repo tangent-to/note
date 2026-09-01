@@ -33,6 +33,13 @@ export interface CellOutput {
   needsMainThread?: boolean;
 }
 
+/** One console round-trip: what was typed, and what came back. */
+export interface ConsoleEntry {
+  id: number;
+  input: string;
+  output: CellOutput;
+}
+
 export interface Notebook {
   id: string;
   name: string;
