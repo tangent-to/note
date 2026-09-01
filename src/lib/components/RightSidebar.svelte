@@ -501,16 +501,6 @@
 
   .tab-btn { flex: 0 0 auto; }
 
-  /* The boundary between "follows the notebook on screen" and "does not". A
-     rule rather than a gap, so it survives the row scrolling at narrow widths,
-     and it sits on the first tab of the right-hand group rather than between
-     them, so the two never drift apart. */
-  .tab-app {
-    margin-left: 0.4rem;
-    padding-left: 0.7rem;
-    border-left: 1px solid var(--border);
-  }
-
   .tab-btn {
     background: transparent;
     border: none;
@@ -524,6 +514,22 @@
     cursor: pointer;
     border-radius: var(--radius-pill);
     transition: all 0.15s ease;
+  }
+
+  /* The boundary between "follows the notebook on screen" and "does not". A
+     rule rather than a gap, so it survives the row scrolling at narrow widths,
+     and it sits on the first tab of the right-hand group rather than between
+     them, so the two never drift apart.
+
+     It has to come AFTER .tab-btn: that rule sets `border: none` at the same
+     specificity, so declared first this one lost the cascade and the divider
+     never appeared. --border-strong, not --border, because a hairline meant to
+     be read as a separator has to be perceptible against the panel. */
+  .tab-app {
+    margin-left: 0.4rem;
+    padding-left: 0.7rem;
+    border-left: 1px solid var(--border-strong);
+    border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
   }
 
   .tab-btn:hover { color: var(--heading); background-color: var(--surface-hover); }
