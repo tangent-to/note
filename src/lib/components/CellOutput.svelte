@@ -178,6 +178,11 @@
          with Tailwind's utilities, and `table` (display: table) shrink-wrapped
          the output box so the caption folded into a 47px column. -->
     <div class="output-content" data-output-type={output.type}>
+      <!-- What the cell printed, above the value it produced. Kept separate so
+           a single console.log no longer costs the value its rendering. -->
+      {#if output.logs && output.logs.length > 0}
+        <pre class="log-output">{#each output.logs as log}<span class="log-line log-{log.level}">{log.text}</span>{/each}</pre>
+      {/if}
       {#if output.type === 'table'}
         <TableOutput spec={JSON.parse(String(output.content)) as TableSpec} />
       {:else if output.type === 'dom'}
@@ -204,7 +209,7 @@
                "Error: " prefix so it doesn't read "Error / Error: ...". -->
           <pre class="error-message"><code>{String(output.content).replace(/^Error:\s*/, '')}</code></pre>
         </div>
-      {:else}
+      {:else if String(output.content ?? '') !== ''}
         <pre class="text-output"><code>{String(output.content)}</code></pre>
       {/if}
     </div>
@@ -236,6 +241,29 @@
   .output-content {
     margin-bottom: 0;
   }
+
+  /* Printing, above the value. Quieter than the value itself: it is what the
+     cell said on the way, not what it produced. */
+  .log-output {
+    display: flex;
+    flex-direction: column;
+    margin: 0 0 0.3rem;
+    padding: 0.3rem 0.5rem;
+    background-color: var(--surface-2);
+    border-left: 2px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow: auto;
+  }
+
+  .log-warn { color: var(--warn-fg); }
+  .log-error { color: var(--danger-fg); }
 
 
   .dom-output,

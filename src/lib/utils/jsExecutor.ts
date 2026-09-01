@@ -12,7 +12,7 @@
  *   executed code does so explicitly.
  */
 
-import type { CellOutput } from "../types/notebook";
+import type { CellOutput, LogLine } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
 import { tableSpec, type TableSpec } from "./tableData";
 import { describeValue, previewJson } from "./valuePreview";
@@ -469,24 +469,29 @@ export class JavaScriptExecutor {
       const originalError = console.error;
       const originalWarn = console.warn;
 
-      let capturedOutput: string[] = [];
-      let hasError = false;
+      // Printing is collected apart from the value the cell produces. Joined
+      // into one string, as it used to be, a single console.log stopped the
+      // output parsing as JSON and so cost the value its inspector — and a log
+      // before a chart or a table was dropped altogether, because those return
+      // paths never looked at it.
+      const logs: LogLine[] = [];
+      const line = (level: LogLine["level"], args: any[]) => {
+        logs.push({ level, text: args.map((a) => this.formatValue(a)).join(" ") });
+      };
+      /** Attach whatever the cell printed to the output it produced. */
+      const withLogs = <T extends CellOutput>(out: T): T =>
+        logs.length > 0 ? { ...out, logs } : out;
 
       const captureLog = (...args: any[]) => {
-        capturedOutput.push(args.map((a) => this.formatValue(a)).join(" "));
+        line("log", args);
         originalLog(...args);
       };
       const captureError = (...args: any[]) => {
-        capturedOutput.push(
-          `ERROR: ${args.map((a) => this.formatValue(a)).join(" ")}`,
-        );
-        hasError = true;
+        line("error", args);
         originalError(...args);
       };
       const captureWarn = (...args: any[]) => {
-        capturedOutput.push(
-          `WARN: ${args.map((a) => this.formatValue(a)).join(" ")}`,
-        );
+        line("warn", args);
         originalWarn(...args);
       };
 
@@ -567,28 +572,28 @@ export class JavaScriptExecutor {
         // Worker-kernel ui.* controls return a declarative spec instead of a
         // DOM node; surface it as a `widget` output for main-thread rendering.
         if (lastVal && lastVal.__tangentWidget) {
-          return {
+          return withLogs({
             type: "widget",
             content: JSON.stringify(lastVal),
             timestamp: Date.now(),
-          };
+          });
         }
 
         if (lastVal instanceof Node) {
-          return {
+          return withLogs({
             type: "dom",
             content: lastVal as Element,
             timestamp: Date.now(),
-          };
+          });
         }
 
         const table = this.tryTableSpec(lastVal);
         if (table) {
-          return {
+          return withLogs({
             type: "table",
             content: JSON.stringify(table),
             timestamp: Date.now(),
-          };
+          });
         }
 
         if (outputDiv.children.length > 0) {
@@ -602,28 +607,29 @@ export class JavaScriptExecutor {
             }
             domNode = wrapper;
           }
-          return {
+          return withLogs({
             type: "dom",
             content: domNode,
             timestamp: Date.now(),
-          };
+          });
         }
 
         if (lastVal !== undefined) {
-          return {
-            type: hasError ? "error" : "text",
-            content: capturedOutput.concat([this.formatValue(lastVal)]).join(
-              "\n",
-            ),
+          return withLogs({
+            type: "text",
+            content: this.formatValue(lastVal),
             timestamp: Date.now(),
-          };
+          });
         }
 
-        return {
-          type: hasError ? "error" : "text",
-          content: capturedOutput.join("\n"),
+        // Nothing to display but the printing. A console.error is not a failed
+        // cell — the red frame belongs to a thrown error, and the level on the
+        // line already marks it.
+        return withLogs({
+          type: "text",
+          content: "",
           timestamp: Date.now(),
-        };
+        });
       } finally {
         console.log = originalLog;
         console.error = originalError;

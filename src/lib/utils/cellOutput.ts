@@ -49,6 +49,9 @@ export function lostInteractivity(root: any): boolean {
 
 export function isEmptyOutput(output: CellOutput | null | undefined): boolean {
   if (!output) return true;
+  // What the cell printed counts as output even when it returned nothing —
+  // a cell whose whole point is a console.log must still get a frame.
+  if (output.logs && output.logs.length > 0) return false;
   // A DOM node or a widget spec is always something to show.
   if (output.type === "dom") return output.content == null;
   if (output.type === "widget") return !output.content;

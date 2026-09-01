@@ -28,6 +28,20 @@ describe('isEmptyOutput', () => {
     expect(isEmptyOutput({ type: 'dom', content: fragment('<p>x</p>'), timestamp: 1 })).toBe(false);
     expect(isEmptyOutput({ type: 'widget', content: '{"kind":"slider"}', timestamp: 1 })).toBe(false);
   });
+
+  it('counts what the cell printed, even with no value to show', () => {
+    // A cell whose whole point is a console.log returns undefined, so its
+    // content is empty; without this it would render no output frame at all
+    // and the printing would vanish.
+    expect(isEmptyOutput({
+      type: 'text',
+      content: '',
+      timestamp: 1,
+      logs: [{ level: 'log', text: 'hello' }],
+    })).toBe(false);
+
+    expect(isEmptyOutput({ type: 'text', content: '', timestamp: 1, logs: [] })).toBe(true);
+  });
 });
 
 describe('lostInteractivity', () => {

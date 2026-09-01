@@ -23,6 +23,17 @@ export interface CellOutput {
    *  rows and the true row count (see tableData.ts), rendered as a live sortable
    *  table on the main thread. */
   type: "text" | "html" | "json" | "error" | "dom" | "widget" | "table";
+
+  /**
+   * What the cell printed while it ran, kept apart from the value it produced.
+   *
+   * They used to be one string, joined with newlines — which meant a single
+   * console.log turned a value's rendering into plain text (the JSON no longer
+   * parsed), and a log before a chart or a table was dropped on the floor
+   * entirely. Separated, the value keeps whatever rendering it deserves and the
+   * printing is shown above it.
+   */
+  logs?: LogLine[];
   content: string | Element;
   timestamp: number;
   /**
@@ -31,6 +42,12 @@ export interface CellOutput {
    * cannot respond. Transient: it describes this run, and is never persisted.
    */
   needsMainThread?: boolean;
+}
+
+/** One line a cell printed while it ran. */
+export interface LogLine {
+  level: "log" | "warn" | "error";
+  text: string;
 }
 
 /** One console round-trip: what was typed, and what came back. */
