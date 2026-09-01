@@ -9,6 +9,7 @@
     "npm:@codemirror/state@^6.7.1": "6.7.1",
     "npm:@codemirror/view@^6.43.6": "6.43.6",
     "npm:@lezer/highlight@^1.2.3": "1.2.3",
+    "npm:@observablehq/inputs@0.12": "0.12.0",
     "npm:@observablehq/inspector@^5.0.1": "5.0.1",
     "npm:@sveltejs/vite-plugin-svelte@^5.1.1": "5.1.1_svelte@5.56.7_vite@8.1.5",
     "npm:@tailwindcss/postcss@^4.1.14": "4.3.3",
@@ -16,6 +17,7 @@
     "npm:@tsconfig/svelte@3": "3.0.0",
     "npm:autoprefixer@^10.4.21": "10.5.4_postcss@8.5.22",
     "npm:dompurify@^3.4.12": "3.4.12",
+    "npm:fake-indexeddb@^6.2.5": "6.2.5",
     "npm:gh-pages@^6.3.0": "6.3.0",
     "npm:katex@~0.16.8": "0.16.47",
     "npm:linkedom@~0.18.13": "0.18.13",
@@ -256,6 +258,13 @@
       "dependencies": [
         "@nodelib/fs.scandir",
         "fastq"
+      ]
+    },
+    "@observablehq/inputs@0.12.0": {
+      "integrity": "sha512-1ln7+PYe31cMx00K9awVbiCscQM0THnXRJ/AEzd+FfTA25Gu3KRWknAGECxU49QzHyKqiXpLl5LCg3XtYm70eQ==",
+      "dependencies": [
+        "htl",
+        "isoformat"
       ]
     },
     "@observablehq/inspector@5.0.1": {
@@ -922,6 +931,9 @@
     "expect-type@1.4.0": {
       "integrity": "sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA=="
     },
+    "fake-indexeddb@6.2.5": {
+      "integrity": "sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w=="
+    },
     "fast-glob@3.3.3": {
       "integrity": "sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg==",
       "dependencies": [
@@ -1047,6 +1059,9 @@
     },
     "graceful-fs@4.2.11": {
       "integrity": "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="
+    },
+    "htl@0.3.1": {
+      "integrity": "sha512-1LBtd+XhSc+++jpOOt0lCcEycXs/zTQSupOISnVAUmvGBpV7DH+C2M6hwV7zWYfpTMMg9ch4NO0lHiOTAMHdVA=="
     },
     "html-escaper@3.0.3": {
       "integrity": "sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ=="
@@ -1687,6 +1702,7 @@
         "npm:@codemirror/state@^6.7.1",
         "npm:@codemirror/view@^6.43.6",
         "npm:@lezer/highlight@^1.2.3",
+        "npm:@observablehq/inputs@0.12",
         "npm:@observablehq/inspector@^5.0.1",
         "npm:@sveltejs/vite-plugin-svelte@^5.1.1",
         "npm:@tailwindcss/postcss@^4.1.14",
@@ -1694,6 +1710,7 @@
         "npm:@tsconfig/svelte@3",
         "npm:autoprefixer@^10.4.21",
         "npm:dompurify@^3.4.12",
+        "npm:fake-indexeddb@^6.2.5",
         "npm:gh-pages@^6.3.0",
         "npm:katex@~0.16.8",
         "npm:linkedom@~0.18.13",

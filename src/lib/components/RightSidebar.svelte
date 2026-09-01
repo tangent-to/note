@@ -4,6 +4,7 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import { syncFiles } from '../utils/serverSync';
   import {
     libraryEntries,
     libraryPersistent,
@@ -21,6 +22,7 @@
     activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'storage';
     oninsertCode?: (detail: { code: string }) => void;
     onopenNotebook?: (detail: { id: string }) => void;
+    onopenDiskFile?: (detail: { path: string }) => void;
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
     onclearBrowserData?: () => void;
   }
@@ -30,6 +32,7 @@
     activeTab = $bindable('info'),
     oninsertCode,
     onopenNotebook,
+    onopenDiskFile,
     ondeleteNotebook,
     onclearBrowserData,
   }: Props = $props();
@@ -88,20 +91,71 @@
   const FILTER_FROM = 8;
   let notebookFilter = $state('');
 
-  const shownNotebooks = $derived.by(() => {
-    const q = notebookFilter.trim().toLowerCase();
-    if (!q) return $libraryEntries;
-    return $libraryEntries.filter(
-      (e) => e.name.toLowerCase().includes(q) || originLabel(e.origin).toLowerCase().includes(q)
-    );
-  });
-
   const notebooksSize = $derived($libraryEntries.reduce((n, e) => n + e.size, 0));
   const datasetsSize = $derived($datasets.reduce((n, d) => n + d.size, 0));
 
+  /**
+   * One row per notebook, wherever it can be reached from.
+   *
+   * There used to be two lists — the companion's files and the browser's
+   * library — and a notebook opened from disk was in both, under two headings
+   * and two names. But a notebook is one thing; where it lives is something it
+   * *has*. So the library and the served files are merged on the notebook's
+   * own id, and the row says where it lives rather than which list it fell in.
+   *
+   * Files the companion serves that have never been opened here have no
+   * library entry yet, and appear as rows with nothing but a path.
+   */
+  interface NotebookRow {
+    id: string;
+    name: string;
+    /** Its file, when a companion is serving one. */
+    path: string | null;
+    entry: LibraryEntry | null;
+  }
+
+  const rows = $derived.by((): NotebookRow[] => {
+    const pathById = new Map<string, string>();
+    const orphans: NotebookRow[] = [];
+    for (const file of $syncFiles) {
+      if (file.id) pathById.set(file.id, file.path);
+      else orphans.push({ id: `path:${file.path}`, name: file.name, path: file.path, entry: null });
+    }
+
+    const seen = new Set<string>();
+    const known: NotebookRow[] = $libraryEntries.map((entry) => {
+      seen.add(entry.id);
+      const origin = entry.origin;
+      return {
+        id: entry.id,
+        name: entry.name,
+        path: pathById.get(entry.id) ?? (origin.kind === 'disk' ? origin.path : null),
+        entry,
+      };
+    });
+
+    // Served files this browser has never opened: still notebooks, still
+    // listed, just with nothing of their own stored yet.
+    for (const file of $syncFiles) {
+      if (file.id && !seen.has(file.id)) {
+        known.push({ id: file.id, name: file.name, path: file.path, entry: null });
+      }
+    }
+
+    return [...known, ...orphans].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+    );
+  });
+
+  const shownRows = $derived.by(() => {
+    const q = notebookFilter.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(
+      (r) => r.name.toLowerCase().includes(q) || (r.path ?? '').toLowerCase().includes(q)
+    );
+  });
+
   const openId = $derived($currentNotebook?.id ?? null);
-  /** The open notebook may sit under any origin's key, so match on its own id. */
-  const isOpen = (entry: LibraryEntry) => entry.notebookId === openId;
 
   function confirmDelete(entry: LibraryEntry) {
     // Deleting is the one irreversible thing this panel does, and a notebook is
@@ -312,16 +366,18 @@
         </div>
       {/if}
 
-      <!-- Notebooks. Every notebook opened or created lands here; closing one
-           never removes it. Opening day to day is Ctrl+K, so these rows are for
-           finding something you had forgotten and for clearing out. -->
+      <!-- One list. A notebook is one thing; where it lives is something it
+           has, so that is a line on the row rather than a separate section:
+           a path, or "in this browser". The row says it; nothing has to
+           explain it. -->
       <div class="storage-section">
         <div class="storage-section-head">
-          <h4 class="section-title">Notebooks ({$libraryEntries.length})</h4>
+          <h4 class="section-title">Notebooks ({rows.length})</h4>
           <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
         </div>
 
-        {#if $libraryEntries.length >= FILTER_FROM}
+
+        {#if rows.length >= FILTER_FROM}
           <input
             class="storage-filter"
             type="search"
@@ -331,32 +387,41 @@
           />
         {/if}
 
-        {#if $libraryEntries.length === 0}
+        {#if rows.length === 0}
           <div class="empty-vars">No notebooks stored yet.</div>
-        {:else if shownNotebooks.length === 0}
+        {:else if shownRows.length === 0}
           <div class="empty-vars">No notebook matches “{notebookFilter}”.</div>
         {:else}
           <div class="dataset-list">
-            {#each shownNotebooks as entry (entry.id)}
-              <div class="dataset-item" class:current={isOpen(entry)}>
+            {#each shownRows as row (row.id)}
+              <div class="dataset-item" class:current={row.id === openId}>
                 <button
                   class="notebook-main"
-                  onclick={() => onopenNotebook?.({ id: entry.id })}
-                  title={`Open “${entry.name}”`}
+                  onclick={() => row.path
+                    ? onopenDiskFile?.({ path: row.path })
+                    : onopenNotebook?.({ id: row.id })}
+                  title={row.path ? `Open ${row.path}` : `Open “${row.name}”`}
                 >
-                  <div class="dataset-name">{entry.name}</div>
+                  <div class="dataset-name">{row.name}</div>
                   <div class="dataset-meta">
-                    {formatDate(entry.lastOpenedAt)} · {originLabel(entry.origin)} ·
-                    {entry.cellCount} cell{entry.cellCount === 1 ? '' : 's'} · {formatBytes(entry.size)}
-                    {#if isOpen(entry)} · open{/if}
+                    {#if row.path}{row.path}{:else}in this browser{/if}{#if row.entry} · {row.entry.cellCount} cell{row.entry.cellCount === 1 ? '' : 's'} · {formatBytes(row.entry.size)}{:else} · not opened yet{/if}{#if row.id === openId} · open{/if}
                   </div>
                 </button>
                 <div class="dataset-actions">
-                  <button class="ds-btn ds-danger" title="Remove from library" onclick={() => confirmDelete(entry)} aria-label="Remove notebook">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                    </svg>
-                  </button>
+                  {#if row.entry}
+                    <button
+                      class="ds-btn ds-danger"
+                      title={row.path
+                        ? 'Forget this browser’s copy. The file on disk is untouched.'
+                        : 'Remove from the library'}
+                      onclick={() => confirmDelete(row.entry!)}
+                      aria-label="Remove notebook"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                      </svg>
+                    </button>
+                  {/if}
                 </div>
               </div>
             {/each}
@@ -504,7 +569,9 @@
   .tab-btn {
     background: transparent;
     border: none;
-    padding: 0.4rem 0.5rem;
+    /* Five tabs plus a rule have to fit the default panel width; every tenth of
+       a rem here is ten pixels across the row. */
+    padding: 0.4rem 0.45rem;
     /* Buttons don't inherit font-family; without this the tabs fall back to the
        browser default instead of the UI sans. */
     font-family: var(--font-sans);
@@ -526,8 +593,8 @@
      never appeared. --border-strong, not --border, because a hairline meant to
      be read as a separator has to be perceptible against the panel. */
   .tab-app {
-    margin-left: 0.4rem;
-    padding-left: 0.7rem;
+    margin-left: 0.25rem;
+    padding-left: 0.5rem;
     border-left: 1px solid var(--border-strong);
     border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
   }

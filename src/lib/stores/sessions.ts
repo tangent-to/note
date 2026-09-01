@@ -5,8 +5,9 @@
  * singletons — the document, the selection, the dirty flag, staleness, the
  * execution counter, the undo stack, run progress, one kernel. That is fine
  * with one notebook open and impossible with several, so all of it moves into
- * a NotebookSession, keyed by the same library key the notebook is stored
- * under (see notebookLibrary.libraryId).
+ * a NotebookSession, keyed by the notebook's own id — the same key the library
+ * stores it under, so one notebook is one entry, one tab and one kernel however
+ * it was reached.
  *
  * The stores every component already reads — `currentNotebook`,
  * `selectedCellId`, `staleCells`, … — are re-exported from stores/notebook as
@@ -20,7 +21,6 @@ import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependency
 import { disposeKernel, setActiveKernel } from '../utils/kernelClient';
 import { disposeExecutor, setActiveExecutor } from '../utils/mainExecutor';
 import {
-  libraryId,
   putNotebook,
   rememberOpenSessions,
   type NotebookOrigin,
@@ -33,7 +33,7 @@ export interface DeletedCellEntry {
 }
 
 export interface NotebookSession {
-  /** Library key: `libraryId(notebook.id, origin)`. Also the kernel's key. */
+  /** The notebook's id: its library key, and its kernel's key. */
   readonly id: string;
   readonly notebook: Writable<Notebook>;
   readonly origin: Writable<NotebookOrigin>;
@@ -156,7 +156,7 @@ export function flushAutosave(session: NotebookSession): void {
 
 function createSession(notebook: Notebook, origin: NotebookOrigin): NotebookSession {
   const session: NotebookSession = {
-    id: libraryId(notebook.id, origin),
+    id: notebook.id,
     notebook: writable(notebook),
     origin: writable(origin),
     selectedCellId: writable(notebook.cells[0]?.id ?? null),
@@ -179,7 +179,10 @@ function createSession(notebook: Notebook, origin: NotebookOrigin): NotebookSess
  * Open a notebook in a session, or focus the one already holding it.
  *
  * Focusing rather than reopening matters: clicking a notebook you already have
- * open must not throw away its kernel, its outputs or its undo history.
+ * open must not throw away its kernel, its outputs or its undo history — and
+ * because identity is the notebook's id alone, reaching the same notebook a
+ * second way (the library, then its file on disk) lands on that same tab
+ * instead of opening a twin beside it.
  * `replaceContent` is for the one case where the same session must take new
  * bytes — the `note serve` companion pushing an edit made on disk.
  */
@@ -188,7 +191,7 @@ export function openSession(
   origin: NotebookOrigin,
   opts: { replaceContent?: boolean } = {}
 ): NotebookSession {
-  const id = libraryId(notebook.id, origin);
+  const id = notebook.id;
   const existing = sessionById(id);
 
   if (existing) {
