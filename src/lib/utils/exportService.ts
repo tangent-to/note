@@ -378,6 +378,23 @@ export class ExportService {
   }
 
   private renderOutputHTML(output: any): string {
+    // What the cell printed travels beside the value now rather than being
+    // glued to the front of it, so the export has to put it back.
+    const logs = Array.isArray(output.logs) && output.logs.length > 0
+      ? `<pre class="log-output">${
+        output.logs
+          .map((line: any) =>
+            `<span class="log-${this.escapeHTML(String(line.level))}">${
+              this.escapeHTML(String(line.text))
+            }</span>`
+          )
+          .join("\n")
+      }</pre>`
+      : "";
+    return logs + this.renderOutputBody(output);
+  }
+
+  private renderOutputBody(output: any): string {
     switch (output.type) {
       case "html":
         return output.content;
@@ -572,6 +589,19 @@ export class ExportService {
       .json-output {
         color: ${theme === "dark" ? "#a78bfa" : "#7c3aed"};
       }
+
+      /* What the cell printed, above the value it produced. */
+      .log-output {
+        display: flex;
+        flex-direction: column;
+        color: ${theme === "dark" ? "#9ca3af" : "#6b7280"};
+        border-left: 2px solid ${theme === "dark" ? "#4b5563" : "#d1d5db"};
+        padding-left: 0.5rem;
+        margin-bottom: 0.35rem;
+      }
+
+      .log-warn { color: ${theme === "dark" ? "#fcd34d" : "#b45309"}; }
+      .log-error { color: ${theme === "dark" ? "#fca5a5" : "#b91c1c"}; }
 
       .timestamp {
         font-size: 0.75rem;

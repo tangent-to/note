@@ -45,8 +45,7 @@ function serializeValue(value: unknown): unknown {
 }
 
 /**
- * An Arquero-style table: `objects()`, `columnNames()` and `numRows()`. Plain
- * arrays are left to the inspector, which already handles them well.
+ * An Arquero-style table: `objects()`, `columnNames()` and `numRows()`.
  */
 function looksTabular(value: any): boolean {
   return (
@@ -58,34 +57,84 @@ function looksTabular(value: any): boolean {
   );
 }
 
+/** How many items decide whether an array is a table of records. */
+const SAMPLE = 20;
+
+/**
+ * A plain record — an object whose keys are its fields.
+ *
+ * Deliberately strict about the prototype: a class instance, a Map or a Date is
+ * an object too, and reading its own keys as columns produces a table of
+ * nonsense. Anything that fails this goes to the inspector, which is the right
+ * home for a structure rather than a frame.
+ */
+function isRecord(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
+ * An array of records — how data actually arrives: d3.csvParse, a fetch of
+ * JSON, `.objects()` called by hand.
+ *
+ * These used to be left to the inspector on the grounds that it handles arrays
+ * well. It does handle them, but a frame of 344 rows read as a nest of
+ * expandable objects is not how anyone wants to look at data, and the table
+ * next door was already sortable, windowed and bounded in height.
+ */
+function recordArray(value: any): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  const sample = value.slice(0, SAMPLE);
+  if (!sample.every(isRecord)) return false;
+
+  const keys = new Set<string>();
+  for (const row of sample) for (const key of Object.keys(row)) keys.add(key);
+  // No fields is not a table; and a sample with more distinct keys than a table
+  // could sensibly have is a bag of unrelated objects, not rows.
+  return keys.size > 0 && keys.size <= MAX_COLUMNS;
+}
+
 export function tableSpec(value: any): TableSpec | null {
-  if (!looksTabular(value)) return null;
+  const fromArray = recordArray(value);
+  if (!fromArray && !looksTabular(value)) return null;
 
   let totalRows = 0;
-  try {
-    totalRows = Number(value.numRows()) || 0;
-  } catch {
-    totalRows = 0;
+  if (fromArray) {
+    totalRows = value.length;
+  } else {
+    try {
+      totalRows = Number(value.numRows()) || 0;
+    } catch {
+      totalRows = 0;
+    }
   }
 
   let rows: any[];
-  try {
-    // `objects({limit})` is Arquero's own windowing; fall back to slicing for
-    // tables that ignore the option.
-    const result = value.objects({ limit: ROW_WINDOW });
-    rows = Array.isArray(result) ? result : Array.from(result ?? []);
-    if (rows.length > ROW_WINDOW) rows = rows.slice(0, ROW_WINDOW);
-  } catch {
-    return null;
+  if (fromArray) {
+    rows = value.slice(0, ROW_WINDOW);
+  } else {
+    try {
+      // `objects({limit})` is Arquero's own windowing; fall back to slicing for
+      // tables that ignore the option.
+      const result = value.objects({ limit: ROW_WINDOW });
+      rows = Array.isArray(result) ? result : Array.from(result ?? []);
+      if (rows.length > ROW_WINDOW) rows = rows.slice(0, ROW_WINDOW);
+    } catch {
+      return null;
+    }
   }
   if (rows.length === 0) return null;
 
   let columns: string[] = [];
-  try {
-    const named = value.columnNames();
-    if (Array.isArray(named)) columns = named.slice(0, MAX_COLUMNS);
-  } catch {
-    columns = [];
+  if (!fromArray) {
+    try {
+      const named = value.columnNames();
+      if (Array.isArray(named)) columns = named.slice(0, MAX_COLUMNS);
+    } catch {
+      columns = [];
+    }
   }
   if (columns.length === 0) {
     const seen = new Set<string>();

@@ -133,9 +133,11 @@ function serializeOutput(out: CellOutput): CellOutput {
     const html = el && typeof el.outerHTML === 'string' ? el.outerHTML : String(el);
     // Flag output whose behaviour did not survive the trip (see lostInteractivity).
     const needsMainThread = lostInteractivity(el);
+    // Spread, so `logs` survives: a console.log before a chart is exactly the
+    // case this path used to drop.
     return needsMainThread
-      ? { type: 'html', content: html, timestamp: out.timestamp, needsMainThread }
-      : { type: 'html', content: html, timestamp: out.timestamp };
+      ? { ...out, type: 'html', content: html, needsMainThread }
+      : { ...out, type: 'html', content: html };
   }
   // text / html / json / error / widget already carry strings.
   return { ...out, content: String(out.content ?? '') };
