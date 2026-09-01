@@ -26,6 +26,8 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
+  import { mainExecutor } from './lib/utils/mainExecutor';
+  import { clearConsole } from './lib/stores/console';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import { saveNotebook, exportNotebookSource, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
@@ -35,6 +37,7 @@
     lastActiveNotebookId,
     libraryEntries,
     libraryPersistent,
+    libraryId,
     migrateLegacyAutosave,
     putNotebook,
     refreshLibrary,
@@ -215,12 +218,42 @@
   });
 
   /**
+   * Hand the kernel back empty before another notebook moves in.
+   *
+   * One kernel serves whichever notebook is open, so without this the incoming
+   * one inherited the outgoing one's variables: the Variables panel listed
+   * them, `nb` in the console listed them, and a cell referencing a name it
+   * never defines found the *other* notebook's value instead of failing.
+   * Opening a notebook is a kernel restart, as it is in Jupyter — and the
+   * console transcript goes with it, since it describes a scope that no longer
+   * exists.
+   *
+   * Skipped when nothing is open yet (boot), and when the same library entry is
+   * simply being reloaded: neither has a scope worth clearing, and the reset
+   * would spawn the worker for a notebook nobody has run.
+   */
+  async function leaveCurrentNotebook(next: NotebookDoc, nextOrigin: NotebookOrigin) {
+    const previous = get(currentNotebook);
+    if (!previous) return;
+    if (libraryId(previous.id, get(currentOrigin)) === libraryId(next.id, nextOrigin)) return;
+
+    try {
+      if (get(kernelMode) === 'worker') await kernel.reset();
+      else mainExecutor.resetScope();
+    } catch (error) {
+      console.warn('Could not clear the kernel scope for the incoming notebook:', error);
+    }
+    clearConsole();
+  }
+
+  /**
    * Adopt `notebook` as the open one. Every path that opens a notebook — boot,
    * restore, companion, URL link, file import, new, the library picker — goes
    * through here, so "opened" means one thing: published to the stores, its
    * origin recorded, and present in the library under that origin's key.
    */
   async function openNotebook(notebook: NotebookDoc, origin: NotebookOrigin) {
+    await leaveCurrentNotebook(notebook, origin);
     resetExecutionCounter();
     resetStaleTracking();
     currentOrigin.set(origin);

@@ -195,7 +195,9 @@
       <button class="tab-btn" class:active={activeTab === 'variables'} onclick={() => { activeTab = 'variables'; refreshVariables(); }}>Variables</button>
       <button class="tab-btn" class:active={activeTab === 'console'} onclick={() => activeTab = 'console'}>Console</button>
       <button class="tab-btn" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
-      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>Storage</button>
+      <!-- Storage sits apart on purpose: the four tabs to its left are about
+           the notebook you have open, this one is about the browser. -->
+      <button class="tab-btn tab-app" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>Storage</button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -496,6 +498,14 @@
   .tab-bar::-webkit-scrollbar { display: none; }
 
   .tab-btn { flex: 0 0 auto; }
+
+  /* The boundary between "about this notebook" and "about this browser". A rule
+     rather than a gap, so it survives the row scrolling at narrow widths. */
+  .tab-app {
+    margin-left: 0.4rem;
+    padding-left: 0.7rem;
+    border-left: 1px solid var(--border);
+  }
 
   .tab-btn {
     background: transparent;
