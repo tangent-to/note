@@ -65,6 +65,8 @@ npm run serve -- path/to/notebooks/  # a directory, or a single .js file
 
 Give it a **directory** and it offers every notebook under it, listed in the Storage panel under "On disk"; open any of them in a tab and each is linked to its own file. Give it a **single file** and it opens that one, exactly as before.
 
+While a companion is connected the Storage panel answers one question per section: **On disk** is what lives in the served directory, under version control, and what `Ctrl/Cmd + S` writes; **Notebooks** is what this browser holds on its own, with no file behind it. A notebook backed by a file appears only in the first — it still has a library entry, which is what keeps its edits when the companion goes away, but saying so twice under two headings made the panel unreadable.
+
 Discovery is deliberately narrow: three levels deep at most, skipping `node_modules`, `dist`, `.git` and other hidden directories, and only files whose head carries the `// ---` frontmatter fence — a repository is full of `.js` that is not a notebook, and offering all of it would bury the two files you actually work in.
 
 The companion serves the app from localhost and keeps those files and the open tabs in sync in both directions:

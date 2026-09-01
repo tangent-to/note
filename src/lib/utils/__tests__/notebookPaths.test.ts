@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   displayName,
+  frontmatterTitle,
   looksLikeNotebook,
   normalizeRoot,
   relativeTo,
@@ -118,5 +119,25 @@ describe('displayName', () => {
   it('is the filename without the extension', () => {
     expect(displayName('rda/penguins.js')).toBe('penguins');
     expect(displayName('luum.js')).toBe('luum');
+  });
+});
+
+describe('frontmatterTitle', () => {
+  it('reads the title the app names the notebook by', () => {
+    // Listing filenames instead would put two different names for the same
+    // notebook side by side in one panel.
+    const head = '// ---\n// title: Getting started with tangent/ds\n// id: nb-1\n// ---\n';
+    expect(frontmatterTitle(head)).toBe('Getting started with tangent/ds');
+  });
+
+  it('tolerates spacing and no space after the slashes', () => {
+    expect(frontmatterTitle('//---\n//title:Luum\n')).toBe('Luum');
+    expect(frontmatterTitle('// ---\n//   title:   Luum   \n')).toBe('Luum');
+  });
+
+  it('is null when there is none, so the caller can fall back to the filename', () => {
+    expect(frontmatterTitle('// ---\n// id: nb-1\n// ---\n')).toBeNull();
+    expect(frontmatterTitle('')).toBeNull();
+    expect(frontmatterTitle('// title is not a field here\n')).toBeNull();
   });
 });

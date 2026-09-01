@@ -102,10 +102,35 @@
   const notebooksSize = $derived($libraryEntries.reduce((n, e) => n + e.size, 0));
   const datasetsSize = $derived($datasets.reduce((n, d) => n + d.size, 0));
 
-  /** Paths already open in a tab, so the disk list can say so. */
-  const openPaths = $derived(new Set($libraryEntries
-    .filter((e) => e.origin.kind === 'disk')
-    .map((e) => (e.origin as { kind: 'disk'; path: string }).path)));
+  const diskPath = (entry: LibraryEntry) =>
+    entry.origin.kind === 'disk' ? entry.origin.path : null;
+
+  /** Library rows for the companion's files, keyed by path. */
+  const byDiskPath = $derived(new Map(
+    $libraryEntries.flatMap((e) => {
+      const path = diskPath(e);
+      return path ? [[path, e] as const] : [];
+    })
+  ));
+
+  /**
+   * The two lists must not describe the same notebook twice.
+   *
+   * A notebook opened from disk also has a library entry — that is what keeps
+   * its edits from being lost when the companion goes away — but it lives in
+   * the file, and saying so twice under two different headings is what made
+   * the panel unreadable. So while a companion is connected, a file-backed
+   * notebook appears only under "On disk", and "Notebooks" is what this
+   * browser holds on its own.
+   */
+  const browserNotebooks = $derived(
+    $syncStatus === 'connected'
+      ? shownNotebooks.filter((e) => {
+          const path = diskPath(e);
+          return !path || !$syncFiles.some((f) => f.path === path);
+        })
+      : shownNotebooks
+  );
 
   const openId = $derived($currentNotebook?.id ?? null);
   /** The open notebook may sit under any origin's key, so match on its own id. */
@@ -333,12 +358,15 @@
             </span>
           </div>
 
+          <p class="storage-note">Served by <code>note serve</code>. Ctrl/Cmd+S writes these files in place.</p>
+
           {#if $syncFiles.length === 0}
             <div class="empty-vars">No notebooks found under the served directory.</div>
           {:else}
             <div class="dataset-list">
               {#each $syncFiles as file (file.path)}
-                <div class="dataset-item">
+                {@const entry = byDiskPath.get(file.path)}
+                <div class="dataset-item" class:current={entry ? isOpen(entry) : false}>
                   <button
                     class="notebook-main"
                     onclick={() => onopenDiskFile?.({ path: file.path })}
@@ -346,7 +374,7 @@
                   >
                     <div class="dataset-name">{file.name}</div>
                     <div class="dataset-meta">
-                      {file.path}{#if openPaths.has(file.path)} · open{/if}
+                      {file.path}{#if entry} · {entry.cellCount} cell{entry.cellCount === 1 ? '' : 's'} · {formatBytes(entry.size)}{/if}{#if entry && isOpen(entry)} · open{/if}
                     </div>
                   </button>
                 </div>
@@ -361,9 +389,13 @@
            finding something you had forgotten and for clearing out. -->
       <div class="storage-section">
         <div class="storage-section-head">
-          <h4 class="section-title">Notebooks ({$libraryEntries.length})</h4>
+          <h4 class="section-title">Notebooks ({browserNotebooks.length})</h4>
           <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
         </div>
+
+        {#if $syncStatus === 'connected'}
+          <p class="storage-note">Kept in this browser only — no file on disk.</p>
+        {/if}
 
         {#if $libraryEntries.length >= FILTER_FROM}
           <input
@@ -377,11 +409,14 @@
 
         {#if $libraryEntries.length === 0}
           <div class="empty-vars">No notebooks stored yet.</div>
-        {:else if shownNotebooks.length === 0}
-          <div class="empty-vars">No notebook matches “{notebookFilter}”.</div>
+        {:else if browserNotebooks.length === 0}
+          <div class="empty-vars">
+            {#if notebookFilter.trim()}No notebook matches “{notebookFilter}”.
+            {:else}Every notebook you have is on disk.{/if}
+          </div>
         {:else}
           <div class="dataset-list">
-            {#each shownNotebooks as entry (entry.id)}
+            {#each browserNotebooks as entry (entry.id)}
               <div class="dataset-item" class:current={isOpen(entry)}>
                 <button
                   class="notebook-main"

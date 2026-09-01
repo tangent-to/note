@@ -203,8 +203,19 @@
         // A single-file invocation names the notebook to open. A directory
         // names none, so the tabs from last time come back and any of them
         // backed by a file on disk is refreshed from it.
-        if (hello.initial) openSyncFile(hello.initial);
-        else await restoreSessions();
+        if (hello.initial) {
+          openSyncFile(hello.initial);
+        } else {
+          // Never fall back to the bundled example here: the companion is
+          // serving real, git-tracked notebooks, and loading the example would
+          // put a second copy of a file it already serves into the library —
+          // the same notebook listed twice, once as "example" and once as a
+          // file. Its first file is the better greeting.
+          await restoreSessions({ fallback: hello.files.length > 0 ? 'none' : 'sample' });
+          if (get(sessions).length === 0 && hello.files.length > 0) {
+            openSyncFile(hello.files[0].path);
+          }
+        }
         for (const session of get(sessions)) {
           const origin = get(session.origin);
           if (origin.kind === 'disk') openSyncFile(origin.path);
@@ -289,7 +300,7 @@
    * in the library, then to the sample: an empty screen is never the answer to
    * "the pointer named something that has since been deleted".
    */
-  async function restoreSessions() {
+  async function restoreSessions(opts: { fallback?: 'sample' | 'none' } = {}) {
     await libraryReady;
     const { open, active } = lastOpenSessions();
 
@@ -306,6 +317,8 @@
       console.info(`Restored ${restored} notebook${restored === 1 ? '' : 's'} from the library`);
       return;
     }
+
+    if (opts.fallback === 'none') return;
 
     const [newest] = get(libraryEntries);
     const fallback = newest ? await getNotebookRecord(newest.id) : undefined;

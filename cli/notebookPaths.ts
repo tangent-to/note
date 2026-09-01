@@ -50,6 +50,22 @@ export function looksLikeNotebook(head: string): boolean {
   return false;
 }
 
+/**
+ * The notebook's own title, from the `// title:` line of its frontmatter.
+ *
+ * The app names notebooks by their title everywhere else, so a file listing
+ * that showed filenames instead would put two different names for the same
+ * notebook side by side in one panel. The head is already being read to
+ * recognise the format, so this costs nothing extra.
+ */
+export function frontmatterTitle(head: string): string | null {
+  for (const line of head.split('\n', 12)) {
+    const match = /^\s*\/\/\s*title:\s*(.+?)\s*$/.exec(line);
+    if (match && match[1]) return match[1];
+  }
+  return null;
+}
+
 /** Collapse `.` and `..`; returns null when the path climbs above its base. */
 function normalizeSegments(path: string): string[] | null {
   const out: string[] = [];

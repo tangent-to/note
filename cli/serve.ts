@@ -23,6 +23,7 @@
 import {
   MAX_DEPTH,
   displayName,
+  frontmatterTitle,
   looksLikeNotebook,
   normalizeRoot,
   relativeTo,
@@ -34,8 +35,9 @@ const DEFAULT_PORT = 4321;
 const SYNC_PATH = "/__sync";
 // A write lands as one or more fs events; coalesce them before reading.
 const WATCH_DEBOUNCE_MS = 120;
-// Enough to see the frontmatter fence without reading a large file.
-const SNIFF_BYTES = 256;
+// Enough to see the frontmatter fence and its title without reading a large
+// file. The whole block is a handful of short comment lines.
+const SNIFF_BYTES = 512;
 
 interface Args {
   targets: string[];
@@ -87,6 +89,8 @@ function contentType(path: string): string {
 interface NotebookFile {
   /** Relative to the root, and the key for every message about this file. */
   path: string;
+  /** The notebook's own title, so the app names it the way it names all the
+   *  others. Falls back to the filename when the frontmatter has none. */
   name: string;
 }
 
@@ -150,7 +154,7 @@ function discover(root: string): NotebookFile[] {
       }
       if (!looksLikeNotebook(head)) continue;
       const path = relativeTo(root, absolute);
-      if (path) found.push({ path, name: displayName(path) });
+      if (path) found.push({ path, name: frontmatterTitle(head) ?? displayName(path) });
     }
   };
 
@@ -189,7 +193,7 @@ export function main(args: Args) {
     const next = discover(root);
     const changed =
       next.length !== files.length ||
-      next.some((f, i) => f.path !== files[i].path);
+      next.some((f, i) => f.path !== files[i].path || f.name !== files[i].name);
     if (!changed) return;
     files = next;
     broadcast({ type: "files", files });
