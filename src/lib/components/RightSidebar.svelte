@@ -4,6 +4,7 @@
   import { currentNotebook, kernelMode } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import { syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
   import {
     libraryEntries,
     libraryPersistent,
@@ -21,6 +22,7 @@
     activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'storage';
     oninsertCode?: (detail: { code: string }) => void;
     onopenNotebook?: (detail: { id: string }) => void;
+    onopenDiskFile?: (detail: { path: string }) => void;
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
     onclearBrowserData?: () => void;
   }
@@ -30,6 +32,7 @@
     activeTab = $bindable('info'),
     oninsertCode,
     onopenNotebook,
+    onopenDiskFile,
     ondeleteNotebook,
     onclearBrowserData,
   }: Props = $props();
@@ -98,6 +101,11 @@
 
   const notebooksSize = $derived($libraryEntries.reduce((n, e) => n + e.size, 0));
   const datasetsSize = $derived($datasets.reduce((n, d) => n + d.size, 0));
+
+  /** Paths already open in a tab, so the disk list can say so. */
+  const openPaths = $derived(new Set($libraryEntries
+    .filter((e) => e.origin.kind === 'disk')
+    .map((e) => (e.origin as { kind: 'disk'; path: string }).path)));
 
   const openId = $derived($currentNotebook?.id ?? null);
   /** The open notebook may sit under any origin's key, so match on its own id. */
@@ -309,6 +317,42 @@
           This browser refused persistent storage (private window, or another tab
           holds an older database). Notebooks are kept in memory and will be gone
           when you close this tab — export anything you want to keep.
+        </div>
+      {/if}
+
+      <!-- Files the `note serve` companion is offering. Listed first, and apart
+           from the library: these are on disk and under version control, which
+           is a stronger claim on being "where the notebook lives" than a copy
+           in this browser. Absent entirely when no companion is connected. -->
+      {#if $syncStatus === 'connected'}
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">On disk ({$syncFiles.length})</h4>
+            <span class="storage-section-size" title={$syncRoot ?? ''}>
+              {$syncRoot?.split('/').pop() ?? ''}
+            </span>
+          </div>
+
+          {#if $syncFiles.length === 0}
+            <div class="empty-vars">No notebooks found under the served directory.</div>
+          {:else}
+            <div class="dataset-list">
+              {#each $syncFiles as file (file.path)}
+                <div class="dataset-item">
+                  <button
+                    class="notebook-main"
+                    onclick={() => onopenDiskFile?.({ path: file.path })}
+                    title={`Open ${file.path}`}
+                  >
+                    <div class="dataset-name">{file.name}</div>
+                    <div class="dataset-meta">
+                      {file.path}{#if openPaths.has(file.path)} · open{/if}
+                    </div>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
 

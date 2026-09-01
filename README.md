@@ -59,14 +59,20 @@ In the browser, saving a notebook is a download: a new file lands in your downlo
 
 ```bash
 npm run build # once, to produce dist/
-npm run serve -- path/to/notebook.js # then open http://localhost:4321
+npm run serve -- path/to/notebooks/  # a directory, or a single .js file
+                                     # then open http://localhost:4321
 ```
 
-The companion serves the app from localhost and keeps the file and the open tab in sync in both directions:
+Give it a **directory** and it offers every notebook under it, listed in the Storage panel under "On disk"; open any of them in a tab and each is linked to its own file. Give it a **single file** and it opens that one, exactly as before.
 
-- **Editor to browser**: The file is watched, so a change made in Zed, VS Code  or by a coding agent is pushed to the tab, which reloads the notebook.
-- **Browser to disk**: `Ctrl/Cmd + S` writes that same file in place, so `git
-  diff` shows an ordinary modification instead of an untracked download.
+Discovery is deliberately narrow: three levels deep at most, skipping `node_modules`, `dist`, `.git` and other hidden directories, and only files whose head carries the `// ---` frontmatter fence — a repository is full of `.js` that is not a notebook, and offering all of it would bury the two files you actually work in.
+
+The companion serves the app from localhost and keeps those files and the open tabs in sync in both directions:
+
+- **Editor to browser**: files are watched, so a change made in Zed, VS Code or by a coding agent is pushed to the tab holding that file — wherever you happen to be looking.
+- **Browser to disk**: `Ctrl/Cmd + S` writes that notebook's own file in place, so `git diff` shows an ordinary modification instead of an untracked download. A tab opened from a link or from the library has no file to write to, and says so in the header; there `Ctrl/Cmd + S` still exports a download.
+
+Every message is keyed by a path relative to the served root, and the companion resolves it through a single guard: anything that would leave that root — an absolute path, a `..` that climbs out — is refused rather than resolved. The browser names files for a local process here, and any page can be pointed at localhost.
 
 This is what makes an external editor and the notebook usable together: write and refactor with an agent in your editor, run and visualize in tangent/note, commit from the repository as usual. The header shows the linked file name while a companion is connected.
 
