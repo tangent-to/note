@@ -138,13 +138,26 @@ describe('entryOf and sortEntries', () => {
     expect(entryOf(record).name).toBe('Luum');
   });
 
-  it('lists most recently opened first, breaking ties by name', () => {
-    const at = (name: string, lastOpenedAt: number): LibraryEntry => ({
-      id: name, notebookId: name, name, createdAt: 0, updatedAt: 0,
+  it('lists alphabetically, ignoring when anything was opened', () => {
+    // Regression: ordering by last-opened made a row jump to the top of the
+    // list the moment it was clicked, moving the map out from under the reader.
+    const at = (id: string, name: string, lastOpenedAt: number): LibraryEntry => ({
+      id, notebookId: id, name, createdAt: 0, updatedAt: 0,
       lastOpenedAt, origin: { kind: 'local' }, cellCount: 0, size: 0,
     });
-    const sorted = sortEntries([at('b', 1), at('c', 5), at('a', 1)]);
-    expect(sorted.map((e) => e.name)).toEqual(['c', 'a', 'b']);
+    const entries = [at('1', 'test 2', 1), at('2', 'test 10', 5), at('3', 'test 1', 99)];
+    expect(sortEntries(entries).map((e) => e.name)).toEqual(['test 1', 'test 10', 'test 2']);
+    // Opening "test 2" must not reorder anything.
+    entries[0].lastOpenedAt = 1000;
+    expect(sortEntries(entries).map((e) => e.name)).toEqual(['test 1', 'test 10', 'test 2']);
+  });
+
+  it('keeps same-named entries in a stable order', () => {
+    const same = (id: string): LibraryEntry => ({
+      id, notebookId: 'nb', name: 'Same', createdAt: 0, updatedAt: 0,
+      lastOpenedAt: 0, origin: { kind: 'local' }, cellCount: 0, size: 0,
+    });
+    expect(sortEntries([same('b'), same('a')]).map((e) => e.id)).toEqual(['a', 'b']);
   });
 
   it('does not mutate its input', () => {

@@ -357,6 +357,30 @@
     });
   }
 
+  let titleEl: HTMLElement | null = null;
+
+  /**
+   * Fill the title heading by hand.
+   *
+   * It is contenteditable, so the browser — and the blur handler below, which
+   * normalises whitespace — replace its child nodes freely. A `{name}` in the
+   * template would hand Svelte a text node that the first rename detaches;
+   * every later update then wrote into that orphan, and the heading froze on
+   * whichever title was typed. Opening another notebook left the previous
+   * one's name above it, over the right cells.
+   *
+   * `titleEl` is an argument rather than a closed-over variable so that binding
+   * the element re-runs this, not only a change of name.
+   */
+  $: setTitleText(titleEl, $currentNotebook?.name ?? '');
+
+  function setTitleText(el: HTMLElement | null, name: string): void {
+    // Never fight the caret: until blur commits the new name, the store still
+    // holds the old one, and rewriting here would undo what is being typed.
+    if (!el || el === document.activeElement) return;
+    if (el.textContent !== name) el.textContent = name;
+  }
+
   function handleTitleBlur(event: FocusEvent) {
     const target = event.currentTarget as HTMLElement | null;
     if (!target) return;
@@ -611,7 +635,9 @@
 <div class="notebook-container">
   {#if $currentNotebook}
     <div class="notebook-header">
+      <!-- No `{name}` in here on purpose: see the effect that fills it. -->
       <h1
+        bind:this={titleEl}
         class="notebook-title"
         contenteditable="true"
         spellcheck="false"
@@ -619,9 +645,7 @@
         data-testid="notebook-title"
         onkeydown={handleTitleKeydown}
         onblur={handleTitleBlur}
-      >
-        {$currentNotebook.name}
-      </h1>
+      ></h1>
     </div>
 
     <div class="cells-container">

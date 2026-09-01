@@ -168,10 +168,18 @@ export function entryOf(record: LibraryRecord): LibraryEntry {
   return entry;
 }
 
-/** Most recently opened first; ties broken by name so the order is stable. */
+/**
+ * Alphabetical, and only alphabetical.
+ *
+ * Sorting by last-opened seemed helpful and was not: opening a notebook moved
+ * its row to the top of the list under the cursor that had just clicked it, so
+ * the list rearranged itself exactly when the reader was using it as a map.
+ * A fixed order means a row stays where you last saw it. Ties fall back to the
+ * key so two notebooks of the same name keep a stable order between renders.
+ */
 export function sortEntries(entries: LibraryEntry[]): LibraryEntry[] {
   return [...entries].sort(
-    (a, b) => b.lastOpenedAt - a.lastOpenedAt || a.name.localeCompare(b.name)
+    (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
   );
 }
 

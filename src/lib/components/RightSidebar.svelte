@@ -82,6 +82,20 @@
     refreshLibrary();
   }
 
+  // A long library turns the panel into a wall. Ctrl+K is the finder for
+  // opening; this one is for reaching a row you mean to inspect or delete, so
+  // it only appears once scrolling has actually become the problem.
+  const FILTER_FROM = 8;
+  let notebookFilter = $state('');
+
+  const shownNotebooks = $derived.by(() => {
+    const q = notebookFilter.trim().toLowerCase();
+    if (!q) return $libraryEntries;
+    return $libraryEntries.filter(
+      (e) => e.name.toLowerCase().includes(q) || originLabel(e.origin).toLowerCase().includes(q)
+    );
+  });
+
   const notebooksSize = $derived($libraryEntries.reduce((n, e) => n + e.size, 0));
   const datasetsSize = $derived($datasets.reduce((n, d) => n + d.size, 0));
 
@@ -279,12 +293,13 @@
       </div>
     {/if}
   {:else if activeTab === 'storage'}
-    <div class="sidebar-content">
+    <div class="storage-tab">
       <div class="storage-total">
         <span>Kept in this browser</span>
         <span class="storage-total-size">{formatBytes(notebooksSize + datasetsSize)}</span>
       </div>
 
+      <div class="storage-scroll">
       {#if !$libraryPersistent}
         <div class="storage-warning">
           This browser refused persistent storage (private window, or another tab
@@ -302,11 +317,23 @@
           <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
         </div>
 
+        {#if $libraryEntries.length >= FILTER_FROM}
+          <input
+            class="storage-filter"
+            type="search"
+            placeholder="Filter notebooks…"
+            aria-label="Filter notebooks"
+            bind:value={notebookFilter}
+          />
+        {/if}
+
         {#if $libraryEntries.length === 0}
           <div class="empty-vars">No notebooks stored yet.</div>
+        {:else if shownNotebooks.length === 0}
+          <div class="empty-vars">No notebook matches “{notebookFilter}”.</div>
         {:else}
           <div class="dataset-list">
-            {#each $libraryEntries as entry (entry.id)}
+            {#each shownNotebooks as entry (entry.id)}
               <div class="dataset-item" class:current={isOpen(entry)}>
                 <button
                   class="notebook-main"
@@ -403,6 +430,7 @@
         <h4 class="section-title">Other browser data</h4>
         <p class="storage-note">Chat history, AI key and preferences, in localStorage.</p>
         <button class="storage-clear" onclick={() => onclearBrowserData?.()}>Clear…</button>
+      </div>
       </div>
     </div>
 
@@ -605,13 +633,30 @@
 
   /* Storage panel: two lists that happen to share a home, so they are visibly
      two sections rather than one merged pile. */
+  /* The tab scrolls its own body rather than riding .sidebar-content, so the
+     running total stays put while a long library scrolls under it. Same shape
+     as .console-tab, for the same reason. */
+  .storage-tab {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .storage-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1rem 1rem;
+  }
+
   .storage-total {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    flex: 0 0 auto;
     font-size: 0.8rem;
     color: var(--text-muted);
-    padding-bottom: 0.6rem;
+    padding: 1rem 1rem 0.6rem;
     border-bottom: 1px solid var(--border);
   }
 
@@ -630,10 +675,19 @@
 
   .storage-section { margin-top: 1.25rem; }
 
+  /* Sticky so you can always tell which list you are scrolling through once
+     either one is longer than the panel. The background has to be opaque and
+     bleed into the scroller's padding, or rows show through beside it. */
   .storage-section-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    margin: 0 -1rem;
+    padding: 0.4rem 1rem;
+    background-color: var(--surface);
   }
 
   /* The head already carries the section's bottom spacing. */
@@ -660,6 +714,23 @@
   }
 
   .dataset-item.current { border-color: var(--accent); }
+
+  .storage-filter {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.78rem;
+    font-family: inherit;
+    color: var(--text);
+    background-color: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+  }
+
+  .storage-filter:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
 
   .storage-note {
     font-size: 0.75rem;
@@ -736,7 +807,14 @@
     text-overflow: ellipsis;
   }
 
-  .dataset-meta { font-size: 0.68rem; color: var(--text-faint); margin-top: 0.1rem; }
+  .dataset-meta {
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    margin-top: 0.1rem;
+    /* Four facts on one line in a panel draggable down to 240px: let it wrap
+       rather than push the delete button off the row. */
+    overflow-wrap: anywhere;
+  }
 
   .dataset-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
