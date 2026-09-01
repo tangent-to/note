@@ -561,6 +561,22 @@
     });
   }
 
+  /** Show this cell's value as a structure rather than a table (#inspect). */
+  function handleSetOutputView({ cellId, outputView }: { cellId: string; outputView?: 'inspector' }) {
+    markNotebookDirty();
+    currentNotebook.update(notebook => {
+      if (!notebook) return notebook;
+      return {
+        ...notebook,
+        cells: notebook.cells.map((cell: NotebookCell) =>
+          cell.id === cellId
+            ? { ...cell, outputView }
+            : cell
+        )
+      };
+    });
+  }
+
   function handleToggleReadOnly({ cellId }: { cellId: string }) {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -724,6 +740,7 @@
           ontoggleSkip={handleToggleSkip}
           ontoggleReadOnly={handleToggleReadOnly}
           onsetOutputWidth={handleSetOutputWidth}
+          onsetOutputView={handleSetOutputView}
           ondragstart={handleDragStart}
           ondragover={handleDragOver}
           ondragend={handleDragEnd}

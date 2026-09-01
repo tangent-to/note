@@ -32,6 +32,7 @@
     ontoggleSkip?: (detail: { cellId: string }) => void;
     ontoggleReadOnly?: (detail: { cellId: string }) => void;
     onsetOutputWidth?: (detail: { cellId: string; outputWidth?: 'wide' | 'full' }) => void;
+    onsetOutputView?: (detail: { cellId: string; outputView?: 'inspector' }) => void;
     ondragstart?: (detail: { cellId: string }) => void;
     ondragover?: (detail: { cellId: string; position: 'above' | 'below' }) => void;
     ondragend?: () => void;
@@ -57,6 +58,7 @@
     ontoggleSkip,
     ontoggleReadOnly,
     onsetOutputWidth,
+    onsetOutputView,
     ondragstart,
     ondragover,
     ondragend,
@@ -412,7 +414,7 @@
           class:wide={cell.outputWidth === 'wide'}
           class:full={cell.outputWidth === 'full'}
         >
-          <CellOutput output={cell.output!} />
+          <CellOutput output={cell.output!} inspect={cell.outputView === 'inspector'} />
         </div>
       {:else if hasOutput && cell.outputCollapsed}
         <div class="collapsed-output-indicator">
@@ -540,6 +542,11 @@
           {#if cell.type === 'code'}
             <button role="menuitem" class="menu-item" data-testid="wide-output-btn" onclick={runMenu(() => onsetOutputWidth?.({ cellId: cell.id, outputWidth: cell.outputWidth === 'wide' ? undefined : 'wide' }))}>{cell.outputWidth === 'wide' ? '✓ Wide output' : 'Wide output'}</button>
             <button role="menuitem" class="menu-item" data-testid="full-output-btn" onclick={runMenu(() => onsetOutputWidth?.({ cellId: cell.id, outputWidth: cell.outputWidth === 'full' ? undefined : 'full' }))}>{cell.outputWidth === 'full' ? '✓ Full-width output' : 'Full-width output'}</button>
+            {#if cell.output?.type === 'table'}
+              <!-- Only for a value that renders as a table: everything else is
+                   already shown as a structure, so the switch would do nothing. -->
+              <button role="menuitem" class="menu-item" data-testid="inspect-output-btn" onclick={runMenu(() => onsetOutputView?.({ cellId: cell.id, outputView: cell.outputView === 'inspector' ? undefined : 'inspector' }))}>{cell.outputView === 'inspector' ? '✓ Inspect as object' : 'Inspect as object'}</button>
+            {/if}
             <button role="menuitem" class="menu-item" data-testid="skip-cell-btn" onclick={runMenu(() => ontoggleSkip?.({ cellId: cell.id }))}>{cell.skipped ? 'Enable cell' : 'Skip cell (never runs)'}</button>
           {/if}
           <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleReadOnly?.({ cellId: cell.id }))}>{cell.readOnly ? 'Unlock cell' : 'Lock cell (read-only)'}</button>

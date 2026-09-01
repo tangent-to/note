@@ -179,6 +179,33 @@ describe('parseNotebook', () => {
     expect(parsed.cells[2].outputWidth).toBeUndefined();
   });
 
+  it('round-trips #inspect, the way out of the table rendering', () => {
+    // An array of records renders as a sortable table, which is right for rows
+    // and exactly wrong when the question is what shape the thing is. The
+    // choice travels with the cell, so it survives a save and a reopen.
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'code', content: 'rows', outputView: 'inspector' },
+        { id: 'cell-2', type: 'code', content: 'rows' },
+      ],
+    });
+    const serialized = serializeNotebook(original);
+    expect(serialized).toContain('// %% [javascript] #inspect\nrows');
+
+    const parsed = parseNotebook(serialized, 'test.js');
+    expect(parsed.cells[0].outputView).toBe('inspector');
+    expect(parsed.cells[1].outputView).toBeUndefined();
+  });
+
+  it('carries #inspect alongside a width tag', () => {
+    const original = makeNotebook({
+      cells: [{ id: 'cell-1', type: 'code', content: 'rows', outputWidth: 'wide', outputView: 'inspector' }],
+    });
+    const parsed = parseNotebook(serializeNotebook(original), 'test.js');
+    expect(parsed.cells[0].outputWidth).toBe('wide');
+    expect(parsed.cells[0].outputView).toBe('inspector');
+  });
+
   it('lets #full win when both #wide and #full are present', () => {
     const parsed = parseNotebook('// %% [javascript] #wide #full\na', 'test.js');
     expect(parsed.cells[0].outputWidth).toBe('full');
