@@ -63,15 +63,48 @@ function proxyBase(): string | undefined {
   return url || undefined;
 }
 
+/**
+ * A base URL carrying exactly one `/api` segment.
+ *
+ * Both inputs that feed this are pasted by hand — VITE_OLLAMA_PROXY_URL and the
+ * Base URL field — and both are naturally written with `/api` already on the
+ * end. Appending unconditionally made `…/api/api/chat`, which Ollama answers
+ * with `path "/api/api/chat" not found`: a 404 that reads like a broken client
+ * rather than a URL that was joined twice. Collapsing the repeats also repairs
+ * a bad value already saved in a reader's browser, since every request is built
+ * through here.
+ */
+export function withApiPath(base: string): string {
+  const trimmed = base.replace(/\/+$/, '');
+  return `${trimmed.replace(/(\/api)+$/, '')}/api`;
+}
+
+/**
+ * Does this base URL point at an Ollama running on the reader's own machine?
+ *
+ * Ollama Cloud needs an API key; `ollama serve` on localhost takes none. Only
+ * an absolute localhost URL counts — a relative base like `/ollama/api` is the
+ * dev server's proxy, which does reach ollama.com and does need a key.
+ */
+export function isLocalBase(base: string): boolean {
+  if (!/^https?:\/\//i.test(base)) return false;
+  try {
+    const host = new URL(base).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
 // Resolve the default base URL:
 //  - dev:        the Vite proxy (`/ollama` -> https://ollama.com)
 //  - prod+proxy: the configured Cloudflare proxy
 //  - prod only:  ollama.com directly (subject to browser CORS)
 export function defaultBaseUrl(): string {
-  if (viteEnv()?.DEV) return '/ollama/api';
+  if (viteEnv()?.DEV) return withApiPath('/ollama');
   const proxy = proxyBase();
-  if (proxy) return `${proxy}/api`;
-  return 'https://ollama.com/api';
+  if (proxy) return withApiPath(proxy);
+  return withApiPath('https://ollama.com');
 }
 
 // True when requests avoid browser CORS — either the dev proxy or a configured
@@ -117,16 +150,15 @@ export class AIService {
   }
 
   isConfigured(): boolean {
-    return Boolean(this.config.apiKey && this.config.baseUrl && this.config.model);
+    if (!this.config.baseUrl || !this.config.model) return false;
+    // A local Ollama authenticates nobody, so demanding a key here meant the
+    // only way to reach a model already running on the reader's machine was to
+    // invent one.
+    return Boolean(this.config.apiKey) || isLocalBase(this.config.baseUrl);
   }
 
   private endpoint(path: string): string {
-    // The Ollama API lives under /api. Tolerate a base URL given with or
-    // without it (e.g. a proxy root like https://…workers.dev) so requests
-    // always hit /api/chat rather than /chat.
-    let base = this.config.baseUrl.replace(/\/+$/, '');
-    if (!/\/api$/.test(base)) base += '/api';
-    return base + path;
+    return withApiPath(this.config.baseUrl) + path;
   }
 
   private headers(): Record<string, string> {
@@ -143,7 +175,7 @@ export class AIService {
    */
   async chat(messages: ChatMessage[], system?: string): Promise<string> {
     if (!this.isConfigured()) {
-      throw new Error('Ollama Cloud is not configured. Add your API key in settings.');
+      throw new Error('Ollama is not configured. Add your API key in settings, or point the base URL at a local Ollama.');
     }
 
     const fullMessages: ChatMessage[] = system

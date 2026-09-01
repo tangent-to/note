@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, type ChatMessage } from '../utils/aiService';
+  import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, isLocalBase, type ChatMessage } from '../utils/aiService';
   import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
   import { chatMessages, clearChatHistory, type Message } from '../stores/chat';
@@ -20,7 +20,11 @@
   // accessed below as $chatMessages, so it survives closing/reopening the
   // sidebar and a page reload.
   let inputValue = $state('');
+  let inputEl: HTMLTextAreaElement | null = $state(null);
   let isLoading = $state(false);
+  /** How tall the composer grows before it scrolls instead (~8 lines). Mirrored
+   *  by .chat-input's max-height, which guards the moments before this runs. */
+  const MAX_INPUT_HEIGHT = 200;
   let messagesContainer: HTMLDivElement = $state(null as any);
   let isConfigured = $state(false);
   let showSettings = $state(false);
@@ -47,6 +51,22 @@
     rememberKey = config.rememberKey;
     isConfigured = aiService.isConfigured();
     aiContext = loadAIContext();
+  });
+
+  // The composer follows its text instead of staying one line tall and
+  // scrolling inside itself, which hid all but the last line of anything longer
+  // than a sentence. Height is measured from scrollHeight after collapsing the
+  // box, because scrollHeight never shrinks on its own — without the reset,
+  // deleting text would leave the box at its high-water mark.
+  $effect(() => {
+    const el = inputEl;
+    // Read the value so this re-runs on every keystroke, and on the reset that
+    // follows a send.
+    inputValue;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT)}px`;
+    el.style.overflowY = el.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
   });
 
   function handleContextSave() {
@@ -205,17 +225,17 @@
             <circle cx="12" cy="12" r="10"/>
             <path d="M9 12l2 2 4-4"/>
           </svg>
-          <span>Connected to Ollama Cloud ({model})</span>
+          <span>Connected to {isLocalBase(baseUrl) ? 'local Ollama' : 'Ollama Cloud'} ({model})</span>
         </div>
         <button class="btn-secondary" onclick={handleDisconnect}>Disconnect</button>
       {:else}
         <div class="form-group">
-          <label for="ollama-key">API Key</label>
+          <label for="ollama-key">API Key{isLocalBase(baseUrl) ? ' (not needed)' : ''}</label>
           <input
             id="ollama-key"
             type="password"
             bind:value={apiKey}
-            placeholder="Your Ollama Cloud API key"
+            placeholder={isLocalBase(baseUrl) ? 'Local Ollama needs no key' : 'Your Ollama Cloud API key'}
             class="input"
           />
           <label class="remember-row">
@@ -251,11 +271,19 @@
             placeholder="https://ollama.com/api"
             class="input"
           />
-          <p class="help-text">Leave as default unless you route through a proxy.</p>
+          <p class="help-text">
+            Leave as default unless you route through a proxy. For an Ollama on
+            this machine, use <code>http://localhost:11434</code> — no API key is
+            needed, and Ollama already allows requests from localhost origins.
+          </p>
         </div>
 
         <div class="settings-actions">
-          <button class="btn-primary" onclick={handleSettingsSave} disabled={!apiKey.trim()}>Connect</button>
+          <button
+            class="btn-primary"
+            onclick={handleSettingsSave}
+            disabled={!apiKey.trim() && !isLocalBase(baseUrl)}
+          >Connect</button>
           <button class="btn-secondary" onclick={() => showSettings = false}>Cancel</button>
         </div>
       {/if}
@@ -369,6 +397,7 @@
           </button>
         {/if}
         <textarea
+          bind:this={inputEl}
           bind:value={inputValue}
           onkeydown={handleKeydown}
           placeholder="Ask anything... (Enter to send, Shift+Enter for new line)"
@@ -746,7 +775,9 @@
     font-size: 0.875rem;
     line-height: 1.5;
     resize: none;
-    max-height: 120px;
+    /* Mirrors MAX_INPUT_HEIGHT: the script sizes the box to its content and
+       clamps here; this line only covers the first paint. */
+    max-height: 200px;
     font-family: inherit;
     transition: border-color 0.15s;
   }
