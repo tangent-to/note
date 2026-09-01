@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
   import { currentNotebook, selectedCellId, markNotebookDirty } from '../stores/notebook';
@@ -13,7 +13,8 @@
     recordCellRun,
     recomputeStaleCells,
     reactiveMode,
-    kernelMode
+    kernelMode,
+    notebookWidth
   } from '../stores/notebook';
   import { executorFor } from '../utils/mainExecutor';
   import { kernelFor } from '../utils/kernelClient';
@@ -340,18 +341,48 @@
     setTimeout(() => session.runProgress.set(null), 500);
   }
 
-  async function handleRunAndAdvance({ cellId }: { cellId: string }) {
-    await handleRunCell({ cellId });
+  /**
+   * Scroll a cell into view, once the DOM has caught up with the store.
+   *
+   * `block: 'nearest'` is the whole point: a cell already fully on screen is
+   * left exactly where it is, and one that isn't is brought in with the least
+   * movement that does it. Advancing off the bottom of the window used to leave
+   * the page behind, so the cell you were now typing into wasn't visible.
+   */
+  async function revealCell(cellId: string) {
+    await tick();
+    document
+      .querySelector(`[data-cell-id="${cellId}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
-    let notebook: Notebook | null = null;
-    const unsub = currentNotebook.subscribe(n => notebook = n);
-    unsub();
+  /**
+   * Shift+Enter: run this cell, then move on to the next one.
+   *
+   * Both routes into it land here. The editor's own keymap calls it directly
+   * and stops the event (so it can't also reach the window handler and run the
+   * cell twice); the window handler calls it for a cell whose editor doesn't
+   * hold the keyboard — a rendered text cell, say. They used to be two separate
+   * implementations that disagreed: this one stopped dead on the last cell
+   * instead of opening a new one, so Shift+Enter in the last cell of a notebook
+   * looked like it had done nothing at all.
+   */
+  async function handleRunAndAdvance({ cellId }: { cellId: string }) {
+    await runCellById(cellId);
+
+    const notebook = getNotebookSnapshot();
     if (!notebook) return;
     const idx = notebook.cells.findIndex((c: NotebookCell) => c.id === cellId);
-    if (idx >= 0 && idx < notebook.cells.length - 1) {
-      const next = notebook.cells[idx + 1];
-      selectedCellId.set(next.id);
-    }
+    if (idx === -1) return;
+
+    // Off the end, open a cell to land in rather than staying put.
+    const nextId = idx < notebook.cells.length - 1
+      ? notebook.cells[idx + 1].id
+      : handleAddCell({ afterCellId: cellId });
+    if (!nextId) return;
+
+    selectedCellId.set(nextId);
+    revealCell(nextId);
   }
 
   function handleSelectCell({ cellId }: { cellId: string }) {
@@ -429,7 +460,9 @@
     }
   }
 
-  function handleAddCell({ afterCellId, type = 'code' }: { afterCellId: string; type?: 'code' | 'markdown' }) {
+  /** Returns the new cell's id, so a caller that must scroll to it can. */
+  function handleAddCell({ afterCellId, type = 'code' }: { afterCellId: string; type?: 'code' | 'markdown' }): string | null {
+    let addedId: string | null = null;
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
       const updatedNotebook = addCellAfter(notebook, afterCellId, type);
@@ -437,10 +470,12 @@
         !notebook.cells.some((oldCell: NotebookCell) => oldCell.id === cell.id)
       );
       if (newCell) {
+        addedId = newCell.id;
         selectedCellId.set(newCell.id);
       }
       return updatedNotebook;
     });
+    return addedId;
   }
 
   function handleAddCellBefore({ beforeCellId, type = 'code' }: { beforeCellId: string; type?: 'code' | 'markdown' }) {
@@ -636,26 +671,14 @@
     if (event.altKey && event.key === 'Enter') {
       event.preventDefault();
       await runCellById(activeCellId);
-      handleAddCell({ afterCellId: activeCellId });
+      const added = handleAddCell({ afterCellId: activeCellId });
+      if (added) revealCell(added);
       return;
     }
 
     if (event.shiftKey && event.key === 'Enter') {
       event.preventDefault();
-      await runCellById(activeCellId);
-
-      const notebookAfter = getNotebookSnapshot();
-      if (!notebookAfter) return;
-
-      const idx = notebookAfter.cells.findIndex((c: NotebookCell) => c.id === activeCellId);
-      if (idx === -1) return;
-
-      if (idx < notebookAfter.cells.length - 1) {
-        const next = notebookAfter.cells[idx + 1];
-        selectedCellId.set(next.id);
-      } else {
-        handleAddCell({ afterCellId: activeCellId });
-      }
+      await handleRunAndAdvance({ cellId: activeCellId });
       return;
     }
   }
@@ -663,7 +686,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="notebook-container">
+<div class="notebook-container" class:wide={$notebookWidth === 'wide'} class:full={$notebookWidth === 'full'}>
   {#if $currentNotebook}
     <div class="notebook-header">
       <!-- No `{name}` in here on purpose: see the effect that fills it. -->
@@ -753,6 +776,14 @@
     margin: 0 auto;
     padding: 1.5rem 1.5rem 2.5rem;
   }
+
+  /* Wider settings for writing rather than reading (stores/notebook.ts).
+     Code doesn't wrap at a prose measure, and a single statement wrapping
+     three times is the usual complaint. `full` still keeps its side padding,
+     so text never runs into the window edge and #wide/#full outputs — sized
+     off .main-content, not off this column — still have somewhere to go. */
+  .notebook-container.wide { max-width: 1120px; }
+  .notebook-container.full { max-width: none; }
 
   @media (max-width: 640px) {
     .notebook-container { padding: 1rem 0.75rem 2rem; }

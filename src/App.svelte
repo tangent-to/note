@@ -24,6 +24,7 @@
     resetStaleTracking,
     outputPosition,
     kernelMode,
+    notebookWidth,
     currentOrigin
   } from './lib/stores/notebook';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
@@ -630,6 +631,15 @@
         const next = get(outputPosition) === 'above' ? 'below' : 'above';
         outputPosition.set(next);
         showToast(`Cell outputs now appear ${next} the code`, 'info');
+        break;
+      }
+      case 'cycle-notebook-width': {
+        const order = ['normal', 'wide', 'full'] as const;
+        const next = order[(order.indexOf(get(notebookWidth)) + 1) % order.length];
+        notebookWidth.set(next);
+        showToast(next === 'full'
+          ? 'Notebook width: full. Cells fill the pane.'
+          : `Notebook width: ${next}.`, 'info');
         break;
       }
       case 'toggle-kernel-mode': {

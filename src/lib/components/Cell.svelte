@@ -67,6 +67,8 @@
 
   let editorRef: CodeEditor = $state(null as any);
   let mdEditorRef: CodeEditor = $state(null as any);
+  /** The cell's own frame, focused when it has no editor to hand off to. */
+  let wrapperEl: HTMLDivElement | null = $state(null);
   let isDragging = $state(false);
   // Markdown renders by default; empty cells open in edit mode so you can type.
   // Capture only the initial content (untracked) — toggling is user-driven after.
@@ -177,8 +179,18 @@
         if (cell.type === 'code' && editorRef) {
           editorRef.focus();
         } else if (cell.type === 'markdown' && isEditingMarkdown && mdEditorRef) {
-          // A rendered preview takes no focus; selection alone is enough.
           mdEditorRef.focus();
+        } else {
+          // A rendered text cell has no editor to hand the keyboard to, and
+          // leaving it wherever it was is not neutral: after Shift+Enter it
+          // stayed in the cell above, whose editor then swallowed the next
+          // Shift+Enter and ran that cell a second time. Focusing the frame
+          // itself keeps the keyboard on the selected cell, and lets the
+          // notebook's window handler take the shortcut instead. tabindex="-1"
+          // means programmatic focus only — cells stay out of the tab order.
+          // preventScroll because scrolling is the caller's decision, not a
+          // side effect of taking focus.
+          wrapperEl?.focus({ preventScroll: true });
         }
       });
     }
@@ -277,6 +289,8 @@
 </script>
 
 <div
+  bind:this={wrapperEl}
+  tabindex="-1"
   class="cell-wrapper {isSelected ? 'selected' : ''} {isDragging ? 'dragging' : ''}"
   class:stale={isStale}
   class:skipped={cell.skipped}
@@ -563,6 +577,13 @@
     margin-bottom: 1.1rem;
     padding-left: 0.375rem;
     transition: all 0.2s ease;
+  }
+
+  /* The frame takes focus only when the cell has no editor to hand it to, and
+     it is already the selected cell when that happens — so `.selected` is the
+     visible state and a second ring would just be noise. */
+  .cell-wrapper:focus {
+    outline: none;
   }
 
   /* Insert a code or text cell in the gap between cells, revealed on hover. */

@@ -167,6 +167,23 @@ export const outputPosition = persistedStore<OutputPosition>(
   (raw) => (raw === 'above' ? 'above' : 'below'),
 );
 
+export type NotebookWidth = 'normal' | 'wide' | 'full';
+
+// How wide the notebook column is.
+//
+// The default is a reading measure (~70ch), which is right for prose and
+// cramped for code: a single line of JavaScript wraps long before it would in
+// an editor. 'wide' and 'full' trade the measure for room to write.
+//
+// Global rather than per-notebook, and deliberately so: this answers "how much
+// screen am I working on", not "what is this document". The same notebook wants
+// a different answer on a laptop and on a monitor, so storing it in the file
+// would carry the wrong one between them.
+export const notebookWidth = persistedStore<NotebookWidth>(
+  'tangent-notebook-width',
+  (raw) => (raw === 'wide' || raw === 'full' ? raw : 'normal'),
+);
+
 // Current file path (when a notebook is associated with a file)
 export const currentFilePath = writable<string | null>(null);
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
-  import { currentNotebook, kernelMode } from '../stores/notebook';
+  import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
   import { syncFiles } from '../utils/serverSync';
@@ -309,6 +309,32 @@
             <span><strong>Main thread</strong>. Only needed when an output runs its own scripts after rendering (hover tooltips, zoomable charts, animated players); long runs freeze the page.</span>
           </label>
           <p class="setting-hint">Variables don't carry across kernels; re-run cells after switching.</p>
+
+          <div class="setting-label">Notebook width</div>
+          <div class="width-choice" role="radiogroup" aria-label="Notebook width">
+            <button
+              class="width-btn"
+              class:active={$notebookWidth === 'normal'}
+              role="radio"
+              aria-checked={$notebookWidth === 'normal'}
+              onclick={() => notebookWidth.set('normal')}
+            >Normal</button>
+            <button
+              class="width-btn"
+              class:active={$notebookWidth === 'wide'}
+              role="radio"
+              aria-checked={$notebookWidth === 'wide'}
+              onclick={() => notebookWidth.set('wide')}
+            >Wide</button>
+            <button
+              class="width-btn"
+              class:active={$notebookWidth === 'full'}
+              role="radio"
+              aria-checked={$notebookWidth === 'full'}
+              onclick={() => notebookWidth.set('full')}
+            >Full</button>
+          </div>
+          <p class="setting-hint">Normal is a reading measure; the wider settings give code room so a single line stops wrapping.</p>
         </div>
 
         <div class="divider"></div>
@@ -661,6 +687,33 @@
 
   .setting-option input { margin-top: 0.15rem; flex-shrink: 0; }
   .setting-option strong { color: var(--text); font-weight: 600; }
+
+  .width-choice {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .width-btn {
+    flex: 1;
+    padding: 0.3rem 0.4rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .width-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  .width-btn.active {
+    background: var(--accent-weak-bg);
+    border-color: var(--accent);
+    color: var(--heading);
+  }
 
   .setting-hint {
     font-size: 0.72rem;

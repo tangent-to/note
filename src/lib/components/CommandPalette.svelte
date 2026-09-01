@@ -87,6 +87,13 @@
       action: () => oncommand?.({ id: 'toggle-output-position' })
     },
     {
+      id: 'cycle-notebook-width',
+      name: 'Notebook Width',
+      description: 'Cycle the notebook column between normal, wide and full',
+      icon: 'arrows-left-right',
+      action: () => oncommand?.({ id: 'cycle-notebook-width' })
+    },
+    {
       id: 'toggle-kernel-mode',
       name: 'Toggle Kernel Mode',
       description: 'Run cells in a background worker (default) or on the main thread',
