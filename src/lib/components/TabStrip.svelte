@@ -2,10 +2,15 @@
   /**
    * The open notebooks, as tabs.
    *
-   * One row, below the header and above the notebook. Hidden entirely when a
-   * single notebook is open: a strip with one tab in it is chrome that explains
-   * nothing, and the app has to stay as quiet as it was for the reader who only
-   * ever wants one notebook.
+   * It lives in the header row, between the two button groups. That row is
+   * fixed at one line at every width, so the strip is the only thing there
+   * allowed to shrink: it absorbs the free space, scrolls inside itself when
+   * the tabs outgrow it, and disappears entirely on narrow screens where a
+   * forty-pixel sliver would help nobody (Ctrl+K still switches notebooks).
+   *
+   * Hidden too while a single notebook is open: a strip with one tab in it is
+   * chrome that explains nothing, and the app has to stay as quiet as it was
+   * for the reader who only ever wants one notebook.
    */
   import { sessions } from '../stores/sessions';
   import NotebookTab from './NotebookTab.svelte';
@@ -43,23 +48,27 @@
 {/if}
 
 <style>
-  /* Pinned: .main-content is the scroll container, so without this the strip
-     would scroll away with the notebook it labels. */
   .tab-strip {
-    position: sticky;
-    top: 0;
-    z-index: 10;
     display: flex;
-    align-items: stretch;
+    align-items: center;
+    /* Absorbs the header's free space, and is the only header child that may
+       shrink — min-width:0 is what lets it, rather than pushing the buttons
+       out of the row. */
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 0.15rem;
-    padding: 0 0.75rem;
-    border-bottom: 1px solid var(--border);
-    background-color: var(--surface);
+    padding: 0 0.5rem;
     overflow-x: auto;
     scrollbar-width: none;
   }
 
   .tab-strip::-webkit-scrollbar { display: none; }
+
+  /* Below this the header has no room to spare, and a strip squeezed to a few
+     pixels is worse than none: Ctrl+K switches notebooks instead. */
+  @media (max-width: 640px) {
+    .tab-strip { display: none; }
+  }
 
   .tab-new {
     display: flex;

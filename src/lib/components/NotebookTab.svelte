@@ -60,23 +60,28 @@
 </div>
 
 <style>
+  /* In a 44px header row an underline would land on the header's own bottom
+     edge, where the batch-run progress bar already lives. A quiet filled pill
+     reads as "selected" in a toolbar without competing with it. */
   .tab {
     display: flex;
     align-items: center;
     flex: 0 1 auto;
     min-width: 0;
-    max-width: 15rem;
-    border-bottom: 2px solid transparent;
+    max-width: 11rem;
+    border-radius: var(--radius-input);
   }
 
-  .tab.active { border-bottom-color: var(--accent); }
+  .tab.active { background-color: var(--surface-2); }
+
+  .tab:not(.active):hover { background-color: var(--surface-hover); }
 
   .tab-open {
     display: flex;
     align-items: center;
     gap: 0.35rem;
     min-width: 0;
-    padding: 0.4rem 0.15rem 0.4rem 0.55rem;
+    padding: 0.3rem 0.1rem 0.3rem 0.5rem;
     background: none;
     border: none;
     cursor: pointer;
@@ -126,8 +131,8 @@
     align-items: center;
     justify-content: center;
     flex: 0 0 auto;
-    padding: 0.25rem;
-    margin: 0 0.2rem;
+    padding: 0.2rem;
+    margin: 0 0.15rem;
     background: none;
     border: none;
     border-radius: var(--radius-input);

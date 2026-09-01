@@ -678,6 +678,11 @@
       </button>
     </div>
 
+    <TabStrip
+      onclose={({ id }) => closeTab(id)}
+      onnew={handleNewNotebook}
+    />
+
     <div class="header-right">
       {#if $currentNotebook}
         {#if $staleCells.size > 0}
@@ -780,10 +785,6 @@
 
   <div class="content-wrapper">
     <main class="main-content">
-      <TabStrip
-        onclose={({ id }) => closeTab(id)}
-        onnew={handleNewNotebook}
-      />
       <Notebook />
     </main>
 
@@ -902,11 +903,16 @@
     .run-progress { transition: none; animation: none; }
   }
 
+  /* The header is one row at every width (see the layout fix in 49c2f7d), and
+     putting a variable-width tab strip in it is only safe if the strip is the
+     one thing that gives: the button groups never shrink, the strip absorbs
+     whatever is left and scrolls inside itself. */
   .header-left,
   .header-right {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex: 0 0 auto;
   }
 
   .notebooks-btn {

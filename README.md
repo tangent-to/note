@@ -104,7 +104,7 @@ That splits "saved" into two things that used to be one:
 - **Saved to the library** happens on its own, a couple of seconds after you stop typing. It is not something you do.
 - **Saved to its origin** — the file a `note serve` companion owns, or an exported `.js` — is what `Ctrl/Cmd + S` does, and what the "modified" mark in the header means.
 
-Several notebooks can be open at once. They appear as tabs above the notebook — the strip is hidden while only one is open — and each tab shows what its notebook is doing even when you are not looking at it: a dot while it differs from its file, a spinner while its own cells are running. Closing a tab does not delete anything; the notebook stays in the library. The set of open tabs is restored when you come back.
+Several notebooks can be open at once. They appear as tabs in the header row — the strip is hidden while only one is open, and on narrow screens, where `Ctrl/Cmd + K` switches notebooks instead — and each tab shows what its notebook is doing even when you are not looking at it: a dot while it differs from its file, a spinner while its own cells are running. Closing a tab does not delete anything; the notebook stays in the library. The set of open tabs is restored when you come back.
 
 Each notebook has its **own kernel**, and so its own variables. Opening a second notebook cannot inherit the first one's scope, stopping a runaway cell in one leaves the others untouched, and a run keeps writing into the notebook it started in even if you switch tabs while it works. Kernels start on first use, so a restored tab you never open costs nothing.
 
