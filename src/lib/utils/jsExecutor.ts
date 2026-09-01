@@ -15,6 +15,7 @@
 import type { CellOutput } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
 import { tableSpec, type TableSpec } from "./tableData";
+import { describeValue, previewJson } from "./valuePreview";
 import {
   hasSyntaxErrors,
   topLevelDeclarations,
@@ -980,25 +981,23 @@ export class JavaScriptExecutor {
     return extractLastExpression(code);
   }
 
+  /**
+   * The text an output carries for a value.
+   *
+   * For anything structured this must stay valid JSON: that is the whole test
+   * CellOutput uses to decide between the Observable inspector and a block of
+   * plain text. The previous version summarised any array over 200 items into
+   * a string that could not parse, so every array big enough to be interesting
+   * lost the inspector and arrived as a wall of text. previewJson shortens long
+   * arrays *within* JSON instead, naming what it left out.
+   */
   private formatValue(value: any): string {
     if (value === null) return "null";
     if (value === undefined) return "undefined";
     if (typeof value === "string") return value;
     if (typeof value === "function") return value.toString();
     if (typeof value === "object") {
-      try {
-        if (Array.isArray(value) && value.length > 200) {
-          return `Array(${value.length}) [${
-            value
-              .slice(0, 10)
-              .map((v: any) => this.formatValue(v))
-              .join(", ")
-          } ...]`;
-        }
-        return JSON.stringify(value, null, 2);
-      } catch {
-        return String(value);
-      }
+      return previewJson(value) ?? describeValue(value);
     }
     return String(value);
   }
