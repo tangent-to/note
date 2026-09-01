@@ -23,6 +23,7 @@
 import {
   MAX_DEPTH,
   displayName,
+  frontmatterId,
   frontmatterTitle,
   looksLikeNotebook,
   normalizeRoot,
@@ -92,6 +93,9 @@ interface NotebookFile {
   /** The notebook's own title, so the app names it the way it names all the
    *  others. Falls back to the filename when the frontmatter has none. */
   name: string;
+  /** The notebook's id, so the app can tell this file and a copy it already
+   *  holds are the same notebook without opening it. */
+  id: string | null;
 }
 
 /**
@@ -154,7 +158,13 @@ function discover(root: string): NotebookFile[] {
       }
       if (!looksLikeNotebook(head)) continue;
       const path = relativeTo(root, absolute);
-      if (path) found.push({ path, name: frontmatterTitle(head) ?? displayName(path) });
+      if (path) {
+        found.push({
+          path,
+          name: frontmatterTitle(head) ?? displayName(path),
+          id: frontmatterId(head),
+        });
+      }
     }
   };
 
@@ -193,7 +203,9 @@ export function main(args: Args) {
     const next = discover(root);
     const changed =
       next.length !== files.length ||
-      next.some((f, i) => f.path !== files[i].path || f.name !== files[i].name);
+      next.some((f, i) =>
+        f.path !== files[i].path || f.name !== files[i].name || f.id !== files[i].id
+      );
     if (!changed) return;
     files = next;
     broadcast({ type: "files", files });

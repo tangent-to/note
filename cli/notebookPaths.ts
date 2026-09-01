@@ -66,6 +66,21 @@ export function frontmatterTitle(head: string): string | null {
   return null;
 }
 
+/**
+ * The notebook's own id, from the `// id:` line of its frontmatter.
+ *
+ * It is what makes a file and a library entry recognisable as the same
+ * notebook without opening it — which is what lets the app show one row per
+ * notebook instead of one row per place a copy happens to sit.
+ */
+export function frontmatterId(head: string): string | null {
+  for (const line of head.split('\n', 12)) {
+    const match = /^\s*\/\/\s*id:\s*(.+?)\s*$/.exec(line);
+    if (match && match[1]) return match[1];
+  }
+  return null;
+}
+
 /** Collapse `.` and `..`; returns null when the path climbs above its base. */
 function normalizeSegments(path: string): string[] | null {
   const out: string[] = [];

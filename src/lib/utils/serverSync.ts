@@ -21,6 +21,9 @@ export interface SyncFile {
   /** Relative to the companion's root; the key for every message about it. */
   path: string;
   name: string;
+  /** The notebook's id, read from the file's frontmatter. Null when it has
+   *  none — an older file, or one written by hand. */
+  id: string | null;
 }
 
 export const syncStatus = writable<SyncStatus>('offline');

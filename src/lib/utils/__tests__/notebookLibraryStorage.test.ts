@@ -68,7 +68,6 @@ function makeNotebook(id: string, over: Partial<Notebook> = {}): Notebook {
 }
 
 const local = { kind: 'local' } as const;
-const link = { kind: 'url', href: 'https://x.dev/a.js' } as const;
 
 afterEach(() => {
   Object.defineProperty(globalThis, 'indexedDB', {
@@ -88,19 +87,24 @@ describe('storing and reading notebooks', () => {
     expect(get(lib.libraryPersistent)).toBe(true);
   });
 
-  it('keeps one notebook from two origins as two records', async () => {
+  it('is one record for one notebook, however it was reached', async () => {
     const lib = await freshLibrary();
-    // The id travels in the .js file, so a link and a local copy share it.
-    // One record for both would mean opening a link overwrites local work.
-    const localKey = await lib.putNotebook(makeNotebook('a', { name: 'Mine' }), local);
-    const linkKey = await lib.putNotebook(makeNotebook('a', { name: 'Theirs' }), link);
+    // The id travels in the .js file, so the same notebook opened from the
+    // library and then from its file on disk is one notebook — one entry, one
+    // row, one tab. Keying by origin split it into several, which is what made
+    // the Storage panel unreadable.
+    const first = await lib.putNotebook(makeNotebook('a', { name: 'Mine' }), local);
+    const second = await lib.putNotebook(
+      makeNotebook('a', { name: 'Mine' }),
+      { kind: 'disk', path: '/home/e/a.js' }
+    );
 
-    expect(localKey).not.toBe(linkKey);
-    expect((await lib.getNotebookRecord(localKey))?.name).toBe('Mine');
-    expect((await lib.getNotebookRecord(linkKey))?.name).toBe('Theirs');
-
+    expect(second).toBe(first);
     await lib.refreshLibrary();
-    expect(get(lib.libraryEntries)).toHaveLength(2);
+    expect(get(lib.libraryEntries)).toHaveLength(1);
+    // …and it now knows where it lives.
+    expect((await lib.getNotebookRecord(first))?.origin)
+      .toEqual({ kind: 'disk', path: '/home/e/a.js' });
   });
 
   it('updates a record rather than duplicating it', async () => {

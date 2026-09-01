@@ -9,7 +9,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildRecord,
   entryOf,
-  libraryId,
   originLabel,
   serializableNotebook,
   sortEntries,
@@ -29,36 +28,21 @@ function makeNotebook(over: Partial<Notebook> = {}): Notebook {
   };
 }
 
-describe('libraryId', () => {
-  it('keys this browser’s own copy by the notebook id alone', () => {
-    for (const origin of [
+describe('identity', () => {
+  it('keys a notebook by its own id, whatever it was reached from', () => {
+    // Folding the origin into the key kept a link from overwriting local work,
+    // but split one notebook into several: the same file opened as the bundled
+    // example and then from disk became two entries, two rows and two tabs.
+    // Where a notebook lives is something it has, not who it is.
+    const origins = [
       { kind: 'local' } as const,
       { kind: 'sample' } as const,
       { kind: 'import', filename: 'luum.js' } as const,
-    ]) {
-      expect(libraryId('notebook-1', origin)).toBe('notebook-1');
-    }
-  });
-
-  it('gives a link and a disk file their own keys', () => {
-    // The id travels inside the .js file, so every copy of a notebook shares
-    // it. Keying by identity alone would make opening a link overwrite the
-    // local copy — the exact data loss the library exists to prevent.
-    const local = libraryId('notebook-1', { kind: 'local' });
-    const link = libraryId('notebook-1', { kind: 'url', href: 'https://x.dev/a.js' });
-    const disk = libraryId('notebook-1', { kind: 'disk', path: '/home/e/a.js' });
-    expect(new Set([local, link, disk]).size).toBe(3);
-  });
-
-  it('is idempotent per origin, so re-opening a link reuses its entry', () => {
-    const origin = { kind: 'url', href: 'https://x.dev/a.js' } as const;
-    expect(libraryId('notebook-1', origin)).toBe(libraryId('notebook-1', origin));
-  });
-
-  it('separates two files that carry the same notebook id', () => {
-    expect(libraryId('nb', { kind: 'disk', path: '/a/n.js' })).not.toBe(
-      libraryId('nb', { kind: 'disk', path: '/b/n.js' })
-    );
+      { kind: 'disk', path: '/home/e/luum.js' } as const,
+      { kind: 'url', href: 'https://x.dev/a.js' } as const,
+    ];
+    const ids = origins.map((origin) => buildRecord(makeNotebook(), origin, 1).id);
+    expect(new Set(ids)).toEqual(new Set(['notebook-1']));
   });
 });
 
@@ -81,7 +65,6 @@ describe('buildRecord', () => {
   it('carries forward what the notebook itself does not know', () => {
     const previous: LibraryEntry = {
       id: 'notebook-1',
-      notebookId: 'notebook-1',
       name: 'Luum',
       createdAt: 500,
       updatedAt: 1500,
@@ -101,8 +84,8 @@ describe('buildRecord', () => {
     const previous = buildRecord(makeNotebook(), { kind: 'local' }, 1);
     const moved = buildRecord(makeNotebook(), { kind: 'disk', path: '/a/n.js' }, 2, previous);
     expect(moved.origin).toEqual({ kind: 'disk', path: '/a/n.js' });
-    expect(moved.id).toBe('notebook-1@file:/a/n.js');
-    expect(moved.notebookId).toBe('notebook-1');
+    // Moving a notebook onto a file changes where it lives, not which it is.
+    expect(moved.id).toBe('notebook-1');
   });
 
   it('defaults a first-time entry to now and to local', () => {
@@ -142,7 +125,7 @@ describe('entryOf and sortEntries', () => {
     // Regression: ordering by last-opened made a row jump to the top of the
     // list the moment it was clicked, moving the map out from under the reader.
     const at = (id: string, name: string, lastOpenedAt: number): LibraryEntry => ({
-      id, notebookId: id, name, createdAt: 0, updatedAt: 0,
+      id, name, createdAt: 0, updatedAt: 0,
       lastOpenedAt, origin: { kind: 'local' }, cellCount: 0, size: 0,
     });
     const entries = [at('1', 'test 2', 1), at('2', 'test 10', 5), at('3', 'test 1', 99)];
@@ -154,7 +137,7 @@ describe('entryOf and sortEntries', () => {
 
   it('keeps same-named entries in a stable order', () => {
     const same = (id: string): LibraryEntry => ({
-      id, notebookId: 'nb', name: 'Same', createdAt: 0, updatedAt: 0,
+      id, name: 'Same', createdAt: 0, updatedAt: 0,
       lastOpenedAt: 0, origin: { kind: 'local' }, cellCount: 0, size: 0,
     });
     expect(sortEntries([same('b'), same('a')]).map((e) => e.id)).toEqual(['a', 'b']);

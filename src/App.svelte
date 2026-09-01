@@ -45,14 +45,13 @@
     lastOpenSessions,
     libraryEntries,
     libraryPersistent,
-    libraryId,
     migrateLegacyAutosave,
     putNotebook,
     refreshLibrary,
     type LibraryEntry,
     type NotebookOrigin,
   } from './lib/utils/notebookLibrary';
-  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, type ImportRequest } from './lib/utils/urlImport';
+  import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, notebooksEquivalent, type ImportRequest } from './lib/utils/urlImport';
   import {
     connectSync,
     isSyncConnected,
@@ -103,9 +102,26 @@
   const PANEL_MAX = 720;
   const CHAT_MIN_WIDTH = 380;
   const clampPanel = (w: number) => Math.min(PANEL_MAX, Math.max(PANEL_MIN, w));
-  // 320 rather than 300: at the 16px root the five sidebar tabs need ~302px, so
-  // the default panel now fits them without scrolling. A stored width wins.
-  let rightSidebarWidth = $state(clampPanel(Number(localStorage.getItem(PANEL_WIDTH_KEY)) || 320));
+  // The default has to fit the whole tab row without scrolling. 300 was too
+  // narrow for five tabs (302px at a 16px root), 320 was too narrow once the
+  // rule between the notebook-level tabs and the app-level ones was added, and
+  // 348 clears both with a little room.
+  const PANEL_DEFAULT = 348;
+  /** Defaults this app has shipped, so a stored one can be told from a choice. */
+  const PREVIOUS_DEFAULTS = new Set([300, 320]);
+
+  function initialPanelWidth(): number {
+    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+    if (!stored) return PANEL_DEFAULT;
+    // A width equal to an older default was never chosen — it was simply
+    // stored the first time the panel opened. Honouring it would leave every
+    // existing reader with the truncated row that prompted the change, while
+    // a width they actually dragged to is left exactly where they put it.
+    if (PREVIOUS_DEFAULTS.has(stored)) return PANEL_DEFAULT;
+    return clampPanel(stored);
+  }
+
+  let rightSidebarWidth = $state(initialPanelWidth());
 
   function startPanelResize(event: PointerEvent) {
     event.preventDefault();
@@ -406,13 +422,31 @@
   }
 
   /**
+   * Give an imported notebook a new identity when one you already have would
+   * otherwise be replaced.
+   *
+   * A notebook's id travels in its `.js` frontmatter, so a link can carry the
+   * id of something already in this library. Identity used to include where a
+   * notebook came from, which kept the two apart — at the cost of splitting one
+   * notebook into several rows and several tabs. Forking here does the same job
+   * without that: two notebooks that have genuinely diverged become two
+   * notebooks, once, at the moment they diverge; a link to something you have
+   * not touched still opens the entry you have.
+   */
+  async function forkIfItWouldOverwrite(incoming: NotebookDoc): Promise<NotebookDoc> {
+    const existing = await getNotebookRecord(incoming.id);
+    if (!existing || notebooksEquivalent(existing.notebook, incoming)) return incoming;
+    return { ...incoming, id: `${incoming.id}-${Date.now().toString(36)}` };
+  }
+
+  /**
    * Open a notebook a link points at.
    *
    * This used to ask "opening this link replaces your notebook, save first?",
    * because the single autosave slot meant the link really did overwrite the
-   * only copy. It no longer can: the notebook already on screen is in the
-   * library, and the imported one gets its own entry keyed by the link it came
-   * from (see libraryId). So the link just opens, and both keep existing.
+   * only copy. It no longer can: everything open is already in the library, and
+   * a link carrying the id of something you have edited forks rather than
+   * lands on it (see forkIfItWouldOverwrite). So the link just opens.
    */
   async function loadNotebookFromUrl(request: ImportRequest) {
     await libraryReady;
@@ -424,7 +458,10 @@
     try {
       const notebook = await fetchNotebookFromUrl(request);
       const hostname = new URL(request.fetchUrl).hostname;
-      await openNotebook(notebook, { kind: 'url', href: request.fetchUrl });
+      await openNotebook(await forkIfItWouldOverwrite(notebook), {
+        kind: 'url',
+        href: request.fetchUrl,
+      });
       // Drop the import URL so a refresh reopens the library copy — with any
       // edits made since — instead of re-fetching over them.
       history.replaceState(null, '', '/');

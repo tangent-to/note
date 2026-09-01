@@ -19,8 +19,9 @@
  *     is what Ctrl+S does and what `notebookDirty` tracks.
  *
  * Ids round-trip through the `.js` file (`// id:` in the frontmatter, see
- * fileOperations), so re-importing a file you already have reopens the same
- * entry instead of forking a duplicate.
+ * fileOperations), so a notebook keeps one identity wherever it is reached
+ * from — the library, a file the companion serves, a link — and re-opening it
+ * lands on the same entry rather than forking a duplicate.
  */
 import { writable } from 'svelte/store';
 import type { Notebook } from '../types/notebook';
@@ -37,10 +38,8 @@ export type NotebookOrigin =
 
 /** A library row: everything the Storage panel needs, without the payload. */
 export interface LibraryEntry {
-  /** Library key — `libraryId(notebook.id, origin)`, not `notebook.id`. */
-  id: string;
   /** The notebook's own id, as it round-trips through the `.js` file. */
-  notebookId: string;
+  id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
@@ -118,30 +117,6 @@ export function serializableNotebook(notebook: Notebook): Notebook {
   };
 }
 
-/**
- * The library key for a notebook from a given origin.
- *
- * Not simply `notebook.id`, because that id round-trips through the `.js` file
- * and is therefore shared by every copy of it: the one you edited locally, the
- * one a `note serve` companion owns, and the one behind a /gh/ link are three
- * different homes for the same identity. Keying by identity alone would make
- * opening a link silently overwrite local work — and keying by something
- * random would fork a new entry on every click of the same link. Keying by
- * (identity, origin) is idempotent per home: re-open a link and you land back
- * on the same entry, while your local copy sits untouched beside it.
- */
-export function libraryId(notebookId: string, origin: NotebookOrigin): string {
-  switch (origin.kind) {
-    case 'disk':
-      return `${notebookId}@file:${origin.path}`;
-    case 'url':
-      return `${notebookId}@${origin.href}`;
-    default:
-      // 'local', 'sample' and 'import' all mean "this browser's own copy".
-      return notebookId;
-  }
-}
-
 /** Human label for an origin, shown next to a row in the Storage panel. */
 export function originLabel(origin: NotebookOrigin): string {
   switch (origin.kind) {
@@ -206,8 +181,12 @@ export function buildRecord(
   }
   const resolvedOrigin = origin ?? previous?.origin ?? { kind: 'local' as const };
   return {
-    id: libraryId(notebook.id, resolvedOrigin),
-    notebookId: notebook.id,
+    // Keyed by the notebook's own id, and by nothing else. Folding the origin
+    // into the key kept a link from overwriting local work, but at the price of
+    // splitting one notebook into several: the same file opened as the bundled
+    // example and then from disk became two entries and two tabs. Where a
+    // notebook lives is something it *has*, not part of who it is.
+    id: notebook.id,
     name: notebook.name,
     createdAt: previous?.createdAt ?? notebook.createdAt ?? now,
     updatedAt: notebook.updatedAt ?? now,
@@ -316,8 +295,7 @@ export async function putNotebook(
   origin?: NotebookOrigin,
   opts: { opened?: boolean } = {}
 ): Promise<string> {
-  const key = libraryId(notebook.id, origin ?? { kind: 'local' });
-  const previous = await getNotebookRecord(key);
+  const previous = await getNotebookRecord(notebook.id);
   const record = buildRecord(notebook, origin, Date.now(), previous, opts.opened);
   await write(record);
   librarySavedAt.set(Date.now());
@@ -418,8 +396,7 @@ export async function migrateLegacyAutosave(): Promise<string | null> {
   }
   if (!notebook?.id || !Array.isArray(notebook.cells)) return null;
 
-  const key = libraryId(notebook.id, { kind: 'local' });
-  const existing = await getNotebookRecord(key);
+  const existing = await getNotebookRecord(notebook.id);
   // A library entry already covers it (a reload after a partial migration, or
   // the same notebook opened from a file since). Never overwrite the newer one.
   if (!existing || (notebook.updatedAt ?? 0) > existing.updatedAt) {
@@ -434,5 +411,5 @@ export async function migrateLegacyAutosave(): Promise<string | null> {
       // Leaving them is harmless; the next run re-runs an idempotent migration.
     }
   }
-  return key;
+  return notebook.id;
 }

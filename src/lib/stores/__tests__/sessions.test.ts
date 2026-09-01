@@ -13,10 +13,6 @@ import type { Notebook } from '../../types/notebook';
 // The library writes through IndexedDB and the kernel spawns Workers; neither
 // exists in Node and neither is what these tests are about.
 vi.mock('../../utils/notebookLibrary', () => ({
-  libraryId: (id: string, origin: any) =>
-    origin.kind === 'disk' ? `${id}@file:${origin.path}`
-    : origin.kind === 'url' ? `${id}@${origin.href}`
-    : id,
   putNotebook: vi.fn(async () => 'ok'),
   rememberOpenSessions: vi.fn(),
 }));
@@ -97,12 +93,13 @@ describe('openSession', () => {
     expect(get(sessions)).toHaveLength(1);
   });
 
-  it('keeps the same notebook from two origins as two tabs', () => {
-    // The id travels in the .js file, so a link and a local copy share it.
-    // One tab for both would mean opening the link overwrites local work.
-    openSession(makeNotebook('a'), local);
-    openSession(makeNotebook('a'), { kind: 'url', href: 'https://x.dev/a.js' });
-    expect(get(sessions)).toHaveLength(2);
+  it('is one tab for one notebook, however it was reached', () => {
+    // Reaching the same notebook a second way — the library, then its file on
+    // disk — must land on the tab already holding it, not open a twin.
+    const first = openSession(makeNotebook('a'), local);
+    const again = openSession(makeNotebook('a'), { kind: 'disk', path: '/home/e/a.js' });
+    expect(again).toBe(first);
+    expect(get(sessions)).toHaveLength(1);
   });
 });
 
