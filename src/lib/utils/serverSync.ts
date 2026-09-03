@@ -174,6 +174,12 @@ export function openSyncFile(path: string): boolean {
  * `force` skips the on-disk conflict check (used after the user confirms).
  */
 export function saveThroughSync(path: string, content: string, force = false): boolean {
+  // A path never spans lines; a notebook always does. The two arguments were
+  // once swapped at the call site, which sent the whole notebook as the path
+  // and echoed it back in the refusal toast, so the mix-up is caught here.
+  if (path.includes('\n')) {
+    throw new Error('saveThroughSync: expected a path first, then the content');
+  }
   if (!isSyncConnected()) return false;
   socket!.send(JSON.stringify({
     type: 'save',

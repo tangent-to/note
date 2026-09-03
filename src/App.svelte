@@ -578,7 +578,7 @@
       if (isSyncConnected() && origin.kind === 'disk') {
         const source = await exportNotebookSource(notebook);
         // A second save after a conflict warning overwrites deliberately.
-        if (saveThroughSync(source, origin.path, conflictedPaths.has(origin.path))) {
+        if (saveThroughSync(origin.path, source, conflictedPaths.has(origin.path))) {
           conflictedPaths.delete(origin.path);
           return;
         }
