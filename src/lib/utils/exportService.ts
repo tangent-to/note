@@ -679,17 +679,20 @@ export class ExportService {
 
   private getInteractivityScript(): string {
     return `
-      // Add copy-to-clipboard functionality
+      // Add copy-to-clipboard functionality. The button is anchored to the <pre>
+      // itself. It used to be anchored to a <div> the <code> was moved into, which
+      // took the <code> out of its <pre>: Prism's stylesheet then matched it with
+      // its inline-code rule, ':not(pre) > code[class*="language-"] { white-space:
+      // normal }', every newline collapsed to a space, and each cell rendered as
+      // one wrapped paragraph. The <code> must stay a direct child of the <pre>.
       document.querySelectorAll('pre code').forEach(block => {
         const button = document.createElement('button');
         button.textContent = 'Copy';
         button.style.cssText = 'position: absolute; top: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; font-size: 0.75rem; background: #3b82f6; color: white; border: none; border-radius: 0.25rem; cursor: pointer;';
 
-        const container = document.createElement('div');
-        container.style.position = 'relative';
-        block.parentNode.insertBefore(container, block);
-        container.appendChild(block);
-        container.appendChild(button);
+        const pre = block.parentNode;
+        pre.style.position = 'relative';
+        pre.appendChild(button);
 
         button.addEventListener('click', () => {
           navigator.clipboard.writeText(block.textContent).then(() => {
