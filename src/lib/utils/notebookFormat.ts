@@ -8,7 +8,10 @@ import type { Notebook, NotebookCell } from "../types/notebook";
 export function serializeCellTags(cell: Pick<NotebookCell, "collapsed" | "skipped" | "outputCollapsed" | "readOnly" | "outputWidth" | "outputView">): string {
   const tags = [
     cell.collapsed ? "#collapse-cell" : null,
-    cell.outputCollapsed ? "#collapse-output" : null,
+    // `#hidden` is Observable's word for this, with the same meaning and the
+    // same default, so the two formats say it the same way. The older spellings
+    // are still read.
+    cell.outputCollapsed ? "#hidden" : null,
     cell.skipped ? "#skip" : null,
     cell.readOnly ? "#readonly" : null,
     cell.outputWidth === "wide" ? "#wide" : null,
@@ -23,9 +26,11 @@ export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
   const tags = new Set(
     (delimiterLine.match(/#[\w-]+/g) ?? []).map((t) => t.slice(1)),
   );
-  // "hide-cell"/"hide" and "hide-output" are accepted as legacy aliases.
+  // "hide-cell"/"hide", "collapse-output" and "hide-output" are older spellings.
   if (tags.has("collapse-cell") || tags.has("hide-cell") || tags.has("hide")) cell.collapsed = true;
-  if (tags.has("collapse-output") || tags.has("hide-output")) cell.outputCollapsed = true;
+  if (tags.has("hidden") || tags.has("collapse-output") || tags.has("hide-output")) {
+    cell.outputCollapsed = true;
+  }
   if (tags.has("skip")) cell.skipped = true;
   if (tags.has("readonly")) cell.readOnly = true;
   // Output breakout layer; #full wins if both are present.
@@ -53,6 +58,9 @@ export function serializeNotebook(notebook: Notebook): string {
   lines.push(`// ---`);
   lines.push(`// title: ${notebook.name || "Untitled"}`);
   lines.push(`// id: ${notebook.id}`);
+  // Only written when set: an absent field reads as false, and a notebook that
+  // is not locked should not carry a line saying so.
+  if (notebook.readOnly) lines.push(`// readonly: true`);
   lines.push(`// ---`);
   lines.push("");
 
@@ -90,6 +98,21 @@ export function serializeNotebook(notebook: Notebook): string {
   });
 
   return lines.join("\n");
+}
+
+/**
+ * The cell type a `// %% […]` tag names.
+ *
+ * `md` is jupytext's own second spelling for a Markdown cell (see its
+ * cell_reader: it accepts `[markdown]`, `[raw]` and `[md]`), so accepting it is
+ * finishing the format we claim to follow rather than borrowing from elsewhere.
+ * `js` is nobody's standard but it is the obvious thing to type; reading it
+ * costs nothing. Both are read, neither is written — jupytext does not know
+ * `[js]`, and writing the long forms keeps our files idiomatic for it.
+ */
+export function cellTypeFromTag(tag: string): "code" | "markdown" {
+  const name = tag.toLowerCase();
+  return name === "markdown" || name === "md" ? "markdown" : "code";
 }
 
 /**
@@ -137,14 +160,21 @@ export function parseNotebook(
   // Extract metadata from header
   let title = filename.replace(/\.(js|txt)$/, "");
   let notebookId = `notebook-${Date.now()}`;
+  let readOnly = false;
 
   let i = 0;
-  // Skip any lines before the header block
-  while (i < lines.length && lines[i].trim() !== "// ---") {
+  // Skip any lines before the header block — but stop at the first cell. Past
+  // that point a `// ---` is a horizontal rule someone wrote in prose, and
+  // reading it as frontmatter threw away every cell above it.
+  while (
+    i < lines.length &&
+    lines[i].trim() !== "// ---" &&
+    !lines[i].trim().startsWith("// %%")
+  ) {
     i++;
   }
   // No header at all: start over and parse the whole file as cells.
-  if (i >= lines.length) {
+  if (i >= lines.length || lines[i].trim().startsWith("// %%")) {
     i = 0;
   }
   // Parse header metadata if present
@@ -156,6 +186,8 @@ export function parseNotebook(
         title = line.substring("// title:".length).trim();
       } else if (line.startsWith("// id:")) {
         notebookId = line.substring("// id:".length).trim();
+      } else if (line.startsWith("// readonly:")) {
+        readOnly = line.substring("// readonly:".length).trim() === "true";
       }
       i++;
     }
@@ -185,12 +217,12 @@ export function parseNotebook(
       }
 
       // Parse cell type
-      const match = line.match(/\/\/ %%\s*\[(\w+)\]/);
-      const cellType = match ? match[1] : "javascript";
+      const match = line.match(/\/\/ %%\s*\[([\w.-]+)\]/);
+      const cellType = match ? cellTypeFromTag(match[1]) : "code";
 
       currentCell = {
         id: `cell-${Date.now()}-${cells.length}`,
-        type: cellType === "markdown" ? "markdown" : "code",
+        type: cellType,
         content: "",
         output: null,
         isRunning: false,
@@ -241,6 +273,7 @@ export function parseNotebook(
     cells,
     createdAt: now,
     updatedAt: now,
+    ...(readOnly ? { readOnly: true } : {}),
   };
 }
 

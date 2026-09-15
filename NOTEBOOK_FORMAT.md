@@ -22,6 +22,10 @@ Notebooks are saved with a `.js` extension to leverage syntax highlighting in mo
 The header contains metadata:
 - `title`: Human-readable notebook name
 - `id`: Unique identifier for the notebook
+- `readonly`: `true` locks the whole notebook — cells and the title alike.
+  Omitted when the notebook isn't locked. The per-cell `#readonly` tag is the
+  finer version of the same thing; this is what Observable Notebooks 2.0 has,
+  so it round-trips exactly.
 
 ### Cell Delimiters
 
@@ -35,6 +39,11 @@ Cells are separated using special comment markers:
 const x = 42;
 console.log(x);
 ```
+
+`[js]` and `[md]` are read as well as `[javascript]` and `[markdown]` — `[md]`
+is jupytext's own second spelling. Only the long forms are written, because
+jupytext does not know `[js]`. Zed doesn't read the tag at all: its REPL matches
+the `// %%` prefix at column 0 and ignores the rest of the line.
 
 #### Markdown Cells
 
@@ -85,15 +94,16 @@ its run button, Run All, stale re-runs, and reactive cascades. Its edits
 don't mark downstream cells stale. Like disabled cells in marimo or frozen
 cells in Jupyter. Re-enable it from the cell menu.
 
-#### `#collapse-output` — collapsed output
+#### `#hidden` — collapsed output
 
 ```javascript
-// %% [javascript] #collapse-output
+// %% [javascript] #hidden
 verboseDiagnostics();
 ```
 
-The cell runs, but its output renders collapsed. `#hide-output` is
-accepted as a legacy alias when reading files.
+The cell runs, but its output renders collapsed. This is Observable's word for
+it, with the same meaning and the same default, so the two formats say it
+identically. `#collapse-output` and `#hide-output` are read as older spellings.
 
 #### `#readonly` — locked cell
 
@@ -180,8 +190,8 @@ What to expect:
 | | |
 |---|---|
 | `pinned` | Observable **hides** source unless a cell is pinned — the opposite of Tangent's default. An unpinned cell imports collapsed; an export pins every cell that isn't. |
-| `hidden` | ↔ `#collapse-output` |
-| `readonly` (on `<notebook>`) | Imports as `#readonly` on every cell. A notebook where all cells are locked exports as `readonly`. |
+| `hidden` | ↔ `#hidden` |
+| `readonly` (on `<notebook>`) | ↔ frontmatter `readonly: true`. A notebook whose every cell is locked also exports as `readonly`. |
 | `id` | Kept, so cell identities stay where the author put them across a round trip. |
 | SQL, TeX, DOT, Python, R, TypeScript | Source kept, cell `#skip`ped — Tangent runs JavaScript only. |
 | `#skip` | No equivalent, and the cell **would run** over there. Exported as a text cell holding its source: preserved, inert. |

@@ -1,6 +1,11 @@
 import type { Notebook } from '../types/notebook';
 import { ExportService } from './exportService';
-import { applyCellTags, normalizeMarkdownContent, serializeNotebook } from './notebookFormat';
+import {
+  applyCellTags,
+  cellTypeFromTag,
+  normalizeMarkdownContent,
+  serializeNotebook,
+} from './notebookFormat';
 import {
   looksLikeObservableNotebook,
   parseObservableNotebook,
@@ -100,12 +105,13 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     const trimmed = line.trim();
     const withoutComment = trimmed.replace(/^\/\/\s*/, '');
 
-    if (withoutComment === '---') {
-      if (!inMetadata) {
-        inMetadata = true;
-      } else {
-        inMetadata = false;
-      }
+    // The `// ---` fence is frontmatter only at the top of the file, before any
+    // cell has started. Treating it as a fence anywhere meant a horizontal rule
+    // in prose — `---`, which the writer line-comments into `// ---` — reopened
+    // metadata mode and swallowed every cell after it. A notebook was silently
+    // truncated at its first section break.
+    if (withoutComment === '---' && cells.length === 0 && !currentCell) {
+      inMetadata = !inMetadata;
       continue;
     }
 
@@ -127,12 +133,11 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
         cells.push(currentCell);
       }
 
-      const typeMatch = line.match(/\/\/ %% \[(\w+)\]/);
+      const typeMatch = line.match(/\/\/ %% \[([\w.-]+)\]/);
       if (typeMatch) {
-        const type = typeMatch[1];
         currentCell = {
           id: `cell-${cells.length + 1}`,
-          type: type === 'javascript' ? 'code' : type,
+          type: cellTypeFromTag(typeMatch[1]),
           content: '',
           output: null,
           createdAt: Date.now(),
@@ -178,6 +183,7 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     cells,
+    ...(metadata.readonly === 'true' ? { readOnly: true } : {}),
   };
 }
 

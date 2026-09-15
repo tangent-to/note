@@ -209,8 +209,6 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
     (fallback ? fallback.charAt(0).toUpperCase() + fallback.slice(1) : '') ||
     'Untitled Notebook';
 
-  // A notebook-level lock has no equivalent here, so it becomes a lock on every
-  // cell — the same restriction, expressed the only way Tangent can.
   const readonly = 'readonly' in notebookAttrs;
 
   const cells: NotebookCell[] = [];
@@ -266,7 +264,6 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
     // — which is what its author asked for, and one click undoes it.
     if (known && known.as === 'code' && !('pinned' in raw.attrs)) cell.collapsed = true;
     if ('hidden' in raw.attrs) cell.outputCollapsed = true;
-    if (readonly) cell.readOnly = true;
 
     if (known?.as === 'code') {
       for (const [pattern, kind, detail] of RUNTIME_GAPS) {
@@ -279,12 +276,6 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
     cells.push(cell);
   });
 
-  if (readonly) {
-    losses.push({
-      kind: 'read-only notebook',
-      detail: 'Tangent locks cells, not notebooks, so every cell was imported locked. Unlock from a cell’s menu.',
-    });
-  }
   if (notebookAttrs.theme) {
     losses.push({
       kind: 'theme',
@@ -299,6 +290,10 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
       createdAt: Date.now(),
       updatedAt: Date.now(),
       cells,
+      // Tangent has a notebook-level lock of its own now, so this arrives as
+      // the same thing the author wrote rather than as a lock stamped onto
+      // every cell.
+      ...(readonly ? { readOnly: true } : {}),
     },
     losses,
   };
@@ -346,10 +341,12 @@ export function serializeObservableNotebook(notebook: Notebook): ExportResult {
   const losses: Loss[] = [];
   const lines: string[] = ['<!doctype html>'];
 
-  // A notebook where every cell is locked is a read-only notebook, which the
-  // format does have a word for.
-  const codeOrProse = notebook.cells.length > 0;
-  const allReadOnly = codeOrProse && notebook.cells.every((cell) => cell.readOnly);
+  // Both formats lock whole notebooks the same way, so this crosses exactly.
+  // A notebook whose every cell happens to be locked counts too: it is the same
+  // restriction, and the alternative was reporting a loss for each cell.
+  const allReadOnly =
+    notebook.readOnly === true ||
+    (notebook.cells.length > 0 && notebook.cells.every((cell) => cell.readOnly));
   lines.push(allReadOnly ? '<notebook readonly>' : '<notebook>');
   lines.push(`  <title>${encodeEntities(notebook.name || 'Untitled Notebook')}</title>`);
 

@@ -169,12 +169,17 @@ describe('importing', () => {
     expect(notebook.cells[0].outputCollapsed).toBe(true);
   });
 
-  it('locks every cell for a read-only notebook, and says so', () => {
+  it('carries a read-only notebook across as one, not as a lock per cell', () => {
+    // Both formats lock whole notebooks, so this crosses exactly and reports
+    // nothing. Stamping `readOnly` onto every cell said the same thing but was
+    // no longer reversible as one act, nor recognisable as what the author
+    // wrote.
     const { notebook, losses } = parseObservableNotebook(
       '<notebook readonly><script type="module" pinned>1</script></notebook>'
     );
-    expect(notebook.cells[0].readOnly).toBe(true);
-    expect(kinds(losses)).toContain('read-only notebook');
+    expect(notebook.readOnly).toBe(true);
+    expect(notebook.cells[0].readOnly).toBeUndefined();
+    expect(losses).toEqual([]);
   });
 
   it('keeps a foreign cell’s source but never runs it', () => {
@@ -282,6 +287,21 @@ describe('exporting', () => {
     expect(html).toContain('type="text/markdown"');
     expect(html).toContain('dropTable()');
     expect(kinds(losses)).toContain('skipped cell');
+  });
+
+  it('exports a notebook-level lock as one', () => {
+    const notebook = nb([{ content: 'a' }]);
+    notebook.readOnly = true;
+    const { html, losses } = serializeObservableNotebook(notebook);
+    expect(html).toContain('<notebook readonly>');
+    expect(losses).toEqual([]);
+  });
+
+  it('round-trips the lock', () => {
+    const notebook = nb([{ content: 'a' }]);
+    notebook.readOnly = true;
+    const { html } = serializeObservableNotebook(notebook);
+    expect(parseObservableNotebook(html).notebook.readOnly).toBe(true);
   });
 
   it('turns an all-locked notebook into a read-only one', () => {
@@ -407,5 +427,30 @@ describe('choosing a format by the file', () => {
     const notebook = nb([{ content: 'dropTable()', skipped: true }]);
     expect(kinds(serializeForPath(notebook, '/n/a.html').losses)).toContain('skipped cell');
     expect(serializeForPath(notebook, '/n/a.js').losses).toEqual([]);
+  });
+});
+
+describe('the .js writer, reached through an Observable import', () => {
+  it('does not lose cells whose prose carries a section break', async () => {
+    // Found by round-tripping a real Observable notebook through Tangent's own
+    // format: 44 cells went in and 16 came back, because the guide's prose uses
+    // `---` between sections.
+    const { parseNotebookFile, serializeForPath } = await import('../fileOperations');
+    const html = `<notebook><title>Guide</title>
+  <script id="1" type="text/markdown">
+    ---
+
+    ## Installing
+  </script>
+  <script id="2" type="module" pinned>
+    npm.install()
+  </script>
+</notebook>`;
+    const { notebook } = parseObservableNotebook(html);
+    const js = serializeForPath(notebook, '/x/guide.js').content;
+    const back = parseNotebookFile(js, 'guide.js').notebook;
+
+    expect(back.cells).toHaveLength(2);
+    expect(back.cells[1].content).toBe('npm.install()');
   });
 });

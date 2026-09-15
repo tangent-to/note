@@ -77,7 +77,7 @@ describe('serializeNotebook', () => {
       ],
     });
     const output = serializeNotebook(notebook);
-    expect(output).toContain('// %% [javascript] #collapse-cell #collapse-output #skip #readonly');
+    expect(output).toContain('// %% [javascript] #collapse-cell #hidden #skip #readonly');
   });
 
   it('handles empty cells', () => {
@@ -209,6 +209,71 @@ describe('parseNotebook', () => {
   it('lets #full win when both #wide and #full are present', () => {
     const parsed = parseNotebook('// %% [javascript] #wide #full\na', 'test.js');
     expect(parsed.cells[0].outputWidth).toBe('full');
+  });
+
+  it('still reads the older spellings of a collapsed output', () => {
+    // `#hidden` is what gets written now — Observable's word, same meaning and
+    // same default — but files already on disk say it differently.
+    for (const tag of ['#hidden', '#collapse-output', '#hide-output']) {
+      const parsed = parseNotebook(`// %% [javascript] ${tag}\nconst x = 1;`, 'test.js');
+      expect(parsed.cells[0].outputCollapsed).toBe(true);
+    }
+  });
+
+  it('accepts [md] and [js], which are shorter to type', () => {
+    // `[md]` is jupytext's own second spelling, not a borrowing. `[js]` is
+    // nobody's standard but it is what one types; both are read, neither is
+    // written, because jupytext does not know `[js]`.
+    const parsed = parseNotebook(
+      '// %% [md]\n// # Heading\n\n// %% [js]\nconst x = 1;',
+      'test.js'
+    );
+    expect(parsed.cells.map((c) => c.type)).toEqual(['markdown', 'code']);
+    expect(parsed.cells[0].content).toBe('# Heading');
+  });
+
+  it('round-trips a notebook-level lock through the frontmatter', () => {
+    const locked = serializeNotebook({
+      id: 'nb', name: 'Locked', createdAt: 0, updatedAt: 0, readOnly: true,
+      cells: [{ id: 'c1', type: 'code', content: 'x' }],
+    });
+    expect(locked).toContain('// readonly: true');
+    expect(parseNotebook(locked, 'test.js').readOnly).toBe(true);
+
+    // An unlocked notebook carries no line saying so.
+    const open = serializeNotebook({
+      id: 'nb', name: 'Open', createdAt: 0, updatedAt: 0,
+      cells: [{ id: 'c1', type: 'code', content: 'x' }],
+    });
+    expect(open).not.toContain('readonly');
+    expect(parseNotebook(open, 'test.js').readOnly).toBeUndefined();
+  });
+
+  it('keeps a horizontal rule in prose from eating the rest of the file', () => {
+    // `---` is an ordinary Markdown section break, and the writer line-comments
+    // it to `// ---` like every other prose line. Read as a frontmatter fence
+    // it reopened metadata mode and swallowed every cell below: a notebook was
+    // silently truncated at its first section break.
+    const original = makeNotebook({
+      cells: [
+        { id: 'cell-1', type: 'markdown', content: '# One' },
+        { id: 'cell-2', type: 'markdown', content: '---\n\n## Two' },
+        { id: 'cell-3', type: 'code', content: 'const x = 1;' },
+      ],
+    });
+    const parsed = parseNotebook(serializeNotebook(original), 'test.js');
+    expect(parsed.cells).toHaveLength(3);
+    expect(parsed.cells[1].content).toBe('---\n\n## Two');
+    expect(parsed.cells[2].content).toBe('const x = 1;');
+  });
+
+  it('reads a file whose very first cell opens with a rule, header or not', () => {
+    const parsed = parseNotebook(
+      '// %% [markdown]\n// ---\n//\n// # Title\n\n// %% [javascript]\nconst x = 1;',
+      'test.js'
+    );
+    expect(parsed.cells).toHaveLength(2);
+    expect(parsed.cells[1].content).toBe('const x = 1;');
   });
 
   it('does not confuse #collapse-output with #collapse-cell', () => {

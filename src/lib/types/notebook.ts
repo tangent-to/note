@@ -74,6 +74,16 @@ export interface Notebook {
   cells: NotebookCell[];
   createdAt: number;
   updatedAt: number;
+  /**
+   * The whole notebook is locked (frontmatter `readonly: true`).
+   *
+   * Cells carry their own `readOnly`, which is the finer tool; this is the
+   * coarse one, and it exists because Observable Notebooks 2.0 has exactly this
+   * and nothing per-cell. Without it, importing one of those meant locking every
+   * cell individually — the same restriction, but no longer reversible as one
+   * thing, and no longer recognisable as what the author wrote.
+   */
+  readOnly?: boolean;
 }
 
 export interface NotebookFile {

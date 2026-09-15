@@ -709,7 +709,7 @@
       <h1
         bind:this={titleEl}
         class="notebook-title"
-        contenteditable="true"
+        contenteditable={$currentNotebook.readOnly ? 'false' : 'true'}
         spellcheck="false"
         aria-label="Notebook title"
         data-testid="notebook-title"
@@ -724,6 +724,7 @@
           {cell}
           isSelected={$selectedCellId === cell.id}
           isStale={$staleCells.has(cell.id)}
+          notebookLocked={$currentNotebook.readOnly === true}
           duplicateNames={$duplicateDefinitions.get(cell.id) ?? []}
           isDraggedOver={dragOverCellId === cell.id}
           dragPosition={dragOverCellId === cell.id ? dragOverPosition : null}
