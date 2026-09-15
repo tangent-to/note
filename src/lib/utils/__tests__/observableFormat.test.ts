@@ -78,6 +78,28 @@ describe('the </script> escape', () => {
     expect(escapeCellSource('<\\/script>')).toBe('<\\\\/script>');
   });
 
+  it('escapes an end tag whatever its case or spacing', () => {
+    // An end tag is `</script` followed by whitespace or `>`, and the match is
+    // case-insensitive. Escaping only the exact lowercase `</script>` wrote
+    // files a real HTML parser cuts in half.
+    expect(escapeCellSource('</SCRIPT>')).toBe('<\\/SCRIPT>');
+    expect(escapeCellSource('</script foo>')).toBe('<\\/script foo>');
+    expect(unescapeCellSource('<\\/SCRIPT>')).toBe('</SCRIPT>');
+  });
+
+  it('ends a cell on an uppercase or spaced end tag, as a browser would', () => {
+    const html = '<notebook><script type="module" pinned>1</SCRIPT ><script type="module" pinned>2</script></notebook>';
+    const { notebook } = parseObservableNotebook(html);
+    expect(notebook.cells.map((c) => c.content)).toEqual(['1', '2']);
+  });
+
+  it('ignores script elements outside the notebook root', () => {
+    const html = '<script src="analytics.js"></script><notebook><script type="module" pinned>1</script></notebook>';
+    const { notebook } = parseObservableNotebook(html);
+    expect(notebook.cells).toHaveLength(1);
+    expect(notebook.cells[0].content).toBe('1');
+  });
+
   it('does not end a cell on an escaped tag', () => {
     const html = `<notebook><title>T</title>
   <script id="1" type="text/html">

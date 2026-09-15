@@ -47,6 +47,7 @@ const CELL_TYPES: Record<string, { label: string; as: 'code' | 'markdown' | 'for
   'text/html': { label: 'HTML', as: 'markdown' },
   'text/x-typescript': { label: 'TypeScript', as: 'foreign' },
   'application/sql': { label: 'SQL', as: 'foreign' },
+  'application/sql+view': { label: 'SQL view', as: 'foreign' },
   'application/x-tex': { label: 'TeX', as: 'foreign' },
   'text/vnd.graphviz': { label: 'DOT', as: 'foreign' },
   'application/vnd.observable.javascript': { label: 'Observable JavaScript', as: 'foreign' },
@@ -84,18 +85,20 @@ function parseAttributes(tag: string): Record<string, string> {
  * A literal `</script>` in cell source is written `<\/script>`, and a run of
  * backslashes in that position takes one more. So each sequence loses exactly
  * one backslash on the way in.
+ *
+ * The pattern is deliberately the one notebook-kit uses, down to the case
+ * insensitivity and the `\s`: an end tag is `</script` followed by whitespace
+ * or `>`, and `</SCRIPT>` ends a script element just as surely as the lowercase
+ * spelling. Escaping only the exact lowercase `</script>` would have written
+ * files that a real HTML parser cuts in half.
  */
 export function unescapeCellSource(source: string): string {
-  return source.replace(/<(\\+)\/script>/g, (_, slashes: string) =>
-    `<${slashes.slice(1)}/script>`
-  );
+  return source.replace(/<\\(?=\\*\/script(\s|>))/gi, '<');
 }
 
-/** The inverse: add one backslash to any `</script>`-shaped sequence. */
+/** The inverse: add one backslash to any `</script`-shaped sequence. */
 export function escapeCellSource(source: string): string {
-  return source.replace(/<(\\*)\/script>/g, (_, slashes: string) =>
-    `<${slashes}\\/script>`
-  );
+  return source.replace(/<(?=\\*\/script(\s|>))/gi, '<\\');
 }
 
 /**
@@ -138,29 +141,40 @@ interface RawCell {
   source: string;
 }
 
+/** The next unescaped script end tag at or after `from`, or null. */
+function findEnd(html: string, from: number): { start: number; after: number } | null {
+  const close = /<\/script\b[^>]*>/gi;
+  close.lastIndex = from;
+  let match: RegExpExecArray | null;
+  while ((match = close.exec(html)) !== null) {
+    // An escaped tag is part of the cell's source (an HTML cell that writes a
+    // script element, say), not the end of the cell.
+    if (html[match.index - 1] === '\\') continue;
+    return { start: match.index, after: close.lastIndex };
+  }
+  return null;
+}
+
 /** Scan out the `<script>` cells, respecting the `</script>` escape. */
 function scanCells(html: string): RawCell[] {
   const cells: RawCell[] = [];
+  // Cells live inside `<notebook>`; anything before it is not one. (No bound at
+  // the other end: `</notebook>` has no escape, so a cell may legitimately
+  // contain the text, and each cell already says where it ends.)
+  const root = /<notebook\b[^>]*>/i.exec(html);
   const open = /<script\b([^>]*)>/gi;
+  open.lastIndex = root ? root.index + root[0].length : 0;
+
   let match: RegExpExecArray | null;
   while ((match = open.exec(html)) !== null) {
     const from = open.lastIndex;
-    // The first *unescaped* `</script>` ends the cell; an escaped one is part of
-    // the source (an HTML cell that writes a script tag, say).
-    let end = -1;
-    for (let at = from; ; ) {
-      const found = html.indexOf('</script>', at);
-      if (found === -1) break;
-      if (html[found - 1] === '\\') { at = found + 1; continue; }
-      end = found;
-      break;
-    }
-    if (end === -1) break; // unterminated: everything after this is not a cell
+    const end = findEnd(html, from);
+    if (!end) break; // unterminated: everything after this is not a cell
     cells.push({
       attrs: parseAttributes(`<script${match[1]}>`),
-      source: unescapeCellSource(dedent(html.slice(from, end))),
+      source: unescapeCellSource(dedent(html.slice(from, end.start))),
     });
-    open.lastIndex = end + '</script>'.length;
+    open.lastIndex = end.after;
   }
   return cells;
 }
