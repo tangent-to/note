@@ -418,6 +418,77 @@ export class JavaScriptExecutor {
   private builtinValues: Record<string, any> = {};
 
   /**
+   * What the running cell asked to show, in the order it asked.
+   *
+   * Observable's `display` is a list; Tangent's cell output is one typed thing.
+   * Rather than pick one, the list decides which shape to use: a single
+   * displayed value becomes the cell's value and keeps its full rendering
+   * (table, inspector, DOM node), while several stack into one DOM output. That
+   * way the common case loses nothing, and the rare one still shows everything.
+   */
+  private displayed: any[] = [];
+
+  /**
+   * Observable's `display`, as a Tangent builtin.
+   *
+   * Returns undefined on purpose. If it returned its argument, a trailing
+   * `display(x)` would be captured as the cell's last expression as well as
+   * recorded here, and two calls would leave only the second — which is the
+   * failure the list exists to avoid.
+   */
+  private makeDisplay() {
+    return (...values: any[]): void => {
+      for (const value of values) this.displayed.push(value);
+    };
+  }
+
+  /** Put `display` in scope and forget the previous run's list. */
+  private beginDisplay(): void {
+    this.displayed = [];
+    seedBuiltin(this.scope, this.builtinValues, "display", this.makeDisplay());
+  }
+
+  /**
+   * What this run should show: the displayed values, then the cell's own last
+   * expression if it produced one.
+   *
+   * Null when `display` was never called, which is the overwhelmingly common
+   * case and leaves the existing last-expression path exactly as it was.
+   */
+  private shownValues(lastVal: any): any[] | null {
+    if (this.displayed.length === 0) return null;
+    return lastVal === undefined ? [...this.displayed] : [...this.displayed, lastVal];
+  }
+
+  /** A value as a node, for stacking several displays into one output. */
+  private toNode(value: any): Node {
+    if (value instanceof Node) return value;
+    const pre = document.createElement("pre");
+    pre.dataset.tangentDisplay = "true";
+    pre.textContent = this.formatValue(value);
+    return pre;
+  }
+
+  /**
+   * The cell output for one value — the same decision the last expression
+   * already goes through, so a single `display(rows)` renders as the sortable
+   * table and a single `display(chart)` as the live node.
+   */
+  private outputForValue(value: any): CellOutput {
+    if (value && value.__tangentWidget) {
+      return { type: "widget", content: JSON.stringify(value), timestamp: Date.now() };
+    }
+    if (value instanceof Node) {
+      return { type: "dom", content: value as Element, timestamp: Date.now() } as CellOutput;
+    }
+    const table = this.tryTableSpec(value);
+    if (table) {
+      return { type: "table", content: JSON.stringify(table), timestamp: Date.now() };
+    }
+    return { type: "text", content: this.formatValue(value), timestamp: Date.now() };
+  }
+
+  /**
    * Seed an app-provided scope value, like Observable's `width`, without
    * stomping a user variable of the same name (see seedBuiltin).
    */
@@ -431,6 +502,12 @@ export class JavaScriptExecutor {
     for (const [key, value] of Object.entries(this.scope)) {
       // Skip internal variables
       if (key.startsWith('__tangent_')) continue;
+      // Skip a builtin the app seeded that is still the app's own function —
+      // `display` is API, not the reader's data, and listing it in the
+      // Variables panel would be noise. A value builtin like `width` stays,
+      // and so does a `display` the reader defined themselves, since
+      // seedBuiltin stops owning the name the moment they assign it.
+      if (typeof value === 'function' && this.builtinValues[key] === value) continue;
       vars[key] = value;
     }
     return vars;
@@ -463,6 +540,7 @@ export class JavaScriptExecutor {
       outputDiv.dataset.tangentOutput = "true";
       document.body.appendChild(outputDiv);
       (window as any).__tangent_currentOutputDiv = outputDiv;
+      this.beginDisplay();
 
       // Capture console output
       const originalLog = console.log;
@@ -569,9 +647,20 @@ export class JavaScriptExecutor {
           // ignore
         }
 
+        // Anything the cell handed to `display`. One value keeps the full
+        // typed rendering below; several stack into the output div, which the
+        // DOM branch then picks up in the order they were displayed.
+        const shown = this.shownValues(lastVal);
+        if (shown && shown.length > 1) {
+          for (const value of shown) outputDiv.appendChild(this.toNode(value));
+        }
+        if (shown && shown.length === 1) {
+          return withLogs(this.outputForValue(shown[0]));
+        }
+
         // Worker-kernel ui.* controls return a declarative spec instead of a
         // DOM node; surface it as a `widget` output for main-thread rendering.
-        if (lastVal && lastVal.__tangentWidget) {
+        if (!shown && lastVal && lastVal.__tangentWidget) {
           return withLogs({
             type: "widget",
             content: JSON.stringify(lastVal),
@@ -579,7 +668,7 @@ export class JavaScriptExecutor {
           });
         }
 
-        if (lastVal instanceof Node) {
+        if (!shown && lastVal instanceof Node) {
           return withLogs({
             type: "dom",
             content: lastVal as Element,
@@ -587,7 +676,7 @@ export class JavaScriptExecutor {
           });
         }
 
-        const table = this.tryTableSpec(lastVal);
+        const table = shown ? null : this.tryTableSpec(lastVal);
         if (table) {
           return withLogs({
             type: "table",
@@ -614,7 +703,7 @@ export class JavaScriptExecutor {
           });
         }
 
-        if (lastVal !== undefined) {
+        if (!shown && lastVal !== undefined) {
           return withLogs({
             type: "text",
             content: this.formatValue(lastVal),
@@ -777,6 +866,7 @@ export class JavaScriptExecutor {
    */
   async executeModule(code: string): Promise<CellOutput> {
     try {
+      this.beginDisplay();
       (window as any).__tangent_loadedModules =
         (window as any).__tangent_loadedModules || {};
 
@@ -888,6 +978,16 @@ export class JavaScriptExecutor {
       try {
         delete (window as any).__tangent_last;
       } catch {}
+
+      // Same two regimes as executeCode. A module cell has no output div of its
+      // own, so several displays are wrapped here instead of appended.
+      const shown = this.shownValues(last);
+      if (shown && shown.length === 1) return this.outputForValue(shown[0]);
+      if (shown && shown.length > 1) {
+        const wrapper = document.createElement("div");
+        for (const value of shown) wrapper.appendChild(this.toNode(value));
+        return { type: "dom", content: wrapper as Element, timestamp: Date.now() } as any;
+      }
 
       if (last && last.__tangentWidget) {
         return {

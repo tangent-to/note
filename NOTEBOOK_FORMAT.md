@@ -176,6 +176,11 @@ Open one with Import, from a `?url=` link, or by pointing `note serve` at a
 directory holding it; export one from the Export dialog. Saving such a file
 in place writes 2.0 HTML back, not Tangent's `.js`.
 
+`display(value)` works here as it does there: call it anywhere in a cell, as
+often as you like. One displayed value becomes the cell's output and keeps its
+full rendering — a frame of rows is still the sortable table, a chart is still
+the live node; several stack in the order they were displayed.
+
 **This is document interoperability, not runtime compatibility.** The cells
 cross over; the way notebooks *run* does not. Observable is reactive by
 construction, with generator-driven inputs, `${…}` interpolation inside
