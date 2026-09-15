@@ -143,6 +143,53 @@ using them remain plain JavaScript and stay compatible with editors that
 detect percent-format cells (e.g. Zed's REPL, which matches the `// %%`
 prefix and ignores the rest of the line).
 
+## Observable Notebooks 2.0
+
+Tangent reads and writes the [Observable Notebooks 2.0](https://observablehq.com/notebook-kit/kit)
+`.html` format: a `<notebook>` root, an optional `<title>`, and one
+`<script>` per cell.
+
+```html
+<!doctype html>
+<notebook>
+  <title>Hello, world!</title>
+  <script id="1" type="text/markdown">
+    # Hello, world!
+  </script>
+  <script id="2" type="module" pinned>
+    1 + 2
+  </script>
+</notebook>
+```
+
+Open one with Import, from a `?url=` link, or by pointing `note serve` at a
+directory holding it; export one from the Export dialog. Saving such a file
+in place writes 2.0 HTML back, not Tangent's `.js`.
+
+**This is document interoperability, not runtime compatibility.** The cells
+cross over; the way notebooks *run* does not. Observable is reactive by
+construction, with generator-driven inputs, `${…}` interpolation inside
+prose, and `FileAttachment`; Tangent runs cells in dependency order with
+reactivity as an option, has its own `ui.*` inputs, and renders prose
+statically. Every conversion therefore reports what it could not carry, and
+the app shows that list rather than leaving you with a notebook that looks
+fine and quietly doesn't work.
+
+What to expect:
+
+| | |
+|---|---|
+| `pinned` | Observable **hides** source unless a cell is pinned — the opposite of Tangent's default. An unpinned cell imports collapsed; an export pins every cell that isn't. |
+| `hidden` | ↔ `#collapse-output` |
+| `readonly` (on `<notebook>`) | Imports as `#readonly` on every cell. A notebook where all cells are locked exports as `readonly`. |
+| `id` | Kept, so cell identities stay where the author put them across a round trip. |
+| SQL, TeX, DOT, Python, R, TypeScript | Source kept, cell `#skip`ped — Tangent runs JavaScript only. |
+| `#skip` | No equivalent, and the cell **would run** over there. Exported as a text cell holding its source: preserved, inert. |
+| `#wide` / `#full` / `#inspect` | No equivalent; reported. |
+| `ui.*` | Tangent's own. In Observable, use `view(Inputs.…)`; reported. |
+
+Your `.js` file remains the lossless format.
+
 ## Example Notebook
 
 ```javascript

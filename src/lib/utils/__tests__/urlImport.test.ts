@@ -173,7 +173,7 @@ const a = 1;
 
   it('parses a .js notebook', async () => {
     stubFetch({ ok: true, text: () => Promise.resolve(jsNotebook) } as Response);
-    const nb = await fetchNotebookFromUrl({ fetchUrl: 'https://x.co/nb.js', filename: 'nb.js' });
+    const { notebook: nb } = await fetchNotebookFromUrl({ fetchUrl: 'https://x.co/nb.js', filename: 'nb.js' });
     expect(nb.id).toBe('remote-nb');
     expect(nb.name).toBe('Remote');
     expect(nb.cells).toHaveLength(1);
@@ -188,7 +188,7 @@ const a = 1;
   it('parses a .json notebook', async () => {
     const json = JSON.stringify({ id: 'j1', name: 'Json', cells: [{ id: 'c1', type: 'code', content: '1' }] });
     stubFetch({ ok: true, text: () => Promise.resolve(json) } as Response);
-    const nb = await fetchNotebookFromUrl({ fetchUrl: 'https://x.co/nb.json', filename: 'nb.json' });
+    const { notebook: nb } = await fetchNotebookFromUrl({ fetchUrl: 'https://x.co/nb.json', filename: 'nb.json' });
     expect(nb.id).toBe('j1');
   });
 

@@ -30,6 +30,7 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
+  import { summarizeLosses, type Loss } from './lib/utils/observableFormat';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import {
     activeSessionId,
@@ -42,7 +43,14 @@
   } from './lib/stores/sessions';
   import { theme, toggleTheme } from './lib/utils/theme';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
-  import { saveNotebook, exportNotebookSource, parseJSNotebook, importNotebookFromFile } from './lib/utils/fileOperations';
+  import {
+    saveNotebook,
+    exportNotebookSource,
+    parseJSNotebook,
+    parseNotebookFile,
+    serializeForPath,
+    importNotebookFromFile,
+  } from './lib/utils/fileOperations';
   import {
     deleteNotebook,
     getNotebookRecord,
@@ -452,6 +460,20 @@
    * a link carrying the id of something you have edited forks rather than
    * lands on it (see forkIfItWouldOverwrite). So the link just opens.
    */
+  /**
+   * What a conversion could not carry, shown after the notebook is open.
+   *
+   * A modal rather than a toast, and after rather than instead: the notebook is
+   * usable either way, and the reader needs to be able to read the list, not
+   * catch it going past. Nothing to say means nothing on screen.
+   */
+  let conversionReport: { title: string; lines: string[] } | null = $state(null);
+
+  function reportLosses(name: string, losses: Loss[]) {
+    const lines = summarizeLosses(losses);
+    if (lines.length > 0) conversionReport = { title: name, lines };
+  }
+
   async function loadNotebookFromUrl(request: ImportRequest) {
     await libraryReady;
     // Keep something on screen while the link is fetched — and something to
@@ -460,7 +482,7 @@
     if (!hadNotebook) await restoreSessions();
 
     try {
-      const notebook = await fetchNotebookFromUrl(request);
+      const { notebook, losses } = await fetchNotebookFromUrl(request);
       const hostname = new URL(request.fetchUrl).hostname;
       await openNotebook(await forkIfItWouldOverwrite(notebook), {
         kind: 'url',
@@ -470,6 +492,7 @@
       // edits made since — instead of re-fetching over them.
       history.replaceState(null, '', '/');
       showToast(`Loaded “${notebook.name}” from ${hostname}`, 'info');
+      reportLosses(notebook.name, losses);
     } catch (err: any) {
       console.error('URL import failed:', err);
       showToast(`Couldn’t open the notebook from the link: ${err.message}.`, 'error');
@@ -504,10 +527,11 @@
   }
 
   function handleImportNotebook() {
-    importNotebookFromFile((notebook, filename) => {
+    importNotebookFromFile((notebook, filename, losses) => {
       // The id travels in the file's frontmatter, so re-importing a file you
       // already have reopens its entry rather than forking a duplicate.
       void openNotebook(notebook, { kind: 'import', filename: filename ?? `${notebook.name}.js` });
+      reportLosses(notebook.name, losses);
     });
   }
 
@@ -552,11 +576,21 @@
       return;
     }
     const name = path.split('/').pop() ?? 'notebook.js';
-    const notebook = parseJSNotebook(content, name);
+    // Discovery offers Observable `.html` notebooks too, so the parser follows
+    // the file rather than assuming Tangent's own format.
+    let notebook: any;
+    let losses: Loss[];
+    try {
+      ({ notebook, losses } = parseNotebookFile(content, name));
+    } catch (err: any) {
+      showToast(`Couldn’t read ${path}: ${err.message}.`, 'error');
+      return;
+    }
     // The companion owns this file, so its content replaces the tab already on
     // it rather than opening a second tab onto the same path.
     void openNotebook(notebook, { kind: 'disk', path }, { replaceContent: true });
     if (reason === 'disk-change') showToast(`Reloaded ${path} from disk`, 'info');
+    reportLosses(notebook.name, losses);
   }
 
   function handleSyncConflict(path: string) {
@@ -576,10 +610,15 @@
       // to write to and still exports a download.
       const origin = get(currentOrigin);
       if (isSyncConnected() && origin.kind === 'disk') {
-        const source = await exportNotebookSource(notebook);
+        // Write back the format the file is in. Saving Tangent's `.js` source
+        // into someone's Observable `.html` would destroy it.
+        const { content, losses } = serializeForPath(notebook, origin.path);
         // A second save after a conflict warning overwrites deliberately.
-        if (saveThroughSync(origin.path, source, conflictedPaths.has(origin.path))) {
+        if (saveThroughSync(origin.path, content, conflictedPaths.has(origin.path))) {
           conflictedPaths.delete(origin.path);
+          // Only an Observable file can lose anything, and only when it holds
+          // something the format has no word for.
+          reportLosses(notebook.name, losses);
           return;
         }
       }
@@ -991,6 +1030,34 @@
     </div>
   {/if}
 
+  {#if conversionReport}
+    <div
+      class="unsaved-overlay"
+      role="presentation"
+      onclick={(e) => { if (e.target === e.currentTarget) conversionReport = null; }}
+    >
+      <div class="shortcuts-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <div class="shortcuts-head">
+          <h3 id="report-title">Imported with notes</h3>
+          <button class="shortcuts-close" onclick={() => conversionReport = null} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3l8 8M11 3l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <p class="report-intro">
+          “{conversionReport.title}” is open. Observable and Tangent run notebooks
+          differently, so some things came across as text rather than behaviour:
+        </p>
+        <ul class="report-list">
+          {#each conversionReport.lines as line}
+            <li>{line}</li>
+          {/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
+
   {#if toast}
     <div class="toast {toast.tone}" role="status" aria-live="polite">
       <span>{toast.message}</span>
@@ -1387,6 +1454,33 @@
   }
 
   .shortcuts-close:hover { background: var(--surface-hover); color: var(--heading); }
+
+  /* The conversion report is prose, not a key table, so it gets room to be
+     read — the point of showing it at all is that it can be acted on. */
+  .report-modal { max-width: 560px; }
+
+  .report-intro {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  .report-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .report-list li {
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--text);
+  }
 
   .shortcuts-list {
     list-style: none;

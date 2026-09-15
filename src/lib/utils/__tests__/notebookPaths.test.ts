@@ -11,8 +11,12 @@ import { describe, it, expect } from 'vitest';
 import {
   displayName,
   frontmatterTitle,
+  hasNotebookExtension,
+  looksLikeAnyNotebook,
   looksLikeNotebook,
+  looksLikeObservableNotebook,
   normalizeRoot,
+  observableTitle,
   relativeTo,
   resolveWithin,
   shouldSkipDir,
@@ -115,10 +119,58 @@ describe('shouldSkipDir', () => {
   });
 });
 
+describe('hasNotebookExtension', () => {
+  it('sniffs only what could be a notebook', () => {
+    expect(hasNotebookExtension('luum.js')).toBe(true);
+    expect(hasNotebookExtension('notes.html')).toBe(true);
+    expect(hasNotebookExtension('NOTES.HTML')).toBe(true);
+    expect(hasNotebookExtension('data.csv')).toBe(false);
+    expect(hasNotebookExtension('README.md')).toBe(false);
+  });
+});
+
+describe('looksLikeObservableNotebook', () => {
+  it('accepts the root element the 2.0 format opens with', () => {
+    expect(looksLikeObservableNotebook('<!doctype html>\n<notebook>')).toBe(true);
+    expect(looksLikeObservableNotebook('<notebook theme="air">')).toBe(true);
+  });
+
+  it('rejects the rest of the HTML in a directory', () => {
+    // A tree holds far more HTML than it holds notebooks — built pages,
+    // coverage reports, this app's own static exports. Offering all of it would
+    // be worse than offering none.
+    expect(looksLikeObservableNotebook('<!doctype html><html><head>')).toBe(false);
+    expect(looksLikeObservableNotebook('<p>see the notebook</p>')).toBe(false);
+    expect(looksLikeObservableNotebook('')).toBe(false);
+  });
+
+  it('is combined with the .js rule, not confused with it', () => {
+    expect(looksLikeAnyNotebook('// ---\n// title: Luum\n')).toBe(true);
+    expect(looksLikeAnyNotebook('<notebook>')).toBe(true);
+    expect(looksLikeAnyNotebook('import foo from "bar";')).toBe(false);
+  });
+});
+
+describe('observableTitle', () => {
+  it('names a notebook the way its author did', () => {
+    expect(observableTitle('<notebook>\n  <title>Hello, world!</title>')).toBe('Hello, world!');
+  });
+
+  it('decodes the entities a title carries', () => {
+    expect(observableTitle('<title>Fish &amp; &lt;chips&gt;</title>')).toBe('Fish & <chips>');
+  });
+
+  it('is null when there is none, so the caller falls back to the filename', () => {
+    expect(observableTitle('<notebook></notebook>')).toBeNull();
+    expect(observableTitle('<title>   </title>')).toBeNull();
+  });
+});
+
 describe('displayName', () => {
   it('is the filename without the extension', () => {
     expect(displayName('rda/penguins.js')).toBe('penguins');
     expect(displayName('luum.js')).toBe('luum');
+    expect(displayName('notes/analysis.html')).toBe('analysis');
   });
 });
 

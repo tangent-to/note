@@ -2,13 +2,14 @@ import type { Notebook } from "../types/notebook";
 import { formatDate, formatDateTime } from "./format";
 import { serializeNotebook } from "./notebookFormat";
 import { isEmptyOutput } from "./cellOutput";
+import { serializeObservableNotebook } from "./observableFormat";
 
 export interface ExportOptions {
   includeCode: boolean;
   includeOutputs: boolean;
   includeTimestamps: boolean;
   theme: "light" | "dark";
-  format: "html" | "html-inline" | "pdf" | "js";
+  format: "html" | "html-inline" | "pdf" | "js" | "observable";
 }
 
 export class ExportService {
@@ -25,6 +26,11 @@ export class ExportService {
         return this.exportToPDF(notebook, options);
       case "js":
         return serializeNotebook(notebook);
+      case "observable":
+        // Document interoperability only: the cells cross, the runtime does
+        // not. What could not be carried is reported by
+        // serializeObservableNotebook and shown by the caller.
+        return serializeObservableNotebook(notebook).html;
       default:
         throw new Error(`Unsupported export format: ${options.format}`);
     }
