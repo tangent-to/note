@@ -32,6 +32,13 @@ export function shouldSkipDir(name: string): boolean {
   return name.startsWith('.') || SKIP_DIRS.has(name);
 }
 
+/** Extensions worth sniffing. Everything else is never a notebook. */
+export const NOTEBOOK_EXTENSIONS = ['.js', '.html'];
+
+export function hasNotebookExtension(name: string): boolean {
+  return NOTEBOOK_EXTENSIONS.some((ext) => name.toLowerCase().endsWith(ext));
+}
+
 /**
  * Does this file's head look like a tangent notebook?
  *
@@ -48,6 +55,23 @@ export function looksLikeNotebook(head: string): boolean {
     return trimmed === '// ---' || trimmed === '//---';
   }
   return false;
+}
+
+/**
+ * Does this file's head look like an Observable Notebooks 2.0 file?
+ *
+ * The signature is the `<notebook>` root element. That matters more here than
+ * for `.js`: a directory holds far more HTML than it holds notebooks — built
+ * pages, coverage reports, exported notebooks from this app's own static
+ * export — and offering all of it would be worse than offering none.
+ */
+export function looksLikeObservableNotebook(head: string): boolean {
+  return /<notebook[\s>]/i.test(head);
+}
+
+/** Either format. */
+export function looksLikeAnyNotebook(head: string): boolean {
+  return looksLikeNotebook(head) || looksLikeObservableNotebook(head);
 }
 
 /**
@@ -126,8 +150,25 @@ export function relativeTo(root: string, absolute: string): string | null {
   return absolute.slice(root.length + 1);
 }
 
+/**
+ * An Observable notebook's `<title>`, so the list names it the way its author
+ * did — the same reason `frontmatterTitle` exists for Tangent's own format.
+ */
+export function observableTitle(head: string): string | null {
+  const match = /<title>([\s\S]*?)<\/title>/i.exec(head);
+  if (!match) return null;
+  const title = match[1]
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .trim();
+  return title || null;
+}
+
 /** A notebook's display name: its filename without the extension. */
 export function displayName(relative: string): string {
   const base = relative.slice(relative.lastIndexOf('/') + 1);
-  return base.replace(/\.js$/, '');
+  return base.replace(/\.(js|html)$/i, '');
 }

@@ -22,6 +22,10 @@ Notebooks are saved with a `.js` extension to leverage syntax highlighting in mo
 The header contains metadata:
 - `title`: Human-readable notebook name
 - `id`: Unique identifier for the notebook
+- `readonly`: `true` locks the whole notebook — cells and the title alike.
+  Omitted when the notebook isn't locked. The per-cell `#readonly` tag is the
+  finer version of the same thing; this is what Observable Notebooks 2.0 has,
+  so it round-trips exactly.
 
 ### Cell Delimiters
 
@@ -35,6 +39,11 @@ Cells are separated using special comment markers:
 const x = 42;
 console.log(x);
 ```
+
+`[js]` and `[md]` are read as well as `[javascript]` and `[markdown]` — `[md]`
+is jupytext's own second spelling. Only the long forms are written, because
+jupytext does not know `[js]`. Zed doesn't read the tag at all: its REPL matches
+the `// %%` prefix at column 0 and ignores the rest of the line.
 
 #### Markdown Cells
 
@@ -85,15 +94,16 @@ its run button, Run All, stale re-runs, and reactive cascades. Its edits
 don't mark downstream cells stale. Like disabled cells in marimo or frozen
 cells in Jupyter. Re-enable it from the cell menu.
 
-#### `#collapse-output` — collapsed output
+#### `#hidden` — collapsed output
 
 ```javascript
-// %% [javascript] #collapse-output
+// %% [javascript] #hidden
 verboseDiagnostics();
 ```
 
-The cell runs, but its output renders collapsed. `#hide-output` is
-accepted as a legacy alias when reading files.
+The cell runs, but its output renders collapsed. This is Observable's word for
+it, with the same meaning and the same default, so the two formats say it
+identically. `#collapse-output` and `#hide-output` are read as older spellings.
 
 #### `#readonly` — locked cell
 
@@ -142,6 +152,58 @@ Because tags live inside a line comment after the `// %%` prefix, files
 using them remain plain JavaScript and stay compatible with editors that
 detect percent-format cells (e.g. Zed's REPL, which matches the `// %%`
 prefix and ignores the rest of the line).
+
+## Observable Notebooks 2.0
+
+Tangent reads and writes the [Observable Notebooks 2.0](https://observablehq.com/notebook-kit/kit)
+`.html` format: a `<notebook>` root, an optional `<title>`, and one
+`<script>` per cell.
+
+```html
+<!doctype html>
+<notebook>
+  <title>Hello, world!</title>
+  <script id="1" type="text/markdown">
+    # Hello, world!
+  </script>
+  <script id="2" type="module" pinned>
+    1 + 2
+  </script>
+</notebook>
+```
+
+Open one with Import, from a `?url=` link, or by pointing `note serve` at a
+directory holding it; export one from the Export dialog. Saving such a file
+in place writes 2.0 HTML back, not Tangent's `.js`.
+
+`display(value)` works here as it does there: call it anywhere in a cell, as
+often as you like. One displayed value becomes the cell's output and keeps its
+full rendering — a frame of rows is still the sortable table, a chart is still
+the live node; several stack in the order they were displayed.
+
+**This is document interoperability, not runtime compatibility.** The cells
+cross over; the way notebooks *run* does not. Observable is reactive by
+construction, with generator-driven inputs, `${…}` interpolation inside
+prose, and `FileAttachment`; Tangent runs cells in dependency order with
+reactivity as an option, has its own `ui.*` inputs, and renders prose
+statically. Every conversion therefore reports what it could not carry, and
+the app shows that list rather than leaving you with a notebook that looks
+fine and quietly doesn't work.
+
+What to expect:
+
+| | |
+|---|---|
+| `pinned` | Observable **hides** source unless a cell is pinned — the opposite of Tangent's default. An unpinned cell imports collapsed; an export pins every cell that isn't. |
+| `hidden` | ↔ `#hidden` |
+| `readonly` (on `<notebook>`) | ↔ frontmatter `readonly: true`. A notebook whose every cell is locked also exports as `readonly`. |
+| `id` | Kept, so cell identities stay where the author put them across a round trip. |
+| SQL, TeX, DOT, Python, R, TypeScript | Source kept, cell `#skip`ped — Tangent runs JavaScript only. |
+| `#skip` | No equivalent, and the cell **would run** over there. Exported as a text cell holding its source: preserved, inert. |
+| `#wide` / `#full` / `#inspect` | No equivalent; reported. |
+| `ui.*` | Tangent's own. In Observable, use `view(Inputs.…)`; reported. |
+
+Your `.js` file remains the lossless format.
 
 ## Example Notebook
 

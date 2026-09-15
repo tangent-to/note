@@ -1,5 +1,10 @@
 import type { Notebook } from '../types/notebook';
 import { parseJSNotebook } from './fileOperations';
+import {
+  looksLikeObservableNotebook,
+  parseObservableNotebook,
+  type Loss,
+} from './observableFormat';
 
 /** A notebook to open from a link, resolved to a directly fetchable URL. */
 export interface ImportRequest {
@@ -105,10 +110,16 @@ export function notebooksEquivalent(a: Notebook, b: Notebook): boolean {
   );
 }
 
+/** A fetched notebook, with whatever its conversion could not carry. */
+export interface ImportedNotebook {
+  notebook: Notebook;
+  losses: Loss[];
+}
+
 /** Fetch and parse the notebook behind an ImportRequest. Throws with a
  *  human-readable message on network/CORS errors, HTTP errors, or content
  *  that isn't a notebook. */
-export async function fetchNotebookFromUrl(request: ImportRequest): Promise<Notebook> {
+export async function fetchNotebookFromUrl(request: ImportRequest): Promise<ImportedNotebook> {
   let res: Response;
   try {
     // 'no-cache' revalidates with the server instead of trusting the HTTP
@@ -123,13 +134,21 @@ export async function fetchNotebookFromUrl(request: ImportRequest): Promise<Note
     throw new Error(`the server responded with ${res.status}`);
   }
   const text = await res.text();
-  const notebook = request.filename.toLowerCase().endsWith('.json')
-    ? JSON.parse(text)
-    : parseJSNotebook(text, request.filename);
+  let notebook: Notebook;
+  let losses: Loss[] = [];
+  if (request.filename.toLowerCase().endsWith('.json')) {
+    notebook = JSON.parse(text);
+  } else if (looksLikeObservableNotebook(text.slice(0, 2000))) {
+    // Recognised by content, not by extension: a link to an Observable
+    // notebook is as likely to end in a path segment as in `.html`.
+    ({ notebook, losses } = parseObservableNotebook(text, request.filename));
+  } else {
+    notebook = parseJSNotebook(text, request.filename);
+  }
   // parseJSNotebook yields zero cells for arbitrary text (e.g. an HTML error
   // page), so an empty notebook means the URL didn't point at a notebook.
   if (!notebook?.id || !Array.isArray(notebook.cells) || notebook.cells.length === 0) {
     throw new Error('the file isn’t a valid notebook');
   }
-  return notebook;
+  return { notebook, losses };
 }

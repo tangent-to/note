@@ -59,15 +59,19 @@ In the browser, saving a notebook is a download: a new file lands in your downlo
 
 ```bash
 npm run build # once, to produce dist/
-npm run serve -- path/to/notebooks/  # a directory, or a single .js file
+npm run serve -- path/to/notebooks/  # a directory, or a single notebook file
                                      # then open http://localhost:4321
+
+npm run serve -- ~/notebooks --port 4400   # options come after the path
 ```
 
 Give it a **directory** and it offers every notebook under it, listed in the Storage panel under "On disk"; open any of them in a tab and each is linked to its own file. Give it a **single file** and it opens that one, exactly as before.
 
 The Storage panel keeps **one list**. A notebook is one thing, and where it lives is something it has, so each row says where — a path under the served directory, or "in this browser" — rather than falling into one section or another. A file the companion serves that you have never opened is a row too, marked "not opened yet".
 
-Discovery is deliberately narrow: three levels deep at most, skipping `node_modules`, `dist`, `.git` and other hidden directories, and only files whose head carries the `// ---` frontmatter fence — a repository is full of `.js` that is not a notebook, and offering all of it would bury the two files you actually work in.
+Discovery is deliberately narrow: three levels deep at most, skipping `node_modules`, `dist`, `.git` and other hidden directories, and only files whose head carries a notebook's signature — the `// ---` frontmatter fence for a `.js` notebook, the `<notebook>` root element for an [Observable Notebooks 2.0](NOTEBOOK_FORMAT.md#observable-notebooks-20) `.html` one. A repository is full of `.js` that is not a notebook, and holds far more HTML still; offering all of it would bury the two files you actually work in.
+
+Saving writes back the format the file is in, so an Observable notebook stays an Observable notebook. What a conversion cannot carry — Observable is reactive by construction, Tangent is not — is listed rather than dropped in silence; see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md#observable-notebooks-20).
 
 The companion serves the app from localhost and keeps those files and the open tabs in sync in both directions:
 

@@ -18,15 +18,18 @@
  * browser names files here, and any page can be pointed at localhost.
  *
  * Usage:
- *   deno run -A cli/serve.ts <notebook.js|directory> [more...] [--port 4321] [--dist dist]
+ *   deno run -A cli/serve.ts <notebook.js|notebook.html|directory> [more...] [--port 4321] [--dist dist]
  */
 import {
   MAX_DEPTH,
   displayName,
   frontmatterId,
   frontmatterTitle,
-  looksLikeNotebook,
+  hasNotebookExtension,
+  looksLikeAnyNotebook,
+  looksLikeObservableNotebook,
   normalizeRoot,
+  observableTitle,
   relativeTo,
   resolveWithin,
   shouldSkipDir,
@@ -107,7 +110,7 @@ interface NotebookFile {
 function resolveRoot(targets: string[], cwd: string): { root: string; initial: string | null } {
   if (targets.length === 0) {
     console.error(
-      "Usage: note serve <notebook.js|directory> [more...] [--port N] [--dist DIR]",
+      "Usage: note serve <notebook.js|notebook.html|directory> [more...] [--port N] [--dist DIR]",
     );
     Deno.exit(2);
   }
@@ -145,7 +148,7 @@ function discover(root: string): NotebookFile[] {
         walk(absolute, depth + 1);
         continue;
       }
-      if (!entry.name.endsWith(".js")) continue;
+      if (!hasNotebookExtension(entry.name)) continue;
       let head: string;
       try {
         const handle = Deno.openSync(absolute, { read: true });
@@ -156,13 +159,16 @@ function discover(root: string): NotebookFile[] {
       } catch {
         continue;
       }
-      if (!looksLikeNotebook(head)) continue;
+      if (!looksLikeAnyNotebook(head)) continue;
       const path = relativeTo(root, absolute);
       if (path) {
+        // An Observable notebook carries its name in `<title>` and has no id of
+        // its own; Tangent's carries both in its frontmatter.
+        const observable = looksLikeObservableNotebook(head);
         found.push({
           path,
-          name: frontmatterTitle(head) ?? displayName(path),
-          id: frontmatterId(head),
+          name: (observable ? observableTitle(head) : frontmatterTitle(head)) ?? displayName(path),
+          id: observable ? null : frontmatterId(head),
         });
       }
     }
@@ -335,7 +341,7 @@ export function main(args: Args) {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     for await (const event of watcher) {
       for (const raw of event.paths) {
-        if (!raw.endsWith(".js")) continue;
+        if (!hasNotebookExtension(raw)) continue;
         const path = relativeTo(root, raw);
         if (!path) continue;
         clearTimeout(timers.get(path));

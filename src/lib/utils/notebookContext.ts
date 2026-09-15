@@ -155,7 +155,10 @@ const RUNTIME_NOTES =
   '- `width` is a builtin holding the current output-area width in pixels (like ' +
   "Observable's width): size charts with Plot.plot({ width }).\n" +
   '- To display a result, end the cell with an expression, or return a DOM node ' +
-  '(e.g. an SVG/chart element) to render it.';
+  '(e.g. an SVG/chart element) to render it.\n' +
+  '- `display(value)` also works, like Observable\'s: call it anywhere, as often ' +
+  'as you like. One displayed value renders normally (table, chart, inspector); ' +
+  'several stack in the order you displayed them.';
 
 /** Assemble a system prompt: role, runtime notes, the user's reference, the notebook. */
 export function composeSystemPrompt(role: string, context: string): string {

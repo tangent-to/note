@@ -1,6 +1,17 @@
 import type { Notebook } from '../types/notebook';
 import { ExportService } from './exportService';
-import { applyCellTags, normalizeMarkdownContent } from './notebookFormat';
+import {
+  applyCellTags,
+  cellTypeFromTag,
+  normalizeMarkdownContent,
+  serializeNotebook,
+} from './notebookFormat';
+import {
+  looksLikeObservableNotebook,
+  parseObservableNotebook,
+  serializeObservableNotebook,
+  type Loss,
+} from './observableFormat';
 import { toast } from './toast';
 
 const exportService = new ExportService();
@@ -35,6 +46,27 @@ export async function exportNotebookSource(notebook: Notebook): Promise<string> 
     theme: 'light',
     format: 'js'
   })) as string;
+}
+
+/**
+ * Serialize a notebook for a path the companion owns, in that file's own
+ * format.
+ *
+ * Discovery offers `.html` notebooks as well as `.js` ones, so saving has to
+ * write back what it read: putting Tangent's `.js` source into a file whose
+ * author writes Observable HTML would destroy it. Losses come back with the
+ * content because a save to `.html` can be lossy and the reader should hear
+ * about it — for a plain notebook the list is empty and nothing is said.
+ */
+export function serializeForPath(
+  notebook: Notebook,
+  path: string
+): { content: string; losses: Loss[] } {
+  if (path.toLowerCase().endsWith('.html')) {
+    const { html, losses } = serializeObservableNotebook(notebook);
+    return { content: html, losses };
+  }
+  return { content: serializeNotebook(notebook), losses: [] };
 }
 
 export async function saveNotebook(notebook: Notebook): Promise<void> {
@@ -73,12 +105,13 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     const trimmed = line.trim();
     const withoutComment = trimmed.replace(/^\/\/\s*/, '');
 
-    if (withoutComment === '---') {
-      if (!inMetadata) {
-        inMetadata = true;
-      } else {
-        inMetadata = false;
-      }
+    // The `// ---` fence is frontmatter only at the top of the file, before any
+    // cell has started. Treating it as a fence anywhere meant a horizontal rule
+    // in prose — `---`, which the writer line-comments into `// ---` — reopened
+    // metadata mode and swallowed every cell after it. A notebook was silently
+    // truncated at its first section break.
+    if (withoutComment === '---' && cells.length === 0 && !currentCell) {
+      inMetadata = !inMetadata;
       continue;
     }
 
@@ -100,12 +133,11 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
         cells.push(currentCell);
       }
 
-      const typeMatch = line.match(/\/\/ %% \[(\w+)\]/);
+      const typeMatch = line.match(/\/\/ %% \[([\w.-]+)\]/);
       if (typeMatch) {
-        const type = typeMatch[1];
         currentCell = {
           id: `cell-${cells.length + 1}`,
-          type: type === 'javascript' ? 'code' : type,
+          type: cellTypeFromTag(typeMatch[1]),
           content: '',
           output: null,
           createdAt: Date.now(),
@@ -151,35 +183,55 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     cells,
+    ...(metadata.readonly === 'true' ? { readOnly: true } : {}),
   };
+}
+
+/**
+ * Read a notebook out of a file's text, picking the format by its content
+ * rather than only its name.
+ *
+ * `.html` covers a great deal more than notebooks, so an Observable file is
+ * recognised by its `<notebook>` root; anything else with that extension is
+ * refused rather than parsed into an empty notebook.
+ *
+ * Returns whatever the conversion could not carry, which for an Observable
+ * notebook is the interesting half: a file that imports cleanly and quietly
+ * does not work is worse than one that says what is missing.
+ */
+export function parseNotebookFile(text: string, filename: string): { notebook: any; losses: Loss[] } {
+  const name = filename.toLowerCase();
+  if (name.endsWith('.html') || looksLikeObservableNotebook(text.slice(0, 2000))) {
+    if (!looksLikeObservableNotebook(text.slice(0, 2000))) {
+      throw new Error('that HTML file isn’t an Observable notebook');
+    }
+    return parseObservableNotebook(text, filename);
+  }
+  if (name.endsWith('.js')) return { notebook: parseJSNotebook(text, filename), losses: [] };
+  return { notebook: JSON.parse(text), losses: [] };
 }
 
 // The filename is handed back too: it is what the library shows as the
 // notebook's origin, and the browser gives no path to show instead.
-export function importNotebookFromFile(callback: (notebook: any, filename: string) => void) {
+export function importNotebookFromFile(
+  callback: (notebook: any, filename: string, losses: Loss[]) => void
+) {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.json,.js';
+  input.accept = '.json,.js,.html';
   input.onchange = async (e: Event) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
 
     try {
-      const text = await file.text();
-      let notebook;
-
-      if (file.name.toLowerCase().endsWith('.js')) {
-        notebook = parseJSNotebook(text, file.name);
-      } else {
-        notebook = JSON.parse(text);
-      }
+      const { notebook, losses } = parseNotebookFile(await file.text(), file.name);
 
       if (!notebook.id || !notebook.cells || !Array.isArray(notebook.cells)) {
         toast('That file isn’t a valid notebook.', 'error');
         return;
       }
 
-      callback(notebook, file.name);
+      callback(notebook, file.name, losses);
     } catch (err: any) {
       console.error('Import failed:', err);
       toast('Couldn’t import the notebook: ' + err.message, 'error');

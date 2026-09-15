@@ -15,6 +15,8 @@
     cell: NotebookCell;
     isSelected?: boolean;
     isStale?: boolean;
+    /** The whole notebook is locked, which locks this cell along with it. */
+    notebookLocked?: boolean;
     /** Names this cell defines that another cell defines too. */
     duplicateNames?: string[];
     isDraggedOver?: boolean;
@@ -42,6 +44,7 @@
     cell,
     isSelected = false,
     isStale = false,
+    notebookLocked = false,
     duplicateNames = [],
     isDraggedOver = false,
     dragPosition = null,
@@ -63,6 +66,14 @@
     ondragover,
     ondragend,
   }: Props = $props();
+
+  /**
+   * Locked, by its own tag or by the notebook's.
+   *
+   * Two grains of the same restriction: `#readonly` on the cell, `readonly:` in
+   * the frontmatter. Everything that asks "can this be edited" asks this.
+   */
+  const locked = $derived(cell.readOnly === true || notebookLocked);
 
   /** An output object with no content shows nothing, so it gets no frame. */
   const hasOutput = $derived(!isEmptyOutput(cell.output));
@@ -124,7 +135,7 @@
   }
 
   function handleEditMarkdown() {
-    if (cell.readOnly) {
+    if (locked) {
       onselect?.({ cellId: cell.id });
       return;
     }
@@ -374,7 +385,7 @@
       {#if cell.skipped}
         <span class="skip-badge" title="This cell is skipped: it never runs">skip</span>
       {/if}
-      {#if cell.readOnly}
+      {#if locked}
         <span class="lock-badge" title="This cell is read-only">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <rect x="4" y="11" width="16" height="10" rx="2"/>
@@ -450,7 +461,7 @@
               value={cell.content}
               language="javascript"
               height="auto"
-              readOnly={cell.readOnly ?? false}
+              readOnly={locked}
               onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
               onrun={handleRun}
               onrunAndAdvance={handleRunAndAdvance}
@@ -469,7 +480,7 @@
                   value={cell.content}
                   language="markdown"
                   height="auto"
-                  readOnly={cell.readOnly ?? false}
+                  readOnly={locked}
                   onchange={(detail) => oncontentChange?.({ cellId: cell.id, content: detail.value })}
                   onrun={handleRun}
                   onrunAndAdvance={handleRunAndAdvance}
@@ -549,7 +560,11 @@
             {/if}
             <button role="menuitem" class="menu-item" data-testid="skip-cell-btn" onclick={runMenu(() => ontoggleSkip?.({ cellId: cell.id }))}>{cell.skipped ? 'Enable cell' : 'Skip cell (never runs)'}</button>
           {/if}
-          <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleReadOnly?.({ cellId: cell.id }))}>{cell.readOnly ? 'Unlock cell' : 'Lock cell (read-only)'}</button>
+          {#if !notebookLocked}
+            <!-- Hidden while the whole notebook is locked: the per-cell toggle
+                 could not unlock anything, and offering it would say it could. -->
+            <button role="menuitem" class="menu-item" onclick={runMenu(() => ontoggleReadOnly?.({ cellId: cell.id }))}>{cell.readOnly ? 'Unlock cell' : 'Lock cell (read-only)'}</button>
+          {/if}
           <div class="menu-sep"></div>
           <button
             role="menuitem"

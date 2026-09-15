@@ -3,6 +3,7 @@
   import { ExportService } from '../utils/exportService';
   import { formatDate } from '../utils/format';
   import { toast } from '../utils/toast';
+  import { serializeObservableNotebook, summarizeLosses } from '../utils/observableFormat';
   import type { Notebook } from '../types/notebook';
 
   interface Props {
@@ -13,7 +14,7 @@
 
   const exportService = new ExportService();
 
-  type ExportFormat = 'js' | 'html-static' | 'html-runnable';
+  type ExportFormat = 'js' | 'observable' | 'html-static' | 'html-runnable';
 
   const EXPORT_CHOICES: Array<{
     value: ExportFormat;
@@ -27,6 +28,13 @@
       description:
         "Save Tangent's .js format with cell delimiters so you can version control or re-import later.",
       button: 'Download .js file'
+    },
+    {
+      value: 'observable',
+      title: 'Export Observable 2.0: open it over there',
+      description:
+        'Write an Observable Notebooks 2.0 .html file. Cells cross over; the runtimes differ, so anything that cannot follow is listed before the download.',
+      button: 'Download .html file'
     },
     {
       value: 'html-static',
@@ -45,7 +53,22 @@
   ];
 
   let exportFormat: ExportFormat = $state('js');
+  /**
+   * What an Observable export would leave behind, shown before it is written.
+   *
+   * Confirmation rather than notification: once the file is on disk the reader
+   * has no way back to the list, and "your skipped cell is now prose" is
+   * something to decide about, not to be told after the fact.
+   */
+  let pendingObservable: string[] | null = $state(null);
   let activeChoice = $derived(EXPORT_CHOICES.find((option) => option.value === exportFormat) ?? EXPORT_CHOICES[0]);
+
+  // Picking another format abandons the pending confirmation; the list belonged
+  // to the Observable export, not to this dialog.
+  $effect(() => {
+    exportFormat;
+    pendingObservable = null;
+  });
 
   function slugify(value: string): string {
     return value
@@ -81,6 +104,17 @@
           format: 'js'
         });
         downloadText(content as string, `${baseName}.js`, 'text/javascript');
+      } else if (exportFormat === 'observable') {
+        // Report first, download second: once the file is on disk the reader
+        // has no way back to what the conversion dropped.
+        const { html, losses } = serializeObservableNotebook(notebook);
+        const lines = summarizeLosses(losses);
+        if (lines.length > 0 && !pendingObservable) {
+          pendingObservable = lines;
+          return;
+        }
+        pendingObservable = null;
+        downloadText(html, `${baseName}.html`, 'text/html');
       } else if (exportFormat === 'html-static') {
         const content = await exportService.exportNotebook(notebook, {
           includeCode: true,
@@ -151,17 +185,76 @@
             </div>
           </div>
         </div>
+
+        {#if pendingObservable}
+          <!-- Shown before the file is written: once it is on disk there is no
+               way back to this list. -->
+          <div class="loss-report" role="status">
+            <h5>What won’t cross over</h5>
+            <ul>
+              {#each pendingObservable as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+            <p>Your <code>.js</code> file keeps all of it.</p>
+          </div>
+        {/if}
       {/if}
     </div>
 
     <div class="export-footer">
       <button class="cancel-btn" onclick={() => onclose?.()}>Cancel</button>
-      <button class="export-btn" onclick={handleExport}>{activeChoice.button}</button>
+      <button class="export-btn" onclick={handleExport}>
+        {pendingObservable ? 'Download anyway' : activeChoice.button}
+      </button>
     </div>
   </div>
 </div>
 
 <style>
+  .loss-report {
+    margin-top: 1rem;
+    padding: 0.75rem 0.9rem;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-input);
+  }
+
+  .loss-report h5 {
+    margin: 0 0 0.4rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--warn-fg);
+  }
+
+  .loss-report ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+
+  .loss-report li {
+    padding: 0.3rem 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--text);
+  }
+
+  .loss-report li + li { border-top: 1px solid var(--warn-border); }
+
+  .loss-report p {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .loss-report code {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+  }
+
   .export-modal {
     position: fixed;
     inset: 0;

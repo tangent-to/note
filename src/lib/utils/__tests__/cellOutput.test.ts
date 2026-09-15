@@ -63,6 +63,42 @@ describe('lostInteractivity', () => {
     expect(lostInteractivity(self)).toBe(true);
   });
 
+  it('is true for a handler set as a property, not just addEventListener', () => {
+    // `el.onclick = fn` never reaches the worker's addEventListener patch and
+    // does not survive serialization either — linkedom writes
+    // `<button>Play</button>` and the function is gone. Without this the reader
+    // got dead controls and no warning, which is the one outcome the notice
+    // exists to prevent. (Found on a real jmon player whose Play button is
+    // written exactly this way.)
+    const root = fragment('<div><button>▶ Play</button></div>');
+    expect(lostInteractivity(root)).toBe(false);
+
+    (root.querySelector('button') as any).onclick = () => {};
+    expect(lostInteractivity(root)).toBe(true);
+  });
+
+  it('sees a handler on the output element itself', () => {
+    const self = fragment('<div>chart</div>');
+    (self as any).onmousemove = () => {};
+    expect(lostInteractivity(self)).toBe(true);
+  });
+
+  it('covers the handlers an output actually uses', () => {
+    for (const prop of ['onchange', 'oninput', 'onpointerdown', 'onkeydown', 'onwheel']) {
+      const root = fragment('<div><input></div>');
+      (root.querySelector('input') as any)[prop] = () => {};
+      expect(lostInteractivity(root), prop).toBe(true);
+    }
+  });
+
+  it('does not mistake an unset handler for one', () => {
+    // linkedom exposes `on*` on the prototype, so reading one is always
+    // allowed; only a function counts.
+    const root = fragment('<div><button>x</button></div>');
+    (root.querySelector('button') as any).onclick = null;
+    expect(lostInteractivity(root)).toBe(false);
+  });
+
   it('is true for output carrying its own <script>, which never runs as HTML', () => {
     expect(lostInteractivity(fragment('<div><script>start()</script></div>'))).toBe(true);
   });

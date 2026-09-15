@@ -19,6 +19,43 @@ import type { CellOutput } from "../types/notebook";
 export const LISTENER_FLAG = '__tangentHadListener';
 
 /**
+ * Handler properties that make a control a control.
+ *
+ * `addEventListener` is patched in the worker so a listener leaves a mark, but
+ * `el.onclick = fn` leaves none: it is a property assignment, it never reaches
+ * that patch, and it does not survive serialization either — linkedom writes
+ * `<button>Play</button>` and the function is simply gone. So an output built
+ * that way arrived as dead controls with no warning at all, which is the one
+ * outcome the notice exists to prevent. Both spellings are ordinary; a player's
+ * Play button is as likely to be written one way as the other.
+ */
+const HANDLER_PROPS = [
+  'onclick',
+  'ondblclick',
+  'onmousedown',
+  'onmouseup',
+  'onmouseover',
+  'onmouseenter',
+  'onmousemove',
+  'onpointerdown',
+  'onpointerup',
+  'ontouchstart',
+  'onwheel',
+  'onchange',
+  'oninput',
+  'onsubmit',
+  'onkeydown',
+  'onkeyup',
+];
+
+function hasHandlerProperty(node: any): boolean {
+  for (const prop of HANDLER_PROPS) {
+    if (typeof node[prop] === 'function') return true;
+  }
+  return false;
+}
+
+/**
  * True when serializing this DOM output to HTML would break it.
  *
  * The worker kernel can only hand back markup, so anything that depends on code
@@ -38,11 +75,11 @@ export function lostInteractivity(root: any): boolean {
   if (/<iframe\b/i.test(html)) return false;
   if (/<script\b/i.test(html)) return true;
 
-  if (root[LISTENER_FLAG]) return true;
+  if (root[LISTENER_FLAG] || hasHandlerProperty(root)) return true;
   const descendants =
     typeof root.querySelectorAll === 'function' ? root.querySelectorAll('*') : [];
   for (const node of descendants) {
-    if ((node as any)[LISTENER_FLAG]) return true;
+    if ((node as any)[LISTENER_FLAG] || hasHandlerProperty(node)) return true;
   }
   return false;
 }
