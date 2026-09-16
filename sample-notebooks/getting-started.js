@@ -12,9 +12,10 @@
 // > This notebook uses tangent/note, a free, open source, portable notebook app that runs in the browser, privately on your hardware. It exports .js files that can be run in the browser, in Node or Deno, compatible with the Zed IDE (which still doesn't render the plots though). **tangent/note is not a cloud service**: your notebook is saved in cache, but save it also on your system: if you clear the cache, you wipe the notebook and data.
 
 // %% [javascript]
-import ds from '@tangent.to/ds';
-import aq from 'arquero';
-import Plot from '@observablehq/plot'
+import ds from '@tangent.to/ds'; // data science
+import aq from 'arquero'; // tabular data
+import Plot from '@observablehq/plot'; // grammar of graphics
+import d3 from 'd3'; // basic plotting and math utilities
 
 // %% [markdown]
 // ## Penguins!
@@ -189,8 +190,7 @@ glm
 // Overlaying the fitted line closes the loop: the OLS fit tracks the cloud, so body mass rises steadily with flipper length. A straight line only needs its two endpoints.
 
 // %% [javascript]
-const f0 = Math.min(flipper);
-const f1 = Math.max(flipper);
+const [f0, f1] = d3.extent(flipper);
 const glmLine = [f0, f1].map((f) => ({
   "Flipper Length (mm)": f,
   fitted: glm.coefficients[0] + glm.coefficients[1] * f,
