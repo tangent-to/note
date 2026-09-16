@@ -14,6 +14,7 @@
 // %% [javascript]
 import ds from '@tangent.to/ds';
 import aq from 'arquero';
+import Plot from '@observablehq/plot'
 
 // %% [markdown]
 // ## Penguins!
