@@ -15,7 +15,7 @@
 import ds from '@tangent.to/ds'; // data science
 import aq from 'arquero'; // tabular data
 import Plot from '@observablehq/plot'; // grammar of graphics
-import d3 from 'd3'; // basic plotting and math utilities
+import d3 from 'd3'; // low-level plotting and math utilities
 
 // %% [markdown]
 // ## Penguins!
