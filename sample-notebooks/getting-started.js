@@ -189,7 +189,8 @@ glm
 // Overlaying the fitted line closes the loop: the OLS fit tracks the cloud, so body mass rises steadily with flipper length. A straight line only needs its two endpoints.
 
 // %% [javascript]
-const [f0, f1] = d3.extent(flipper);
+const f0 = Math.min(flipper);
+const f1 = Math.max(flipper);
 const glmLine = [f0, f1].map((f) => ({
   "Flipper Length (mm)": f,
   fitted: glm.coefficients[0] + glm.coefficients[1] * f,
