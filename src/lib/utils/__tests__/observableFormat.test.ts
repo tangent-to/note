@@ -146,6 +146,22 @@ describe('importing', () => {
     expect(notebook.cells.map((c) => c.id)).toEqual(['cell-1', 'cell-2']);
   });
 
+  it('takes its identity from the filename, not the title', () => {
+    // Observable Desktop titles every new notebook "untitled". A title-derived
+    // id made two unrelated imports one notebook, the second replacing the
+    // first in the library.
+    const html = '<notebook><title>untitled</title><script type="module" pinned>1</script></notebook>';
+    const a = parseObservableNotebook(html, 'taaiot.html').notebook;
+    const b = parseObservableNotebook(html, 'template.html').notebook;
+    expect(a.id).not.toBe(b.id);
+    expect(a.name).toBe('untitled');
+  });
+
+  it('falls back to the title when there is no real filename', () => {
+    expect(parseObservableNotebook('<notebook><title>My Piece</title></notebook>').notebook.id)
+      .toBe('my-piece');
+  });
+
   it('falls back to the filename when there is no title', () => {
     const { notebook } = parseObservableNotebook('<notebook><script type="module">1</script></notebook>', 'my-analysis.html');
     expect(notebook.name).toBe('My analysis');

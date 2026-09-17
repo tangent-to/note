@@ -30,7 +30,8 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
-  import { summarizeLosses, type Loss } from './lib/utils/observableFormat';
+  import { looksLikeObservableNotebook, summarizeLosses, type Loss } from './lib/utils/observableFormat';
+  import { frontmatterId, pathNotebookId } from '../cli/notebookPaths';
   import { kernel, kernelBusy } from './lib/utils/kernelClient';
   import {
     activeSessionId,
@@ -586,6 +587,14 @@
       showToast(`Couldn’t read ${path}: ${err.message}.`, 'error');
       return;
     }
+    // A file with no id of its own takes its path as its identity, exactly as
+    // discovery does. Otherwise an Observable notebook was keyed by its title:
+    // it never matched its own row in Storage, and two files both titled
+    // "untitled" were one notebook.
+    const ownId = looksLikeObservableNotebook(content.slice(0, 2000))
+      ? null
+      : frontmatterId(content);
+    if (!ownId) notebook.id = pathNotebookId(path);
     // The companion owns this file, so its content replaces the tab already on
     // it rather than opening a second tab onto the same path.
     void openNotebook(notebook, { kind: 'disk', path }, { replaceContent: true });

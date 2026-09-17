@@ -30,6 +30,7 @@ import {
   looksLikeObservableNotebook,
   normalizeRoot,
   observableTitle,
+  pathNotebookId,
   relativeTo,
   resolveWithin,
   shouldSkipDir,
@@ -168,7 +169,9 @@ function discover(root: string): NotebookFile[] {
         found.push({
           path,
           name: (observable ? observableTitle(head) : frontmatterTitle(head)) ?? displayName(path),
-          id: observable ? null : frontmatterId(head),
+          // A notebook with no id of its own is identified by where it lives —
+          // the same rule the app applies when it opens the file.
+          id: (observable ? null : frontmatterId(head)) ?? pathNotebookId(path),
         });
       }
     }

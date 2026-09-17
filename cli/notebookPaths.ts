@@ -105,6 +105,29 @@ export function frontmatterId(head: string): string | null {
   return null;
 }
 
+/**
+ * The identity of a served notebook that carries none of its own.
+ *
+ * The library keys notebooks by id, and the Storage panel merges a served file
+ * with its stored copy by id. A Tangent `.js` notebook writes its id into its
+ * frontmatter, so both sides agree. An Observable `.html` notebook has nowhere
+ * to keep one, and deriving it from the title fails twice over: the file and
+ * the stored copy never matched (one row per notebook became two), and two
+ * files with the same title — Observable Desktop names every new notebook
+ * "untitled" — became the *same* notebook, the second overwriting the first.
+ *
+ * The path relative to the served root is unique there and stable while the
+ * file stays put, so that is the identity. Moving the file makes it a new
+ * notebook as far as the library is concerned, which is the honest reading for
+ * a format that stores no id: the file is all there is.
+ *
+ * Computed here, in the one module both the companion and the app import, so
+ * the two can never disagree about it.
+ */
+export function pathNotebookId(relative: string): string {
+  return `file:${relative}`;
+}
+
 /** Collapse `.` and `..`; returns null when the path climbs above its base. */
 function normalizeSegments(path: string): string[] | null {
   const out: string[] = [];

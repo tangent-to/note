@@ -17,6 +17,7 @@ import {
   looksLikeObservableNotebook,
   normalizeRoot,
   observableTitle,
+  pathNotebookId,
   relativeTo,
   resolveWithin,
   shouldSkipDir,
@@ -191,5 +192,22 @@ describe('frontmatterTitle', () => {
     expect(frontmatterTitle('// ---\n// id: nb-1\n// ---\n')).toBeNull();
     expect(frontmatterTitle('')).toBeNull();
     expect(frontmatterTitle('// title is not a field here\n')).toBeNull();
+  });
+});
+
+describe('pathNotebookId', () => {
+  it('gives a served notebook without an id of its own a stable one', () => {
+    expect(pathNotebookId('siuraa.html')).toBe(pathNotebookId('siuraa.html'));
+  });
+
+  it('keeps two files with the same title apart', () => {
+    // Observable Desktop titles every new notebook "untitled". Keyed by title,
+    // taaiot.html and template.html were one notebook and the second opened
+    // overwrote the first.
+    expect(pathNotebookId('taaiot.html')).not.toBe(pathNotebookId('template.html'));
+  });
+
+  it('distinguishes the same name in different directories', () => {
+    expect(pathNotebookId('a/luum.html')).not.toBe(pathNotebookId('b/luum.html'));
   });
 });
