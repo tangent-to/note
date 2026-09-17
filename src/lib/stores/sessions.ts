@@ -154,7 +154,52 @@ export function flushAutosave(session: NotebookSession): void {
 
 // ─── Opening and closing ─────────────────────────────────────────────────────
 
+/**
+ * A notebook with the traces of a previous kernel removed.
+ *
+ * `executionOrder` says "this cell ran, as the nth run, in the kernel you have
+ * now". A notebook reopened from the library comes back with the numbers its
+ * last kernel gave it, into a kernel that has run nothing — so a reload showed
+ * [12] beside cells whose variables no longer existed, and the next run was
+ * numbered 1. `isRunning` is worse: stored mid-run, it came back as a spinner
+ * that never stopped and a run button that stayed disabled.
+ *
+ * Outputs stay. They are still worth reading, and the file format does not keep
+ * them anyway, so the library copy is the only place they survive.
+ *
+ * Returns the same object when there is nothing to strip, so opening a clean
+ * notebook does not look like an edit.
+ */
+export function withoutRunState(notebook: Notebook): Notebook {
+  const stale = notebook.cells.some((c) => c.executionOrder !== undefined || c.isRunning);
+  if (!stale) return notebook;
+  return {
+    ...notebook,
+    cells: notebook.cells.map((c) => {
+      if (c.executionOrder === undefined && !c.isRunning) return c;
+      const { executionOrder: _order, isRunning: _running, ...rest } = c;
+      return rest as NotebookCell;
+    }),
+  };
+}
+
+/**
+ * Reset what a session knows about runs, for a kernel that has just been
+ * restarted: the counter starts again at 1, no cell counts as having run, and
+ * nothing is stale, since staleness is measured against runs that no longer
+ * exist. The kernel itself is restarted by the caller, which knows whether it
+ * is a worker or the main thread.
+ */
+export function resetRunState(session: NotebookSession): void {
+  session.execCounter = 0;
+  session.cellRunInfo.clear();
+  session.stale.set(new Set());
+  session.notebook.update((nb) => (nb ? withoutRunState(nb) : nb));
+}
+
 function createSession(notebook: Notebook, origin: NotebookOrigin): NotebookSession {
+  // A new session means a new kernel, which has run nothing yet.
+  notebook = withoutRunState(notebook);
   const session: NotebookSession = {
     id: notebook.id,
     notebook: writable(notebook),

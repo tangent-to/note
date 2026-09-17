@@ -32,7 +32,9 @@ import {
   closeSession,
   openSession,
   rekeySession,
+  resetRunState,
   sessionById,
+  withoutRunState,
   sessions,
   sessionStore,
   setActive,
@@ -274,5 +276,60 @@ describe('rekeySession (Save As)', () => {
 
   it('does nothing for a notebook that is not open', () => {
     expect(rekeySession('nope', makeNotebook('x'), local)).toBeNull();
+  });
+});
+
+describe('run state after a reload or a restart', () => {
+  const ran = (id: string): Notebook => ({
+    ...makeNotebook(id),
+    cells: [
+      { id: `${id}-1`, type: 'code', content: 'a', executionOrder: 12, output: { type: 'text', content: '1', timestamp: 1 } },
+      { id: `${id}-2`, type: 'code', content: 'b', executionOrder: 13, isRunning: true },
+    ],
+  });
+
+  it('opens a stored notebook without the numbers its last kernel gave it', () => {
+    // Reloading showed [12] beside cells whose variables no longer existed,
+    // and the next run was numbered 1.
+    const session = openSession(ran('a'), local);
+    const cells = get(session.notebook).cells;
+    expect(cells.map((c) => c.executionOrder)).toEqual([undefined, undefined]);
+  });
+
+  it('never reopens a cell as still running', () => {
+    // Stored mid-run, isRunning came back as a spinner that never stopped and
+    // a run button that stayed disabled.
+    const session = openSession(ran('a'), local);
+    expect(get(session.notebook).cells.some((c) => c.isRunning)).toBe(false);
+  });
+
+  it('keeps the outputs, which are still worth reading', () => {
+    const session = openSession(ran('a'), local);
+    expect(get(session.notebook).cells[0].output?.content).toBe('1');
+  });
+
+  it('does not touch a notebook with nothing to strip', () => {
+    const clean = makeNotebook('clean');
+    expect(withoutRunState(clean)).toBe(clean);
+  });
+
+  it('restarting resets the counter, the run record and staleness', () => {
+    const session = openSession(makeNotebook('r'), local);
+    nextExecutionOrderIn(session);
+    nextExecutionOrderIn(session);
+    session.cellRunInfo.set('r-c1', { hash: 1, reads: [] } as any);
+    session.stale.set(new Set(['r-c1']));
+    session.notebook.update((nb) => ({
+      ...nb!,
+      cells: nb!.cells.map((c) => ({ ...c, executionOrder: 2 })),
+    }));
+
+    resetRunState(session);
+
+    expect(session.execCounter).toBe(0);
+    expect(nextExecutionOrderIn(session)).toBe(1);
+    expect(session.cellRunInfo.size).toBe(0);
+    expect(get(session.stale).size).toBe(0);
+    expect(get(session.notebook).cells[0].executionOrder).toBeUndefined();
   });
 });
