@@ -78,7 +78,49 @@
   import type { Notebook as NotebookDoc } from './lib/types/notebook';
 
   type PanelTab = 'info' | 'variables' | 'console' | 'chat' | 'storage';
-  let rightSidebarOpen = $state(false);
+
+  /**
+   * Whether the side panel starts open.
+   *
+   * On a wide screen it does: there is room for the notebook column and the
+   * panel side by side, and the panel is where the notebook's variables, console
+   * and storage live — people who work that way opened it every single time.
+   * Closing it is a choice, and a choice is remembered, so it stays closed for
+   * someone who prefers it that way. Below a working width it always starts
+   * closed, whatever was stored, because a panel opened by memory on a narrow
+   * window takes the room the notebook needs.
+   */
+  const PANEL_OPEN_KEY = 'tangent-panel-open';
+  /** The notebook column (820) plus the default panel (348) plus breathing room. */
+  const WIDE_ENOUGH = 1280;
+  /** Below this, a remembered "open" would squeeze the notebook too far. */
+  const TOO_NARROW = 900;
+
+  function initialPanelOpen(): boolean {
+    if (typeof window === 'undefined') return false;
+    const width = window.innerWidth;
+    if (width < TOO_NARROW) return false;
+    try {
+      const stored = localStorage.getItem(PANEL_OPEN_KEY);
+      if (stored === 'true') return true;
+      if (stored === 'false') return false;
+    } catch {
+      // Storage unavailable: fall through to the width default.
+    }
+    return width >= WIDE_ENOUGH;
+  }
+
+  let rightSidebarOpen = $state(initialPanelOpen());
+
+  /** Open or close the panel because the user asked to, and remember it. */
+  function setPanelOpen(open: boolean) {
+    rightSidebarOpen = open;
+    try {
+      localStorage.setItem(PANEL_OPEN_KEY, String(open));
+    } catch {
+      // Not remembered, but still done.
+    }
+  }
   let rightSidebarTab = $state<PanelTab>('info');
 
   /**
@@ -96,11 +138,11 @@
    */
   function togglePanelTab(tab: PanelTab) {
     if (rightSidebarOpen && rightSidebarTab === tab) {
-      rightSidebarOpen = false;
+      setPanelOpen(false);
       return;
     }
     rightSidebarTab = tab;
-    rightSidebarOpen = true;
+    setPanelOpen(true);
     // Chat is prose and needs more room than the tool tabs. Widen once if the
     // panel is too narrow to read in, never shrink what the user chose.
     if (tab === 'chat' && rightSidebarWidth < CHAT_MIN_WIDTH) {
@@ -963,7 +1005,7 @@
       <button
         class="icon-btn"
         class:active={rightSidebarOpen}
-        onclick={() => rightSidebarOpen = !rightSidebarOpen}
+        onclick={() => setPanelOpen(!rightSidebarOpen)}
         title="Side panel"
         aria-label="Toggle side panel"
       >
@@ -991,7 +1033,7 @@
         ></div>
         <RightSidebar
           bind:activeTab={rightSidebarTab}
-          onclose={() => rightSidebarOpen = false}
+          onclose={() => setPanelOpen(false)}
           oninsertCode={handleInsertCode}
           oneditCell={handleEditCell}
           onopenNotebook={({ id }) => openFromLibrary(id)}
