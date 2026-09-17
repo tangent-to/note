@@ -18,10 +18,12 @@ vi.mock('../../utils/notebookLibrary', () => ({
 }));
 vi.mock('../../utils/kernelClient', () => ({
   disposeKernel: vi.fn(),
+  rekeyKernel: vi.fn(),
   setActiveKernel: vi.fn(),
 }));
 vi.mock('../../utils/mainExecutor', () => ({
   disposeExecutor: vi.fn(),
+  rekeyExecutor: vi.fn(),
   setActiveExecutor: vi.fn(),
 }));
 
@@ -29,6 +31,7 @@ import {
   activeSessionId,
   closeSession,
   openSession,
+  rekeySession,
   sessionById,
   sessions,
   sessionStore,
@@ -221,5 +224,55 @@ describe('the console belongs to a notebook', () => {
     // Closing a notebook takes its transcript with it.
     closeSession(b.id);
     expect(get(entries).map((e) => e.output.content)).toEqual(['3']);
+  });
+});
+
+describe('rekeySession (Save As)', () => {
+  it('moves an open notebook to a new identity and file in place', async () => {
+    const { rekeyKernel, disposeKernel } = await import('../../utils/kernelClient');
+    const tab = openSession(makeNotebook('file:siuraa.html', 'siuraa'), { kind: 'disk', path: 'siuraa.html' });
+    tab.selectedCellId.set('file:siuraa.html-c1');
+    nextExecutionOrderIn(tab);
+    vi.mocked(disposeKernel).mockClear();
+
+    const moved = rekeySession(
+      'file:siuraa.html',
+      { ...makeNotebook('file:siuraa.js', 'siuraa') },
+      { kind: 'disk', path: 'siuraa.js' }
+    )!;
+
+    // Same tab, new key and new file.
+    expect(get(sessions)).toHaveLength(1);
+    expect(moved.id).toBe('file:siuraa.js');
+    expect(get(moved.origin)).toEqual({ kind: 'disk', path: 'siuraa.js' });
+    expect(get(activeSessionId)).toBe('file:siuraa.js');
+    expect(sessionById('file:siuraa.html')).toBeNull();
+
+    // And everything worth keeping kept: the kernel is moved, never disposed,
+    // so the variables the reader built survive the save.
+    expect(rekeyKernel).toHaveBeenCalledWith('file:siuraa.html', 'file:siuraa.js');
+    expect(disposeKernel).not.toHaveBeenCalled();
+    expect(moved.execCounter).toBe(1);
+    expect(get(moved.selectedCellId)).toBe('file:siuraa.html-c1');
+    expect(get(moved.dirty)).toBe(false);
+  });
+
+  it('keeps the tab in its place among the others', () => {
+    openSession(makeNotebook('a'), local);
+    openSession(makeNotebook('b'), local);
+    openSession(makeNotebook('c'), local);
+    rekeySession('b', makeNotebook('b2'), { kind: 'disk', path: 'b2.js' });
+    expect(get(sessions).map((s) => s.id)).toEqual(['a', 'b2', 'c']);
+  });
+
+  it('refuses to make two tabs one notebook', () => {
+    openSession(makeNotebook('a'), local);
+    openSession(makeNotebook('b'), local);
+    expect(rekeySession('a', makeNotebook('b'), local)).toBeNull();
+    expect(get(sessions).map((s) => s.id)).toEqual(['a', 'b']);
+  });
+
+  it('does nothing for a notebook that is not open', () => {
+    expect(rekeySession('nope', makeNotebook('x'), local)).toBeNull();
   });
 });

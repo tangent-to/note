@@ -4,6 +4,7 @@ export interface ShortcutHandler {
   toggleData: () => void;
   toggleConsole?: () => void;
   save: () => void;
+  saveAs?: () => void;
   newNotebook: () => void;
   importNotebook: () => void;
   undo: () => void;
@@ -41,6 +42,14 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
   if ((event.metaKey || event.ctrlKey) && event.key === '`') {
     event.preventDefault();
     handlers.toggleConsole?.();
+    return true;
+  }
+
+  // Save As: Ctrl/Cmd + Shift + S. Checked before plain Save, which would
+  // otherwise match the same key and swallow it.
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    handlers.saveAs?.();
     return true;
   }
 

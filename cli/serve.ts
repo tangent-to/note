@@ -273,6 +273,14 @@ export function main(args: Args) {
           // loaded — unless the tab has already been told and asks again.
           let onDisk: string | null = null;
           try { onDisk = Deno.readTextFileSync(absolute); } catch { onDisk = null; }
+          // Save As names a file this tab never loaded, so there is no base hash
+          // to check against and the conflict test below would wave it through.
+          // A create that lands on an existing file is refused until the reader
+          // has seen that and confirmed.
+          if (onDisk !== null && msg.create && !msg.force) {
+            socket.send(JSON.stringify({ type: "exists", path }));
+            return;
+          }
           if (onDisk !== null) {
             const diskHash = hashContent(onDisk);
             if (msg.baseHash && msg.baseHash !== diskHash && !msg.force) {

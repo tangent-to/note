@@ -19,6 +19,7 @@ function makeHandlers() {
     toggleChat: vi.fn(),
     toggleData: vi.fn(),
     save: vi.fn(),
+    saveAs: vi.fn(),
     newNotebook: vi.fn(),
     importNotebook: vi.fn(),
     undo: vi.fn(),
@@ -26,6 +27,14 @@ function makeHandlers() {
 }
 
 describe('handleGlobalKeydown', () => {
+  it('opens Save As on Ctrl+Shift+S, and does not also save', () => {
+    // Plain Save matches the same key; checked second, it would swallow this.
+    const handlers = makeHandlers();
+    expect(handleGlobalKeydown(makeEvent({ ctrlKey: true, shiftKey: true, key: 'S' }), handlers)).toBe(true);
+    expect(handlers.saveAs).toHaveBeenCalledOnce();
+    expect(handlers.save).not.toHaveBeenCalled();
+  });
+
   it('triggers command palette on Ctrl+K', () => {
     const handlers = makeHandlers();
     const event = makeEvent({ ctrlKey: true, key: 'k' });

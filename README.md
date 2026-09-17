@@ -84,6 +84,8 @@ This is what makes an external editor and the notebook usable together: write an
 
 If the file changed on disk since the tab loaded, a save is refused once and warns you, so a background edit is not silently overwritten. Saving again overwrites deliberately.
 
+**Save As** (`Ctrl/Cmd + Shift + S`) writes the notebook to a new file in the served directory and moves the tab onto it; the file it came from is left untouched. The extension picks the format — `.js` for Tangent's, `.html` for Observable's — so this is also how an Observable notebook becomes a Tangent one. The tab keeps its kernel, so nothing needs re-running. An existing file is never replaced without a second, explicit confirmation. Without the companion there is nowhere to write, and Save As falls back to the Export dialog.
+
 Options: `--port` (default 4321) and `--dist` (default `dist`). The companion needs [Deno](https://deno.com). Without it, the app still runs from any static host and falls back to download-based saving.
 
 Serving from localhost keeps the page same-origin with the companion, so this works the same in every browser, Firefox included. It deliberately does not use the File System Access API, which only Chromium implements.

@@ -35,6 +35,15 @@ export function setActiveExecutor(id: string | null): void {
   if (id) executorFor(id).activate();
 }
 
+/** The main-thread counterpart of rekeyKernel: same executor, new key. */
+export function rekeyExecutor(oldId: string, newId: string): void {
+  const executor = executors.get(oldId);
+  if (!executor || oldId === newId) return;
+  executors.delete(oldId);
+  executors.set(newId, executor);
+  if (activeId === oldId) activeId = newId;
+}
+
 export function disposeExecutor(id: string): void {
   executors.delete(id);
   if (activeId === id) activeId = null;

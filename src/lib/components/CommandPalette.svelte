@@ -58,6 +58,14 @@
       action: () => oncommand?.({ id: 'save-notebook' })
     },
     {
+      id: 'save-notebook-as',
+      name: 'Save Notebook As…',
+      description: 'Write this notebook to a new .js or .html file and move the tab onto it',
+      shortcut: 'Ctrl+Shift+S',
+      icon: 'save',
+      action: () => oncommand?.({ id: 'save-notebook-as' })
+    },
+    {
       id: 'export-notebook',
       name: 'Export Notebook',
       description: 'Export notebook to various formats',
