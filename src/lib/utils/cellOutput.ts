@@ -84,6 +84,39 @@ export function lostInteractivity(root: any): boolean {
   return false;
 }
 
+/** More elements than this in one live output and the browser starts to struggle. */
+export const MAX_OUTPUT_ELEMENTS = 5000;
+
+/**
+ * Is this live output too big to keep?
+ *
+ * Measures what is there now. The guard it replaces added up every node ever
+ * inserted and never subtracted, so it measured churn, not size — and a live
+ * output churns by design. A player that rewrites its time label and progress
+ * as it plays inserts a fresh text node on every update; a few minutes into a
+ * piece that crossed 5000 and the guard wiped a forty-element player mid-note.
+ */
+export function exceedsElementBudget(root: any, max: number = MAX_OUTPUT_ELEMENTS): boolean {
+  if (!root || typeof root.querySelectorAll !== 'function') return false;
+  return root.querySelectorAll('*').length > max;
+}
+
+/**
+ * Did this batch of mutations add any element?
+ *
+ * Only an added element can grow the output toward the budget, so only then is
+ * it worth recounting. A player's updates replace text nodes and never qualify,
+ * which keeps the check free while something is playing.
+ */
+export function addsElements(mutations: Iterable<{ addedNodes: ArrayLike<any> }>): boolean {
+  for (const mutation of mutations) {
+    for (let i = 0; i < mutation.addedNodes.length; i++) {
+      if (mutation.addedNodes[i]?.nodeType === 1) return true;
+    }
+  }
+  return false;
+}
+
 export function isEmptyOutput(output: CellOutput | null | undefined): boolean {
   if (!output) return true;
   // What the cell printed counts as output even when it returned nothing —
