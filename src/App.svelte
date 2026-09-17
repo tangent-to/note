@@ -6,6 +6,7 @@
   import RightSidebar from './lib/components/RightSidebar.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import TabStrip from './lib/components/TabStrip.svelte';
+  import FileMenu from './lib/components/FileMenu.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
     currentNotebook,
@@ -719,6 +720,17 @@
     error: string | null;
   } | null = $state(null);
 
+  /**
+   * What Save will do for the notebook on screen, said in the File menu: write
+   * its own file when the companion links it to one, download otherwise. The
+   * same keystroke does either, so the menu is where that gets spelled out.
+   */
+  const saveLabel = $derived(
+    $syncStatus === 'connected' && $currentOrigin.kind === 'disk'
+      ? `Save to ${$currentOrigin.path.split('/').pop()}`
+      : 'Download .js'
+  );
+
   /** The write in flight, so the companion's reply can be matched to it. */
   let pendingSaveAs: { path: string; oldId: string; notebook: NotebookDoc } | null = null;
 
@@ -996,24 +1008,16 @@
         </svg>
         <kbd class="kbd-hint">⌘K</kbd>
       </button>
-      <button class="notebooks-btn" onclick={handleNewNotebook} title="New Notebook (Ctrl+N)">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M8 3v10M3 8h10"/>
-        </svg>
-        <span class="btn-label">New</span>
-      </button>
-      <button class="notebooks-btn" onclick={handleImportNotebook} title="Import Notebook (Ctrl+O)">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 2v9M5 8l3 3 3-3"/>
-        </svg>
-        <span class="btn-label">Import</span>
-      </button>
-      <button class="notebooks-btn" onclick={handleExportNotebook} title="Export Notebook">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 11V3M5 6l3-3 3 3"/>
-        </svg>
-        <span class="btn-label">Export</span>
-      </button>
+      <FileMenu
+        saveLabel={saveLabel}
+        canClose={$activeSessionId !== null}
+        onnew={handleNewNotebook}
+        onopen={handleImportNotebook}
+        onsave={() => void performSaveShortcut()}
+        onsaveas={openSaveAs}
+        onexport={handleExportNotebook}
+        onclose={() => { const id = get(activeSessionId); if (id) closeTab(id); }}
+      />
     </div>
 
     <TabStrip
