@@ -266,8 +266,29 @@
         isEditingMarkdown = false;
       }
     };
+    // Find landed in this text cell: show its source so the hit is visible.
+    // No focus — the keyboard stays in the find bar.
+    // Only a cell the search itself opened goes back to prose when the bar
+    // closes; one the reader was already editing stays as they left it.
+    let openedForSearch = false;
+    const onRevealSource = (e: any) => {
+      if (e.detail?.cellId !== cell.id || cell.type !== 'markdown') return;
+      if (!isEditingMarkdown) openedForSearch = true;
+      isEditingMarkdown = true;
+    };
+    const onFindClosed = () => {
+      if (!openedForSearch) return;
+      openedForSearch = false;
+      isEditingMarkdown = false;
+    };
     window.addEventListener('render-markdown', onRenderMarkdown);
-    return () => window.removeEventListener('render-markdown', onRenderMarkdown);
+    window.addEventListener('reveal-cell-source', onRevealSource);
+    window.addEventListener('find-closed', onFindClosed);
+    return () => {
+      window.removeEventListener('render-markdown', onRenderMarkdown);
+      window.removeEventListener('reveal-cell-source', onRevealSource);
+      window.removeEventListener('find-closed', onFindClosed);
+    };
   });
 
   // Drag-and-drop handlers
@@ -458,6 +479,7 @@
           <div class="cell-content">
             <CodeEditor
               bind:this={editorRef}
+              cellId={cell.id}
               value={cell.content}
               language="javascript"
               height="auto"
@@ -477,6 +499,7 @@
               <div class="markdown-editor" data-testid="markdown-editor">
                 <CodeEditor
                   bind:this={mdEditorRef}
+                  cellId={cell.id}
                   value={cell.content}
                   language="markdown"
                   height="auto"

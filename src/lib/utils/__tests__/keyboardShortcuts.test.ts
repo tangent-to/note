@@ -100,3 +100,33 @@ describe('handleGlobalKeydown', () => {
     expect(handlers.save).toHaveBeenCalledOnce();
   });
 });
+
+describe('find and replace shortcuts', () => {
+  const withFind = () => ({ ...makeHandlers(), find: vi.fn() });
+
+  it('opens find on Ctrl+F and Cmd+F', () => {
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+      const handlers = withFind();
+      expect(handleGlobalKeydown(makeEvent({ ...mod, key: 'f', code: 'KeyF' } as any), handlers)).toBe(true);
+      expect(handlers.find).toHaveBeenCalledWith(false);
+    }
+  });
+
+  it('opens replace on Ctrl+H', () => {
+    const handlers = withFind();
+    handleGlobalKeydown(makeEvent({ ctrlKey: true, key: 'h', code: 'KeyH' } as any), handlers);
+    expect(handlers.find).toHaveBeenCalledWith(true);
+  });
+
+  it('opens replace on Cmd+Option+F, where Option turns the key into another character', () => {
+    // On a Mac, Option+F produces "ƒ"; matching on `key` would miss it.
+    const handlers = withFind();
+    handleGlobalKeydown(makeEvent({ metaKey: true, altKey: true, key: 'ƒ', code: 'KeyF' } as any), handlers);
+    expect(handlers.find).toHaveBeenCalledWith(true);
+  });
+
+  it('leaves Ctrl+F alone when the app has no find bar', () => {
+    const handlers = makeHandlers();
+    expect(handleGlobalKeydown(makeEvent({ ctrlKey: true, key: 'f', code: 'KeyF' } as any), handlers)).toBe(false);
+  });
+});

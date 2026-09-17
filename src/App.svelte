@@ -218,6 +218,8 @@
     { keys: '⌘/Ctrl + /', action: 'Toggle AI chat' },
     { keys: '⌘/Ctrl + S', action: 'Save notebook' },
     { keys: '⌘/Ctrl + Shift + S', action: 'Save notebook as…' },
+    { keys: '⌘/Ctrl + F', action: 'Find in notebook' },
+    { keys: 'Ctrl + H  ·  ⌘ + ⌥ + F', action: 'Replace in notebook' },
     { keys: '⌘/Ctrl + N', action: 'New notebook' },
     { keys: '⌘/Ctrl + O', action: 'Open notebook' },
     { keys: '⌘/Ctrl + Enter', action: 'Run cell' },
@@ -606,6 +608,7 @@
       toggleConsole: () => togglePanelTab('console'),
       save: () => performSaveShortcut(),
       saveAs: () => openSaveAs(),
+      find: (replace) => window.dispatchEvent(new CustomEvent('open-find', { detail: { replace } })),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
       undo: () => handleUndo(),
@@ -843,6 +846,10 @@
         break;
       case 'save-notebook-as':
         openSaveAs();
+        break;
+      case 'find-in-notebook':
+      case 'replace-in-notebook':
+        window.dispatchEvent(new CustomEvent('open-find', { detail: { replace: commandId === 'replace-in-notebook' } }));
         break;
       case 'export-notebook':
         handleExportNotebook();

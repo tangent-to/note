@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { searchHighlighter } from '../utils/cmSearchHighlight';
   import { onDestroy, onMount } from 'svelte';
   import {
     EditorView,
@@ -39,6 +40,8 @@
     onchange?: (detail: { value: string }) => void;
     onrun?: () => void;
     onrunAndAdvance?: () => void;
+    /** The notebook cell this editor shows, for painting notebook-wide search hits. */
+    cellId?: string;
     /** Escape pressed with nothing to dismiss (completion popups get it
      *  first): lets the host exit edit mode, e.g. markdown back to preview. */
     onescape?: () => void;
@@ -59,6 +62,7 @@
     onchange,
     onrun,
     onrunAndAdvance,
+    cellId,
     onescape,
     onsubmit,
     onhistory,
@@ -181,6 +185,7 @@
           syntaxHighlighting(classHighlighter),
           editorTheme,
           submitOnEnter ? consoleKeymap : runKeymap,
+          ...(cellId ? [searchHighlighter(cellId)] : []),
           aiInlineSuggestions(),
           keymap.of([
             ...closeBracketsKeymap,
