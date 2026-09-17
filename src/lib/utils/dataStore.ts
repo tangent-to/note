@@ -43,6 +43,16 @@ export async function refreshDatasets(): Promise<void> {
   }
 }
 
+/** Every dataset with its content, for a backup. */
+export function allDatasets(): Promise<DatasetRecord[]> {
+  return request<DatasetRecord[]>('readonly', (s) => s.getAll());
+}
+
+/** Store a dataset as it was backed up, keeping its original name and date. */
+export async function putDataset(record: DatasetRecord): Promise<void> {
+  await request('readwrite', (s) => s.put(record));
+}
+
 export function getDataset(name: string): Promise<DatasetRecord | undefined> {
   return request<DatasetRecord | undefined>('readonly', (s) => s.get(name));
 }

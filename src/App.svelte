@@ -30,6 +30,13 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
+  import {
+    BACKUP_SNOOZE_KEY,
+    LAST_BACKUP_KEY,
+    createLibraryBackup,
+    markBackedUp,
+    restoreLibraryBackup,
+  } from './lib/stores/backup';
   import { looksLikeObservableNotebook, summarizeLosses, type Loss } from './lib/utils/observableFormat';
   import { frontmatterId, pathNotebookId } from '../cli/notebookPaths';
   import { kernel, kernelBusy, kernelFor } from './lib/utils/kernelClient';
@@ -55,6 +62,7 @@
     parseNotebookFile,
     serializeForPath,
     slugify,
+    downloadBytes,
     importNotebookFromFile,
   } from './lib/utils/fileOperations';
   import {
@@ -465,6 +473,48 @@
    * of the app) and the UI preferences. Notebooks and datasets are in
    * IndexedDB and are deliberately untouched — they have their own rows.
    */
+  /** Download everything this browser holds, and remember that it was done. */
+  async function backupLibrary() {
+    try {
+      const { bytes, filename, notebooks, datasets: count } = await createLibraryBackup();
+      downloadBytes(bytes, filename, 'application/zip');
+      markBackedUp();
+      showToast(
+        `Backed up ${notebooks} notebook${notebooks === 1 ? '' : 's'}` +
+          (count ? ` and ${count} dataset${count === 1 ? '' : 's'}` : '') +
+          ` to ${filename}. Keep it somewhere other than this browser.`,
+        'info'
+      );
+    } catch (error: any) {
+      console.error('Backup failed:', error);
+      showToast(`Couldn’t make the backup: ${error?.message ?? error}`, 'error');
+    }
+  }
+
+  /** Pick an archive and restore it; nothing newer here is overwritten. */
+  function restoreLibrary() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const lines = await restoreLibraryBackup(new Uint8Array(await file.arrayBuffer()));
+        conversionReport = {
+          title: file.name,
+          heading: 'Backup restored',
+          intro: `From ${file.name}. Nothing newer in this browser was replaced.`,
+          lines,
+        };
+      } catch (error: any) {
+        console.error('Restore failed:', error);
+        showToast(`Couldn’t restore ${file.name}: ${error?.message ?? error}`, 'error');
+      }
+    };
+    input.click();
+  }
+
   function clearBrowserData() {
     if (!confirm('Clear the chat history, AI key and preferences kept in this browser? Notebooks and datasets are not affected.')) return;
     try {
@@ -473,6 +523,9 @@
         // The library's pointer to the open notebook is not "browser data" in
         // this sense: dropping it would silently reopen something else.
         if (key === 'tangent-active-notebook') continue;
+        // Nor is when the notebooks were last backed up: they are not what
+        // this clears, and forgetting it would nag about a backup already made.
+        if (key === LAST_BACKUP_KEY || key === BACKUP_SNOOZE_KEY) continue;
         localStorage.removeItem(key);
       }
       showToast('Cleared. Reload to start from defaults.', 'info');
@@ -529,7 +582,7 @@
    * usable either way, and the reader needs to be able to read the list, not
    * catch it going past. Nothing to say means nothing on screen.
    */
-  let conversionReport: { title: string; lines: string[] } | null = $state(null);
+  let conversionReport: { title: string; lines: string[]; heading?: string; intro?: string } | null = $state(null);
 
   function reportLosses(name: string, losses: Loss[]) {
     const lines = summarizeLosses(losses);
@@ -847,6 +900,12 @@
         break;
       case 'save-notebook-as':
         openSaveAs();
+        break;
+      case 'backup-library':
+        void backupLibrary();
+        break;
+      case 'restore-library':
+        restoreLibrary();
         break;
       case 'restart-kernel':
         restartKernel();
@@ -1251,6 +1310,8 @@
           onopenDiskFile={({ path }) => openDiskFile(path)}
           ondeleteNotebook={({ entry }) => removeFromLibrary(entry)}
           onclearBrowserData={clearBrowserData}
+          onbackup={backupLibrary}
+          onrestore={restoreLibrary}
         />
       </aside>
     {/if}
@@ -1357,7 +1418,7 @@
     >
       <div class="shortcuts-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
         <div class="shortcuts-head">
-          <h3 id="report-title">Imported with notes</h3>
+          <h3 id="report-title">{conversionReport.heading ?? 'Imported with notes'}</h3>
           <button class="shortcuts-close" onclick={() => conversionReport = null} aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M3 3l8 8M11 3l-8 8"/>
@@ -1365,8 +1426,12 @@
           </button>
         </div>
         <p class="report-intro">
-          “{conversionReport.title}” is open. Observable and Tangent run notebooks
-          differently, so some things came across as text rather than behaviour:
+          {#if conversionReport.intro}
+            {conversionReport.intro}
+          {:else}
+            “{conversionReport.title}” is open. Observable and Tangent run notebooks
+            differently, so some things came across as text rather than behaviour:
+          {/if}
         </p>
         <ul class="report-list">
           {#each conversionReport.lines as line}

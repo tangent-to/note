@@ -53,6 +53,16 @@ A notebook can be opened directly from a URL, which is handy for sharing:
 
 Both `.js` (tangent/note format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md)) and `.json` exports work. The host serving the file must allow cross-origin requests (GitHub raw content does). Nothing runs automatically: you still choose when to run cells.
 
+### Back up what lives in the browser
+
+Without the companion, notebooks and datasets are kept in the browser's own storage, which the browser may clear when space runs low and "clear site data" clears on purpose. The **Storage** panel says when the last backup was made, and asks for one — with a dot on its tab — when work that exists only in this browser has changed: a day after new work first appears, then at most weekly.
+
+**Back up…** downloads `tangent-backup-YYYY-MM-DD.zip`. Unzipped, it is an ordinary folder: one `.js` per notebook and a `data/` directory, which `note serve` can open as it is — so a backup is also how work moves from the browser to a local folder. `.tangent/backup.json` inside it keeps what the `.js` files cannot: outputs, where each notebook came from, and its dates.
+
+**Restore…** brings an archive back. It never replaces anything newer in this browser with an older copy, and reports what it restored, what it kept and what it skipped. An archive without the index (a folder zipped by hand) still restores, from its files.
+
+No compression library is involved: the archive is written with the browser's own `CompressionStream`, and it opens in any unzip tool.
+
 ### Work on a local file (`note serve`)
 
 In the browser, saving a notebook is a download: a new file lands in your downloads folder, disconnected from the copy in your repository, so git has nothing to track. `note serve` fixes that by putting a small local process in charge of the file.

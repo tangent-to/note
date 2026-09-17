@@ -97,6 +97,20 @@
       action: () => oncommand?.({ id: 'run-all' })
     },
     {
+      id: 'backup-library',
+      name: 'Back Up Library',
+      description: 'Download every notebook and dataset in this browser as a .zip',
+      icon: 'archive',
+      action: () => oncommand?.({ id: 'backup-library' })
+    },
+    {
+      id: 'restore-library',
+      name: 'Restore Library Backup',
+      description: 'Bring back notebooks and datasets from a backup .zip; nothing newer is replaced',
+      icon: 'archive',
+      action: () => oncommand?.({ id: 'restore-library' })
+    },
+    {
       id: 'restart-kernel',
       name: 'Restart Kernel',
       description: 'Clear the variables and the execution numbers; outputs stay',

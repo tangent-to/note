@@ -14,6 +14,14 @@
   } from '../utils/notebookLibrary';
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
+  import {
+    backupState,
+    checkStoragePersisted,
+    lastBackupAt,
+    requestStoragePersistence,
+    snoozeBackupReminder,
+    storagePersisted,
+  } from '../stores/backup';
   import Console from './Console.svelte';
   import ChatSidebar from './ChatSidebar.svelte';
 
@@ -27,6 +35,10 @@
     onopenDiskFile?: (detail: { path: string }) => void;
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
     onclearBrowserData?: () => void;
+    /** Download a backup of everything this browser holds. */
+    onbackup?: () => void;
+    /** Pick a backup archive and restore it. */
+    onrestore?: () => void;
   }
 
   let {
@@ -38,7 +50,18 @@
     onopenDiskFile,
     ondeleteNotebook,
     onclearBrowserData,
+    onbackup,
+    onrestore,
   }: Props = $props();
+
+  /** "today", "yesterday", "3 days ago": how old the last backup is, in words. */
+  function backupAge(at: number | null): string {
+    if (at === null) return 'never';
+    const days = Math.floor((Date.now() - at) / (24 * 60 * 60 * 1000));
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    return `${days} days ago`;
+  }
 
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
@@ -86,6 +109,7 @@
   function refreshStorage() {
     refreshDatasets();
     refreshLibrary();
+    void checkStoragePersisted();
   }
 
   // A long library turns the panel into a wall. Ctrl+K is the finder for
@@ -256,7 +280,9 @@
            Variables and Console read that notebook's own kernel. Chat is one
            conversation for the whole app, and Storage is about the browser. -->
       <button class="tab-btn tab-app" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
-      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>Storage</button>
+      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>
+        Storage{#if $backupState.due}<span class="backup-dot" title="A backup is due" aria-label="(backup due)"></span>{/if}
+      </button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -387,6 +413,39 @@
       </div>
 
       <div class="storage-scroll">
+      <!-- Backup. Without the companion, this browser's storage is the only
+           copy of these notebooks, and the browser may clear it; the archive is
+           the copy elsewhere. A status that is always here, and a nudge only
+           when there is something to lose. -->
+      <div class="backup-box" class:due={$backupState.due}>
+        <div class="backup-head">
+          <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
+          <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
+        </div>
+        {#if $backupState.pending > 0}
+          <p class="backup-note">
+            {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
+            only in this browser and changed since the last backup.
+          </p>
+        {/if}
+        {#if $storagePersisted === false}
+          <p class="backup-note">
+            The browser may clear this storage when space runs low.
+            <button class="backup-link" onclick={async () => {
+              const granted = await requestStoragePersistence();
+              toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
+            }}>Ask it to keep it</button>
+          </p>
+        {/if}
+        <div class="backup-actions">
+          <button class="backup-btn primary" onclick={() => onbackup?.()}>Back up…</button>
+          <button class="backup-btn" onclick={() => onrestore?.()}>Restore…</button>
+          {#if $backupState.due}
+            <button class="backup-link" onclick={() => snoozeBackupReminder(3)}>Remind me later</button>
+          {/if}
+        </div>
+      </div>
+
       {#if !$libraryPersistent}
         <div class="storage-warning">
           This browser refused persistent storage (private window, or another tab
@@ -804,6 +863,95 @@
   }
 
   .storage-total-size { font-family: var(--font-mono); color: var(--text); }
+
+  .backup-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+    border-radius: 50%;
+    background: var(--warn-fg);
+  }
+
+  .backup-box {
+    margin-top: 0.75rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    background: var(--surface);
+  }
+
+  /* Due: the warning colours, the same ones the restart button uses when it
+     is waiting for a decision. */
+  .backup-box.due {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+  }
+
+  .backup-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .backup-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .backup-box.due .backup-title { color: var(--warn-fg); }
+
+  .backup-age {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+  }
+
+  .backup-note {
+    margin: 0.35rem 0 0;
+    font-size: 0.74rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+
+  .backup-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+  }
+
+  .backup-btn {
+    padding: 0.28rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+
+  .backup-btn:hover { background: var(--surface-hover); color: var(--heading); }
+
+  .backup-btn.primary {
+    background: var(--accent-solid);
+    border-color: var(--accent-solid);
+    color: var(--accent-on-solid);
+  }
+
+  .backup-link {
+    padding: 0;
+    font-size: 0.74rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+  }
 
   .storage-warning {
     margin-top: 0.75rem;
