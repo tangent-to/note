@@ -4,6 +4,9 @@ export interface ShortcutHandler {
   toggleData: () => void;
   toggleConsole?: () => void;
   save: () => void;
+  saveAs?: () => void;
+  /** Open the notebook find bar; `replace` also opens its replace row. */
+  find?: (replace: boolean) => void;
   newNotebook: () => void;
   importNotebook: () => void;
   undo: () => void;
@@ -41,6 +44,33 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
   if ((event.metaKey || event.ctrlKey) && event.key === '`') {
     event.preventDefault();
     handlers.toggleConsole?.();
+    return true;
+  }
+
+  // Find / replace in the notebook. `code`, not `key`, because Option turns F
+  // into another character on a Mac. Replace is Ctrl+H, or Cmd+Option+F on a
+  // Mac, where Cmd+H hides the application and cannot be taken.
+  if (handlers.find && event.code === 'KeyF' && event.metaKey && event.altKey) {
+    event.preventDefault();
+    handlers.find(true);
+    return true;
+  }
+  if (handlers.find && event.code === 'KeyH' && event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    handlers.find(true);
+    return true;
+  }
+  if (handlers.find && event.code === 'KeyF' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+    event.preventDefault();
+    handlers.find(false);
+    return true;
+  }
+
+  // Save As: Ctrl/Cmd + Shift + S. Checked before plain Save, which would
+  // otherwise match the same key and swallow it.
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    handlers.saveAs?.();
     return true;
   }
 

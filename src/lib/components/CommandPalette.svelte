@@ -58,6 +58,30 @@
       action: () => oncommand?.({ id: 'save-notebook' })
     },
     {
+      id: 'save-notebook-as',
+      name: 'Save Notebook As…',
+      description: 'Write this notebook to a new .js or .html file and move the tab onto it',
+      shortcut: 'Ctrl+Shift+S',
+      icon: 'save',
+      action: () => oncommand?.({ id: 'save-notebook-as' })
+    },
+    {
+      id: 'find-in-notebook',
+      name: 'Find in Notebook',
+      description: 'Search every cell of this notebook',
+      shortcut: 'Ctrl+F',
+      icon: 'search',
+      action: () => oncommand?.({ id: 'find-in-notebook' })
+    },
+    {
+      id: 'replace-in-notebook',
+      name: 'Replace in Notebook',
+      description: 'Find and replace across every cell of this notebook',
+      shortcut: 'Ctrl+H',
+      icon: 'search',
+      action: () => oncommand?.({ id: 'replace-in-notebook' })
+    },
+    {
       id: 'export-notebook',
       name: 'Export Notebook',
       description: 'Export notebook to various formats',

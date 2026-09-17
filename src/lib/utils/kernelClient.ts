@@ -191,6 +191,21 @@ export function setActiveKernel(id: string | null): void {
 }
 
 /** Close a notebook's kernel: its worker dies with it, not with the tab. */
+/**
+ * Move a notebook's kernel to a new id, keeping the worker and everything in it.
+ *
+ * Save As gives an open notebook a new identity. Disposing and respawning would
+ * have thrown away every variable the reader had built — for a notebook that
+ * loads audio or data, minutes of re-running — to rename a key.
+ */
+export function rekeyKernel(oldId: string, newId: string): void {
+  const client = clients.get(oldId);
+  if (!client || oldId === newId) return;
+  clients.delete(oldId);
+  clients.set(newId, client);
+  if (activeId === oldId) activeId = newId;
+}
+
 export function disposeKernel(id: string): void {
   clients.get(id)?.dispose();
   clients.delete(id);

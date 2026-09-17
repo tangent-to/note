@@ -6,6 +6,7 @@
   import RightSidebar from './lib/components/RightSidebar.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import TabStrip from './lib/components/TabStrip.svelte';
+  import FileMenu from './lib/components/FileMenu.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
     currentNotebook,
@@ -36,7 +37,9 @@
   import {
     activeSessionId,
     closeSession,
+    current as currentSession,
     openSession,
+    rekeySession,
     sessionById,
     sessions,
     setActive,
@@ -50,6 +53,7 @@
     parseJSNotebook,
     parseNotebookFile,
     serializeForPath,
+    slugify,
     importNotebookFromFile,
   } from './lib/utils/fileOperations';
   import {
@@ -213,6 +217,9 @@
     { keys: '⌘/Ctrl + K', action: 'Command palette' },
     { keys: '⌘/Ctrl + /', action: 'Toggle AI chat' },
     { keys: '⌘/Ctrl + S', action: 'Save notebook' },
+    { keys: '⌘/Ctrl + Shift + S', action: 'Save notebook as…' },
+    { keys: '⌘/Ctrl + F', action: 'Find in notebook' },
+    { keys: 'Ctrl + H  ·  ⌘ + ⌥ + F', action: 'Replace in notebook' },
     { keys: '⌘/Ctrl + N', action: 'New notebook' },
     { keys: '⌘/Ctrl + O', action: 'Open notebook' },
     { keys: '⌘/Ctrl + Enter', action: 'Run cell' },
@@ -261,11 +268,22 @@
       onLoad: (path, content, reason) => applySyncedContent(path, content, reason),
       onConflict: (path) => handleSyncConflict(path),
       onSaved: (path) => {
+        if (finishSaveAs(path)) return;
         sessionForPath(path)?.dirty.set(false);
         showToast(`Saved ${path}`, 'info');
       },
       onRefused: (path, message) => {
+        if (saveAs && pendingSaveAs && path === pendingSaveAs.path) {
+          saveAs = { ...saveAs, error: message };
+          pendingSaveAs = null;
+          return;
+        }
         showToast(path ? `${path}: ${message}` : message, 'error');
+      },
+      onExists: (path) => {
+        if (!saveAs || !pendingSaveAs || path !== pendingSaveAs.path) return;
+        pendingSaveAs = null;
+        saveAs = { ...saveAs, exists: true, error: null };
       },
     }).then(async (hello) => {
       await libraryReady;
@@ -589,6 +607,8 @@
       toggleData: () => togglePanelTab('storage'),
       toggleConsole: () => togglePanelTab('console'),
       save: () => performSaveShortcut(),
+      saveAs: () => openSaveAs(),
+      find: (replace) => window.dispatchEvent(new CustomEvent('open-find', { detail: { replace } })),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
       undo: () => handleUndo(),
@@ -682,6 +702,119 @@
     }
   }
 
+  /**
+   * Save As: write this notebook to a new file and move the tab onto it.
+   *
+   * Not an export. An export makes a copy somewhere else while you carry on in
+   * the original; Save As changes where this document lives, so later saves go
+   * to the new file and the old one is left exactly as it was on disk. The
+   * extension picks the format — `.js` for Tangent's, `.html` for Observable's
+   * — which is how an Observable notebook becomes a Tangent one, and back.
+   *
+   * Only the companion can write a file. Without it there is nowhere to save
+   * *to*, so this hands over to the Export dialog, which downloads.
+   */
+  let saveAs: {
+    path: string;
+    /** What the target format cannot carry; shown once, before writing. */
+    losses: string[] | null;
+    /** The target exists; the next confirm overwrites it. */
+    exists: boolean;
+    error: string | null;
+  } | null = $state(null);
+
+  /**
+   * What Save will do for the notebook on screen, said in the File menu: write
+   * its own file when the companion links it to one, download otherwise. The
+   * same keystroke does either, so the menu is where that gets spelled out.
+   */
+  const saveLabel = $derived(
+    $syncStatus === 'connected' && $currentOrigin.kind === 'disk'
+      ? `Save to ${$currentOrigin.path.split('/').pop()}`
+      : 'Download .js'
+  );
+
+  /** The write in flight, so the companion's reply can be matched to it. */
+  let pendingSaveAs: { path: string; oldId: string; notebook: NotebookDoc } | null = null;
+
+  function openSaveAs() {
+    const notebook = get(currentNotebook);
+    if (!notebook) return;
+    if (!isSyncConnected()) {
+      showToast('Saving to a file needs note serve. Exporting a download instead.', 'info');
+      showExportDialog = true;
+      return;
+    }
+    const origin = get(currentOrigin);
+    // Next to the file it came from, in the other format: converting is the
+    // usual reason to reach for this. A notebook with no file yet goes at the
+    // root, named after itself.
+    const suggestion = origin.kind === 'disk'
+      ? origin.path.replace(/\.(js|html)$/i, (ext) => (ext.toLowerCase() === '.html' ? '.js' : '.html'))
+      : `${slugify(notebook.name || 'notebook')}.js`;
+    saveAs = { path: suggestion, losses: null, exists: false, error: null };
+  }
+
+  function confirmSaveAs() {
+    const notebook = get(currentNotebook);
+    const session = currentSession();
+    if (!saveAs || !notebook || !session) return;
+
+    const path = saveAs.path.trim().replace(/^\.\//, '');
+    if (!/\.(js|html)$/i.test(path)) {
+      saveAs = { ...saveAs, error: 'The name has to end in .js (Tangent) or .html (Observable).' };
+      return;
+    }
+    if (path.startsWith('/') || path.split('/').includes('..')) {
+      saveAs = { ...saveAs, error: 'Give a path inside the served directory.' };
+      return;
+    }
+
+    const origin = get(currentOrigin);
+    if (origin.kind === 'disk' && origin.path === path) {
+      // The file this tab already is: that is a plain save.
+      saveAs = null;
+      void performSaveShortcut();
+      return;
+    }
+    const holder = sessionForPath(path);
+    if (holder && holder.id !== session.id) {
+      saveAs = { ...saveAs, error: `${path} is open in another tab. Close it first.` };
+      return;
+    }
+
+    // A new file is a new notebook to the library: keeping the old id would
+    // make two files one notebook, and opening either would replace the other.
+    const renamed: NotebookDoc = { ...notebook, id: pathNotebookId(path) };
+    const { content, losses } = serializeForPath(renamed, path);
+
+    const lines = summarizeLosses(losses);
+    if (lines.length > 0 && saveAs.losses === null) {
+      saveAs = { ...saveAs, path, losses: lines, error: null };
+      return;
+    }
+
+    pendingSaveAs = { path, oldId: session.id, notebook: renamed };
+    // `exists` means the reader has already been told the file is there and
+    // confirmed; only then is the write forced over it.
+    if (!saveThroughSync(path, content, saveAs.exists, true)) {
+      pendingSaveAs = null;
+      saveAs = { ...saveAs, error: 'The companion is no longer connected.' };
+    }
+  }
+
+  /** The companion wrote the Save As target: move the tab onto it. */
+  function finishSaveAs(path: string): boolean {
+    if (!pendingSaveAs || pendingSaveAs.path !== path) return false;
+    const { oldId, notebook } = pendingSaveAs;
+    pendingSaveAs = null;
+    saveAs = null;
+    const moved = rekeySession(oldId, notebook, { kind: 'disk', path });
+    if (moved) void putNotebook(get(moved.notebook), get(moved.origin), { opened: true });
+    showToast(`Saved as ${path}`, 'info');
+    return true;
+  }
+
   function handleUndo() {
     currentNotebook.update(notebook => {
       if (!notebook) return notebook;
@@ -710,6 +843,13 @@
       }
       case 'save-notebook':
         performSaveShortcut();
+        break;
+      case 'save-notebook-as':
+        openSaveAs();
+        break;
+      case 'find-in-notebook':
+      case 'replace-in-notebook':
+        window.dispatchEvent(new CustomEvent('open-find', { detail: { replace: commandId === 'replace-in-notebook' } }));
         break;
       case 'export-notebook':
         handleExportNotebook();
@@ -875,24 +1015,16 @@
         </svg>
         <kbd class="kbd-hint">⌘K</kbd>
       </button>
-      <button class="notebooks-btn" onclick={handleNewNotebook} title="New Notebook (Ctrl+N)">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M8 3v10M3 8h10"/>
-        </svg>
-        <span class="btn-label">New</span>
-      </button>
-      <button class="notebooks-btn" onclick={handleImportNotebook} title="Import Notebook (Ctrl+O)">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 2v9M5 8l3 3 3-3"/>
-        </svg>
-        <span class="btn-label">Import</span>
-      </button>
-      <button class="notebooks-btn" onclick={handleExportNotebook} title="Export Notebook">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 10v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2M8 11V3M5 6l3-3 3 3"/>
-        </svg>
-        <span class="btn-label">Export</span>
-      </button>
+      <FileMenu
+        saveLabel={saveLabel}
+        canClose={$activeSessionId !== null}
+        onnew={handleNewNotebook}
+        onopen={handleImportNotebook}
+        onsave={() => void performSaveShortcut()}
+        onsaveas={openSaveAs}
+        onexport={handleExportNotebook}
+        onclose={() => { const id = get(activeSessionId); if (id) closeTab(id); }}
+      />
     </div>
 
     <TabStrip
@@ -1077,6 +1209,63 @@
             </li>
           {/each}
         </ul>
+      </div>
+    </div>
+  {/if}
+
+  {#if saveAs}
+    <div
+      class="unsaved-overlay"
+      role="presentation"
+      onclick={(e) => { if (e.target === e.currentTarget) { saveAs = null; pendingSaveAs = null; } }}
+    >
+      <div class="shortcuts-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="save-as-title">
+        <div class="shortcuts-head">
+          <h3 id="save-as-title">Save notebook as</h3>
+          <button class="shortcuts-close" onclick={() => { saveAs = null; pendingSaveAs = null; }} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3l8 8M11 3l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <form onsubmit={(e) => { e.preventDefault(); confirmSaveAs(); }}>
+          <label class="save-as-label" for="save-as-path">
+            File, inside <code>{$syncRoot ?? 'the served directory'}</code>
+          </label>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            id="save-as-path"
+            class="save-as-input"
+            bind:value={saveAs.path}
+            oninput={() => { if (saveAs) saveAs = { ...saveAs, losses: null, exists: false, error: null }; }}
+            autofocus
+            spellcheck="false"
+          />
+          <p class="report-intro">
+            <code>.js</code> saves in Tangent's format, <code>.html</code> in Observable's.
+            The tab moves to the new file; the file it came from is left as it is.
+          </p>
+          {#if saveAs.error}
+            <p class="save-as-error" role="alert">{saveAs.error}</p>
+          {/if}
+          {#if saveAs.exists}
+            <p class="save-as-error" role="alert">{saveAs.path} already exists. Saving again replaces it.</p>
+          {/if}
+          {#if saveAs.losses}
+            <p class="report-intro">Observable's format has no room for:</p>
+            <ul class="report-list">
+              {#each saveAs.losses as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="save-as-actions">
+            <button type="button" class="save-as-cancel" onclick={() => { saveAs = null; pendingSaveAs = null; }}>Cancel</button>
+            <button type="submit" class="save-as-confirm">
+              {saveAs.exists ? 'Replace file' : saveAs.losses ? 'Save anyway' : 'Save'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   {/if}
@@ -1505,6 +1694,62 @@
   }
 
   .shortcuts-close:hover { background: var(--surface-hover); color: var(--heading); }
+
+  .save-as-label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .save-as-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.5rem 0.6rem;
+    margin-bottom: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--heading);
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-input);
+  }
+
+  .save-as-input:focus { outline: none; border-color: var(--accent); }
+
+  .save-as-error {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    color: var(--danger-fg);
+  }
+
+  .save-as-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+  }
+
+  .save-as-cancel,
+  .save-as-confirm {
+    padding: 0.45rem 0.9rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .save-as-cancel {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+
+  .save-as-confirm {
+    background: var(--accent-solid);
+    color: var(--accent-on-solid);
+    border: 1px solid var(--accent-solid);
+  }
 
   /* The conversion report is prose, not a key table, so it gets room to be
      read — the point of showing it at all is that it can be acted on. */

@@ -46,6 +46,8 @@ type Handlers = {
   onFiles?: (files: SyncFile[]) => void;
   /** A path the companion would not touch, or a file that has gone. */
   onRefused?: (path: string | null, message: string) => void;
+  /** A create (Save As) named a file that already exists; nothing was written. */
+  onExists?: (path: string) => void;
 };
 
 let socket: WebSocket | null = null;
@@ -130,6 +132,10 @@ export function connectSync(h: Handlers): Promise<SyncHello | null> {
           handlers?.onFiles?.(files);
           return;
         }
+        case 'exists': {
+          handlers?.onExists?.(msg.path);
+          return;
+        }
         case 'refused':
         case 'missing': {
           handlers?.onRefused?.(
@@ -172,8 +178,15 @@ export function openSyncFile(path: string): boolean {
  * Write a notebook through the companion. Returns false when none is
  * connected, so the caller can fall back to a download.
  * `force` skips the on-disk conflict check (used after the user confirms).
+ * `create` marks a write to a new file (Save As): the companion refuses it with
+ * `exists` if the file is already there, unless `force` is also set.
  */
-export function saveThroughSync(path: string, content: string, force = false): boolean {
+export function saveThroughSync(
+  path: string,
+  content: string,
+  force = false,
+  create = false
+): boolean {
   // A path never spans lines; a notebook always does. The two arguments were
   // once swapped at the call site, which sent the whole notebook as the path
   // and echoed it back in the refusal toast, so the mix-up is caught here.
@@ -187,6 +200,7 @@ export function saveThroughSync(path: string, content: string, force = false): b
     content,
     baseHash: baseHashes.get(path) ?? null,
     force,
+    create,
   }));
   return true;
 }

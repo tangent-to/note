@@ -18,8 +18,8 @@
 import { derived, get, writable, type Writable } from 'svelte/store';
 import type { ConsoleEntry, Notebook, NotebookCell } from '../types/notebook';
 import { computeStaleCells, hashCode, type RunRecord } from '../utils/dependencyGraph';
-import { disposeKernel, setActiveKernel } from '../utils/kernelClient';
-import { disposeExecutor, setActiveExecutor } from '../utils/mainExecutor';
+import { disposeKernel, rekeyKernel, setActiveKernel } from '../utils/kernelClient';
+import { disposeExecutor, rekeyExecutor, setActiveExecutor } from '../utils/mainExecutor';
 import {
   putNotebook,
   rememberOpenSessions,
@@ -210,6 +210,51 @@ export function openSession(
   const session = createSession(notebook, origin);
   sessions.update((list) => [...list, session]);
   setActive(id);
+  return session;
+}
+
+/**
+ * Give an open notebook a new identity in place — Save As.
+ *
+ * The tab stays where it is and keeps everything that makes it worth keeping:
+ * its kernel and variables, its outputs, its console, its undo history. Only
+ * the key changes, and where it lives. The old identity's library entry is
+ * flushed first and left alone, because the file it describes still exists.
+ *
+ * Returns null when there is nothing to move, or when another tab already is
+ * the target notebook — two tabs on one identity is the state this module
+ * exists to prevent.
+ */
+export function rekeySession(
+  oldId: string,
+  notebook: Notebook,
+  origin: NotebookOrigin
+): NotebookSession | null {
+  const old = sessionById(oldId);
+  if (!old) return null;
+  if (notebook.id !== oldId && sessionById(notebook.id)) return null;
+
+  // Settle the old entry under its old key before the stores move on.
+  flushAutosave(old);
+  old.stopAutosave();
+
+  const session: NotebookSession = {
+    ...old,
+    id: notebook.id,
+    autosaveTimer: null,
+    stopAutosave: () => {},
+  };
+  session.notebook.set(notebook);
+  session.origin.set(origin);
+  session.dirty.set(false);
+  session.stopAutosave = startAutosave(session);
+
+  rekeyKernel(oldId, notebook.id);
+  rekeyExecutor(oldId, notebook.id);
+  sessions.update((list) => list.map((s) => (s.id === oldId ? session : s)));
+
+  if (get(activeSessionId) === oldId) setActive(notebook.id);
+  else persistOpen();
   return session;
 }
 

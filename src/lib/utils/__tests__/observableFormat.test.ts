@@ -470,3 +470,20 @@ describe('the .js writer, reached through an Observable import', () => {
     expect(back.cells[1].content).toBe('npm.install()');
   });
 });
+
+describe('Save As from Observable to Tangent', () => {
+  it('writes a .js whose own id is the one discovery will report for that file', async () => {
+    // After Save As the tab is keyed by the new file's path id. The .js written
+    // carries that id in its frontmatter, and discovery reads frontmatter first,
+    // so the served file and the moved tab are one row in Storage, not two.
+    const { serializeForPath } = await import('../fileOperations');
+    const { frontmatterId, pathNotebookId } = await import('../../../../cli/notebookPaths');
+    const { notebook } = parseObservableNotebook(HELLO, 'siuraa.html');
+    const renamed = { ...notebook, id: pathNotebookId('siuraa.js') };
+    const { content, losses } = serializeForPath(renamed, 'siuraa.js');
+
+    expect(frontmatterId(content)).toBe('file:siuraa.js');
+    expect(losses).toEqual([]);
+    expect(content).toContain('// %% [javascript]');
+  });
+});

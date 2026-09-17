@@ -2,6 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
   import Cell from './Cell.svelte';
+  import FindBar from './FindBar.svelte';
   import { currentNotebook, selectedCellId, markNotebookDirty } from '../stores/notebook';
   import {
     updateCellContent,
@@ -704,6 +705,7 @@
 
 <div class="notebook-container" class:wide={$notebookWidth === 'wide'} class:full={$notebookWidth === 'full'}>
   {#if $currentNotebook}
+    <FindBar />
     <div class="notebook-header">
       <!-- No `{name}` in here on purpose: see the effect that fills it. -->
       <h1

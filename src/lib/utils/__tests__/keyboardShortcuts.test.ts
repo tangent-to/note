@@ -19,6 +19,7 @@ function makeHandlers() {
     toggleChat: vi.fn(),
     toggleData: vi.fn(),
     save: vi.fn(),
+    saveAs: vi.fn(),
     newNotebook: vi.fn(),
     importNotebook: vi.fn(),
     undo: vi.fn(),
@@ -26,6 +27,14 @@ function makeHandlers() {
 }
 
 describe('handleGlobalKeydown', () => {
+  it('opens Save As on Ctrl+Shift+S, and does not also save', () => {
+    // Plain Save matches the same key; checked second, it would swallow this.
+    const handlers = makeHandlers();
+    expect(handleGlobalKeydown(makeEvent({ ctrlKey: true, shiftKey: true, key: 'S' }), handlers)).toBe(true);
+    expect(handlers.saveAs).toHaveBeenCalledOnce();
+    expect(handlers.save).not.toHaveBeenCalled();
+  });
+
   it('triggers command palette on Ctrl+K', () => {
     const handlers = makeHandlers();
     const event = makeEvent({ ctrlKey: true, key: 'k' });
@@ -89,5 +98,35 @@ describe('handleGlobalKeydown', () => {
     const handled = handleGlobalKeydown(event, handlers);
     expect(handled).toBe(true);
     expect(handlers.save).toHaveBeenCalledOnce();
+  });
+});
+
+describe('find and replace shortcuts', () => {
+  const withFind = () => ({ ...makeHandlers(), find: vi.fn() });
+
+  it('opens find on Ctrl+F and Cmd+F', () => {
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
+      const handlers = withFind();
+      expect(handleGlobalKeydown(makeEvent({ ...mod, key: 'f', code: 'KeyF' } as any), handlers)).toBe(true);
+      expect(handlers.find).toHaveBeenCalledWith(false);
+    }
+  });
+
+  it('opens replace on Ctrl+H', () => {
+    const handlers = withFind();
+    handleGlobalKeydown(makeEvent({ ctrlKey: true, key: 'h', code: 'KeyH' } as any), handlers);
+    expect(handlers.find).toHaveBeenCalledWith(true);
+  });
+
+  it('opens replace on Cmd+Option+F, where Option turns the key into another character', () => {
+    // On a Mac, Option+F produces "ƒ"; matching on `key` would miss it.
+    const handlers = withFind();
+    handleGlobalKeydown(makeEvent({ metaKey: true, altKey: true, key: 'ƒ', code: 'KeyF' } as any), handlers);
+    expect(handlers.find).toHaveBeenCalledWith(true);
+  });
+
+  it('leaves Ctrl+F alone when the app has no find bar', () => {
+    const handlers = makeHandlers();
+    expect(handleGlobalKeydown(makeEvent({ ctrlKey: true, key: 'f', code: 'KeyF' } as any), handlers)).toBe(false);
   });
 });
