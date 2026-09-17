@@ -22,7 +22,6 @@
     selectedCellId,
     undoDeleteCell,
     resetExecutionCounter,
-    resetStaleTracking,
     recomputeStaleCells,
     updateCellContent,
     outputPosition,
@@ -33,13 +32,15 @@
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
   import { looksLikeObservableNotebook, summarizeLosses, type Loss } from './lib/utils/observableFormat';
   import { frontmatterId, pathNotebookId } from '../cli/notebookPaths';
-  import { kernel, kernelBusy } from './lib/utils/kernelClient';
+  import { kernel, kernelBusy, kernelFor } from './lib/utils/kernelClient';
+  import { executorFor } from './lib/utils/mainExecutor';
   import {
     activeSessionId,
     closeSession,
     current as currentSession,
     openSession,
     rekeySession,
+    resetRunState,
     sessionById,
     sessions,
     setActive,
@@ -847,6 +848,12 @@
       case 'save-notebook-as':
         openSaveAs();
         break;
+      case 'restart-kernel':
+        restartKernel();
+        break;
+      case 'restart-kernel-run-all':
+        restartKernel({ runAll: true });
+        break;
       case 'find-in-notebook':
       case 'replace-in-notebook':
         window.dispatchEvent(new CustomEvent('open-find', { detail: { replace: commandId === 'replace-in-notebook' } }));
@@ -932,6 +939,62 @@
 
       return updatedNotebook;
     });
+  }
+
+  /**
+   * Restart the kernel of the notebook on screen.
+   *
+   * Variables go, and so do the execution numbers: `[12]` means "ran in the
+   * kernel you have now", which stops being true the moment it restarts. The
+   * counter starts again at 1 and nothing counts as stale. Outputs stay — they
+   * are still worth reading, and Clear outputs is there for the rest.
+   *
+   * On the worker kernel this is a real restart: the worker is terminated and a
+   * fresh one started, which also stops a runaway cell. On the main thread there
+   * is no process to replace, so the notebook's variables are cleared but
+   * anything a cell attached to the page itself (a timer, a playing audio
+   * context) keeps going; reloading the page is the full reset there.
+   */
+  function restartKernel(opts: { runAll?: boolean } = {}) {
+    const session = currentSession();
+    if (!session) return;
+    if (get(kernelMode) === 'worker') {
+      kernelFor(session.id).interrupt();
+    } else {
+      executorFor(session.id).resetScope();
+    }
+    resetRunState(session);
+    restartArmed = false;
+    if (opts.runAll) {
+      window.dispatchEvent(new CustomEvent('run-all-cells'));
+    } else {
+      showToast(
+        get(kernelMode) === 'worker'
+          ? 'Kernel restarted. Variables cleared; run cells to rebuild them.'
+          : 'Variables cleared. Anything a cell started on the page (audio, timers) keeps running until you reload.',
+        'info'
+      );
+    }
+  }
+
+  /**
+   * The header button asks twice. A restart throws away every variable, which
+   * for a notebook that loads audio or data is minutes of re-running; one stray
+   * click should not cost that. The second click has to come within a few
+   * seconds, and the button says what it is waiting for.
+   */
+  let restartArmed = $state(false);
+  let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function onRestartClick() {
+    if (restartArmed) {
+      if (restartTimer) clearTimeout(restartTimer);
+      restartKernel();
+      return;
+    }
+    restartArmed = true;
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => (restartArmed = false), 3500);
   }
 
   function clearAllOutputs() {
@@ -1062,7 +1125,7 @@
           <!-- No fade-in: the kill switch must never look half-disabled. -->
           <button
             class="stop-kernel-btn"
-            onclick={() => { kernel.interrupt(); resetStaleTracking(); showToast('Kernel stopped and restarted. Notebook variables were cleared.', 'info'); }}
+            onclick={() => { restartKernel(); }}
             title="Stop the running computation (restarts the kernel; notebook variables are cleared)"
           >
             <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
@@ -1105,6 +1168,22 @@
             </span>
           {/if}
         {/if}
+        <button
+          class="restart-kernel-btn"
+          class:armed={restartArmed}
+          onclick={onRestartClick}
+          onblur={() => (restartArmed = false)}
+          title={restartArmed
+            ? 'Click again to restart: variables and execution numbers are cleared'
+            : 'Restart kernel'}
+          aria-label={restartArmed ? 'Confirm restart kernel' : 'Restart kernel'}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7"/>
+            <path d="M3 4v5h5"/>
+          </svg>
+          <span class="btn-label">{restartArmed ? 'Restart?' : 'Restart'}</span>
+        </button>
         <button
           class="run-all-header-btn"
           onclick={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
@@ -1440,6 +1519,34 @@
      the labels instead. */
   .notebooks-btn,
   .run-all-header-btn,
+  .restart-kernel-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.35rem 0.6rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-pill);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .restart-kernel-btn:hover {
+    background-color: var(--surface-hover);
+    color: var(--heading);
+  }
+
+  /* Waiting for the confirming click: the warning colours, so the second click
+     is a decision and not a reflex. */
+  .restart-kernel-btn.armed {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+    color: var(--warn-fg);
+  }
+
   .run-stale-btn,
   .reactive-toggle,
   .header-meta,

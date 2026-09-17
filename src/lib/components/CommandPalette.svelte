@@ -97,6 +97,20 @@
       action: () => oncommand?.({ id: 'run-all' })
     },
     {
+      id: 'restart-kernel',
+      name: 'Restart Kernel',
+      description: 'Clear the variables and the execution numbers; outputs stay',
+      icon: 'rotate-ccw',
+      action: () => oncommand?.({ id: 'restart-kernel' })
+    },
+    {
+      id: 'restart-kernel-run-all',
+      name: 'Restart Kernel and Run All',
+      description: 'Start from a clean kernel and run every cell in dependency order',
+      icon: 'rotate-ccw',
+      action: () => oncommand?.({ id: 'restart-kernel-run-all' })
+    },
+    {
       id: 'toggle-reactive',
       name: 'Toggle Reactive Mode',
       description: 'Auto re-run cells that depend on a cell when it runs',
