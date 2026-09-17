@@ -283,9 +283,17 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
     });
   }
 
+  // Identity from the file's name, not its title: Observable Desktop titles
+  // every new notebook "untitled", so a title-derived id made two unrelated
+  // imports the same notebook and the second replaced the first. (A notebook
+  // served from disk is re-keyed by its path on top of this; see
+  // pathNotebookId.)
+  const base = filename.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
+  const idSource = filename !== 'notebook.html' && base ? base : name;
+
   return {
     notebook: {
-      id: slugify(name),
+      id: slugify(idSource),
       name,
       createdAt: Date.now(),
       updatedAt: Date.now(),
