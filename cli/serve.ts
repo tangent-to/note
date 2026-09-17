@@ -35,6 +35,7 @@ import {
   resolveWithin,
   shouldSkipDir,
 } from "./notebookPaths.ts";
+import { checkRequest } from "./requestGuard.ts";
 
 const DEFAULT_PORT = 4321;
 const SYNC_PATH = "/__sync";
@@ -227,6 +228,17 @@ export function main(args: Args) {
     console.log(`  open      http://localhost:${port}`);
   } }, async (req) => {
     const url = new URL(req.url);
+
+    // The sync socket reads and writes the reader's notebooks, so only the app
+    // itself may use it — not any other page open in the same browser (see
+    // requestGuard.ts). The static app stays open.
+    if (url.pathname === SYNC_PATH) {
+      const verdict = checkRequest((name) => req.headers.get(name), port);
+      if (!verdict.ok) {
+        console.warn(`  refused   ${url.pathname} (${verdict.reason})`);
+        return new Response("Forbidden", { status: 403 });
+      }
+    }
 
     if (url.pathname === SYNC_PATH) {
       const { socket, response } = Deno.upgradeWebSocket(req);
