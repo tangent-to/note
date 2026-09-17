@@ -2,6 +2,7 @@
   import type { CellOutput } from '../types/notebook';
   import { Inspector } from '@observablehq/inspector';
   import { renderWidget, type WidgetSpec } from '../utils/widgetHost';
+  import { MAX_OUTPUT_ELEMENTS, addsElements, exceedsElementBudget } from '../utils/cellOutput';
   import TableOutput from './TableOutput.svelte';
   import { reviveRows, type TableSpec } from '../utils/tableData';
   import '../styles/observable-inspector.css';
@@ -71,21 +72,18 @@
   function insertLiveElement(node: HTMLElement, element: Element | null) {
     if (element) {
       try {
-        let childCount = 0;
-        const MAX_CHILDREN = 5000;
+        // Guard against an output that grows without bound, measured by what is
+        // in it now — not by how many times it has changed, which is what a
+        // live player does all the time (see exceedsElementBudget).
         const observer = new MutationObserver((mutations) => {
-          for (const mutation of mutations) {
-            childCount += mutation.addedNodes.length;
-            if (childCount > MAX_CHILDREN) {
-              observer.disconnect();
-              node.innerHTML = '';
-              const warning = document.createElement('pre');
-              warning.style.color = 'var(--danger-fg)';
-              warning.textContent = `Output exceeded ${MAX_CHILDREN} DOM nodes and was truncated to prevent browser freeze.`;
-              node.appendChild(warning);
-              return;
-            }
-          }
+          if (!addsElements(mutations)) return;
+          if (!exceedsElementBudget(node)) return;
+          observer.disconnect();
+          node.innerHTML = '';
+          const warning = document.createElement('pre');
+          warning.style.color = 'var(--danger-fg)';
+          warning.textContent = `Output grew past ${MAX_OUTPUT_ELEMENTS} elements and was removed to keep the page responsive.`;
+          node.appendChild(warning);
         });
         observer.observe(node, { childList: true, subtree: true });
 

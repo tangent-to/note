@@ -114,3 +114,34 @@ describe('lostInteractivity', () => {
     expect(lostInteractivity({})).toBe(false);
   });
 });
+
+describe('the live output size guard', () => {
+  it('measures size, not churn: a player updating its label never trips it', async () => {
+    // The old guard added up every node ever inserted. A player rewriting its
+    // time label inserts a text node per update, so a few minutes into a piece
+    // it "exceeded 5000 DOM nodes" while holding a few dozen, and was wiped.
+    const { exceedsElementBudget } = await import('../cellOutput');
+    const player = fragment('<div><button>Play</button><span class="t">0:00</span><progress></progress></div>');
+    const label = player.querySelector('.t')!;
+    for (let i = 0; i < 20000; i++) label.textContent = `0:${String(i % 60).padStart(2, '0')}`;
+    expect(exceedsElementBudget(player)).toBe(false);
+  });
+
+  it('still catches an output that really is too big', async () => {
+    const { exceedsElementBudget } = await import('../cellOutput');
+    // fragment() wraps in a host div, so this holds the host's inner <div>
+    // plus 60 <p>: 61 elements.
+    const root = fragment('<div></div>');
+    for (let i = 0; i < 60; i++) root.appendChild(document.createElement('p'));
+    expect(exceedsElementBudget(root, 50)).toBe(true);
+    expect(exceedsElementBudget(root, 100)).toBe(false);
+  });
+
+  it('only recounts when a batch adds an element', async () => {
+    const { addsElements } = await import('../cellOutput');
+    const text = { nodeType: 3 };
+    const el = { nodeType: 1 };
+    expect(addsElements([{ addedNodes: [text, text] }])).toBe(false);
+    expect(addsElements([{ addedNodes: [] }, { addedNodes: [text, el] }])).toBe(true);
+  });
+});
