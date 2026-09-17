@@ -16,6 +16,7 @@ import type { CellOutput, LogLine } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
 import { tableSpec, type TableSpec } from "./tableData";
 import { describeValue, previewJson } from "./valuePreview";
+import { createFileApi, type WorkingDirectory } from "./workingDirectory";
 import {
   hasSyntaxErrors,
   topLevelDeclarations,
@@ -240,6 +241,56 @@ export class JavaScriptExecutor {
     this.setupInputs();
     // `data(name)` accessor for files dropped into the Storage panel.
     this.setupDataAccess();
+    this.setupFileAccess();
+  }
+
+  /** The folder the running cell's notebook lives in, when note serve serves it. */
+  private workingDir: WorkingDirectory | null = null;
+
+  /** Set before each run: the working directory belongs to the notebook, not the kernel. */
+  setWorkingDirectory(wd: WorkingDirectory | null): void {
+    this.workingDir = wd;
+  }
+
+  /**
+   * How a save becomes a download when there is no working directory. The main
+   * thread clicks a link; the worker, which has no page, replaces this with a
+   * message to the main thread.
+   */
+  private downloader = (name: string, bytes: Uint8Array, mimeType: string): void => {
+    if (typeof document === 'undefined') return;
+    const url = URL.createObjectURL(new Blob([bytes.slice()], { type: mimeType }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  setDownloader(download: (name: string, bytes: Uint8Array, mimeType: string) => void): void {
+    this.downloader = download;
+  }
+
+  /**
+   * Expose `FileAttachment(name)` and `save(name, data)` to cells (see
+   * workingDirectory.ts). On `window`, like `data`, so they survive a restart
+   * and stay out of the Variables panel; a cell's own `save` still shadows it.
+   */
+  private setupFileAccess(): void {
+    const api = createFileApi({
+      workingDirectory: () => this.workingDir,
+      fetch: (input, init) => fetch(input, init),
+      datasetText: async (name) => (await getDataset(name))?.text,
+      download: (name, bytes, mimeType) => this.downloader(name, bytes, mimeType),
+      d3: async () => {
+        if (!(window as any).d3) {
+          try { await this.setupCommonLibraries(); } catch { /* reported by the caller */ }
+        }
+        return (window as any).d3;
+      },
+    });
+    (window as any).FileAttachment = api.FileAttachment;
+    (window as any).save = api.save;
   }
 
   /**

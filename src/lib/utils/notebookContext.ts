@@ -156,6 +156,11 @@ const RUNTIME_NOTES =
   "Observable's width): size charts with Plot.plot({ width }).\n" +
   '- To display a result, end the cell with an expression, or return a DOM node ' +
   '(e.g. an SVG/chart element) to render it.\n' +
+  '- Files: `await FileAttachment("data.csv").csv({ typed: true })` reads a file next to the ' +
+  'notebook (also .text(), .json(), .tsv(), .arrayBuffer(), .blob(), .url()); ' +
+  '`await save("out/result.json", value)` writes one (strings, objects as JSON, arrays of ' +
+  'records as .csv/.tsv, a chart as .svg, Blobs and typed arrays as bytes). Paths are ' +
+  'relative to the notebook; subfolders are created.\n' +
   '- `display(value)` also works, like Observable\'s: call it anywhere, as often ' +
   'as you like. One displayed value renders normally (table, chart, inspector); ' +
   'several stack in the order you displayed them.';

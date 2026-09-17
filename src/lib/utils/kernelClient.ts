@@ -22,6 +22,8 @@
  * A run already in flight keeps its own client — the promise was bound to it —
  * so switching notebooks mid-run does not redirect it.
  */
+import { downloadBytes } from './fileOperations';
+import type { WorkingDirectory } from './workingDirectory';
 import { writable } from 'svelte/store';
 import type { CellOutput } from '../types/notebook';
 
@@ -59,6 +61,11 @@ export class KernelClient {
         const msg = event.data;
         if (msg.type === 'ready') {
           resolveReady();
+          return;
+        }
+        // A cell saved a file with no working directory to write it to.
+        if (msg.type === 'download') {
+          downloadBytes(msg.bytes, msg.name, msg.mimeType);
           return;
         }
         const p = this.pending.get(msg.id);
@@ -126,6 +133,11 @@ export class KernelClient {
    *  dispatches `tangent-input-change` to trigger dependents). */
   async setVariable(name: string, value: any, opts?: { builtin?: boolean }): Promise<void> {
     await this.request('set-var', { name, value, builtin: opts?.builtin });
+  }
+
+  /** Tell the kernel which folder the next run's notebook lives in. */
+  async setWorkingDirectory(wd: WorkingDirectory | null): Promise<void> {
+    await this.request('set-cwd', { value: wd });
   }
 
   /** Clear the kernel scope, keeping the worker alive. */

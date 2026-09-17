@@ -96,6 +96,22 @@ If the file changed on disk since the tab loaded, a save is refused once and war
 
 **Save As** (`Ctrl/Cmd + Shift + S`) writes the notebook to a new file in the served directory and moves the tab onto it; the file it came from is left untouched. The extension picks the format — `.js` for Tangent's, `.html` for Observable's — so this is also how an Observable notebook becomes a Tangent one. The tab keeps its kernel, so nothing needs re-running. An existing file is never replaced without a second, explicit confirmation. Without the companion there is nowhere to write, and Save As falls back to the Export dialog.
 
+#### The working directory
+
+A notebook served this way has a working directory: the folder its file is in, as in Jupyter. Cells read files from it and write files to it:
+
+```javascript
+const rows = await FileAttachment("penguins.csv").csv({ typed: true });
+await save("out/summary.json", { n: rows.length });
+await save("figures/chart.svg", Plot.plot({ marks: [Plot.dot(rows, { x: "mass" })] }));
+```
+
+`FileAttachment` follows Observable's API (`.text()`, `.json()`, `.csv()`, `.tsv()`, `.arrayBuffer()`, `.blob()`, `.url()`, `.image()`), so data loading moves between the two unchanged. `save` writes what the file name asks for: text, JSON, records as CSV or TSV, a chart or any element containing an `<svg>` as a standalone SVG, a canvas as an image, and Blobs or typed arrays as they are. Names are relative to the notebook, a leading `/` starts at the served root, and missing folders are created. Nothing outside the served directory can be read or written, and `save` refuses to overwrite a notebook file.
+
+Without the companion there is no folder, and the same calls degrade rather than break: `FileAttachment` reads datasets dropped into the Storage panel, and `save` downloads the file.
+
+Only the app itself can use the companion's socket and file endpoints. Every web page open in your browser can send requests to localhost, and a WebSocket ignores the same-origin policy, so the companion checks the Host, Origin and Sec-Fetch-Site of each request and refuses anything that is not the app on its own port.
+
 Options: `--port` (default 4321) and `--dist` (default `dist`). The companion needs [Deno](https://deno.com). Without it, the app still runs from any static host and falls back to download-based saving.
 
 Serving from localhost keeps the page same-origin with the companion, so this works the same in every browser, Firefox included. It deliberately does not use the File System Access API, which only Chromium implements.

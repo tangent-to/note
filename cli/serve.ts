@@ -39,6 +39,8 @@ import { checkRequest } from "./requestGuard.ts";
 
 const DEFAULT_PORT = 4321;
 const SYNC_PATH = "/__sync";
+/** The working directory: files next to the notebooks, read and written by cells. */
+const FILES_PATH = "/__files/";
 // A write lands as one or more fs events; coalesce them before reading.
 const WATCH_DEBOUNCE_MS = 120;
 // Enough to see the frontmatter fence and its title without reading a large
@@ -86,6 +88,32 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".map": "application/json; charset=utf-8",
 };
+
+const FILE_MIME: Record<string, string> = {
+  ...MIME,
+  ".csv": "text/csv; charset=utf-8",
+  ".tsv": "text/tab-separated-values; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".ndjson": "application/x-ndjson; charset=utf-8",
+  ".geojson": "application/geo+json; charset=utf-8",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".mid": "audio/midi",
+  ".midi": "audio/midi",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".jpeg": "image/jpeg",
+  ".pdf": "application/pdf",
+  ".arrow": "application/vnd.apache.arrow.file",
+  ".parquet": "application/vnd.apache.parquet",
+};
+
+function fileContentType(path: string): string {
+  const dot = path.lastIndexOf(".");
+  return (dot >= 0 && FILE_MIME[path.slice(dot).toLowerCase()]) || "application/octet-stream";
+}
 
 function contentType(path: string): string {
   const dot = path.lastIndexOf(".");
@@ -221,6 +249,71 @@ export function main(args: Args) {
     broadcast({ type: "files", files });
   };
 
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+
+  /**
+   * A file in the working directory: GET reads it, PUT writes it.
+   *
+   * Paths are relative to the served root and go through resolveWithin like
+   * every other path here. Written files never replace a notebook the companion
+   * serves — a cell calling save("piece.js") would otherwise overwrite its own
+   * notebook. Responses are sandboxed: an HTML or SVG file opened from here must
+   * not run scripts with the app's origin, which is the origin allowed to use
+   * the sync socket.
+   */
+  async function handleFile(req: Request, url: URL): Promise<Response> {
+    let relative: string;
+    try {
+      relative = url.pathname.slice(FILES_PATH.length).split("/").map(decodeURIComponent).join("/");
+    } catch {
+      return json(400, { error: "That path is not valid." });
+    }
+    const absolute = resolveWithin(root, relative);
+    if (!absolute) return json(403, { error: "That path is outside the served directory." });
+    const target = relativeTo(root, absolute) ?? relative;
+
+    if (req.method === "GET") {
+      try {
+        if (Deno.statSync(absolute).isDirectory) return json(404, { error: `${target} is a directory.` });
+      } catch {
+        return json(404, { error: `No file ${target}.` });
+      }
+      return new Response(await Deno.readFile(absolute), {
+        headers: {
+          "content-type": fileContentType(target),
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "content-security-policy": "sandbox",
+        },
+      });
+    }
+
+    if (req.method === "PUT") {
+      if (files.some((file) => file.path === target)) {
+        return json(409, { error: `${target} is a notebook; save() will not overwrite it.` });
+      }
+      try {
+        const bytes = new Uint8Array(await req.arrayBuffer());
+        Deno.mkdirSync(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
+        const tmp = `${absolute}.tangent-tmp`;
+        Deno.writeFileSync(tmp, bytes);
+        Deno.renameSync(tmp, absolute);
+        console.log(`  wrote     ${target}  ${bytes.length} bytes`);
+        // A cell can write a notebook-shaped file; let the list catch up.
+        rescan();
+        return json(201, { path: target, size: bytes.length });
+      } catch (error) {
+        return json(500, { error: `Could not write ${target}: ${error instanceof Error ? error.message : error}` });
+      }
+    }
+
+    return json(405, { error: "Only GET and PUT are supported." });
+  }
+
   Deno.serve({ port, hostname: "127.0.0.1", onListen: () => {
     console.log(`tangent/note`);
     console.log(`  root      ${root}`);
@@ -229,16 +322,18 @@ export function main(args: Args) {
   } }, async (req) => {
     const url = new URL(req.url);
 
-    // The sync socket reads and writes the reader's notebooks, so only the app
-    // itself may use it — not any other page open in the same browser (see
-    // requestGuard.ts). The static app stays open.
-    if (url.pathname === SYNC_PATH) {
+    // The sync socket and the working directory read and write the reader's
+    // files, so only the app itself may use them — not any other page open in
+    // the same browser (see requestGuard.ts). The static app stays open.
+    if (url.pathname === SYNC_PATH || url.pathname.startsWith(FILES_PATH)) {
       const verdict = checkRequest((name) => req.headers.get(name), port);
       if (!verdict.ok) {
         console.warn(`  refused   ${url.pathname} (${verdict.reason})`);
         return new Response("Forbidden", { status: 403 });
       }
     }
+
+    if (url.pathname.startsWith(FILES_PATH)) return handleFile(req, url);
 
     if (url.pathname === SYNC_PATH) {
       const { socket, response } = Deno.upgradeWebSocket(req);
