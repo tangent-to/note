@@ -25,12 +25,15 @@
   interface Props {
     activeTab: PanelTab;
     open: boolean;
+    /** Which way the theme toggle points: the rail holds it at its foot. */
+    dark?: boolean;
+    ontheme?: () => void;
     /** A backup is due: the files icon says so. */
     backupDue?: boolean;
     onselect?: (tab: PanelTab) => void;
   }
 
-  let { activeTab, open, backupDue = false, onselect }: Props = $props();
+  let { activeTab, open, dark = false, backupDue = false, ontheme, onselect }: Props = $props();
 
   const mod =
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -107,6 +110,27 @@
     </svg>
   </button>
 
+
+  <!-- Not a tool, and not in the header either: it belongs to the window rather
+       than to the notebook, and at the foot of the rail it is somewhere rather
+       than floating above a column of icons it never lined up with. -->
+  <button
+    class="rail-btn rail-foot"
+    onclick={() => ontheme?.()}
+    title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+    aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+  >
+    {#if dark}
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/>
+      </svg>
+    {:else}
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+      </svg>
+    {/if}
+  </button>
 </nav>
 
 <style>
@@ -148,6 +172,9 @@
     background-color: var(--accent-weak-bg);
     color: var(--accent-weak-fg);
   }
+
+  /* Pinned to the bottom, away from the tools. */
+  .rail-foot { margin-top: auto; }
 
   .rail-dot {
     position: absolute;

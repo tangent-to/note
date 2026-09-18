@@ -1228,25 +1228,7 @@
           onrestartrunall={() => restartKernel({ runAll: true })}
           ontogglereactive={() => reactiveMode.update((v) => !v)}
         />
-        <span class="header-divider" aria-hidden="true"></span>
       {/if}
-      <button
-        class="icon-btn"
-        onclick={toggleTheme}
-        title={$theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        aria-label={$theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      >
-        {#if $theme === 'dark'}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round"/>
-          </svg>
-        {:else}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-          </svg>
-        {/if}
-      </button>
     </div>
   </header>
 
@@ -1281,7 +1263,9 @@
     <PanelRail
       activeTab={rightSidebarTab}
       open={rightSidebarOpen}
+      dark={$theme === 'dark'}
       backupDue={$backupState.due}
+      ontheme={toggleTheme}
       onselect={togglePanelTab}
     />
   </div>
@@ -1526,34 +1510,6 @@
     margin-left: 0.25rem;
   }
 
-  .icon-btn {
-    background: transparent;
-    border: none;
-    padding: 0.35rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: var(--radius-pill);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-  }
-
-  .icon-btn:hover {
-    background-color: var(--surface-hover);
-    color: var(--heading);
-  }
-
-  .icon-btn.active {
-    background-color: var(--accent-weak-bg);
-    color: var(--accent-weak-fg);
-  }
-
-  .icon-btn.active:hover {
-    background-color: var(--accent-weak-bg);
-    color: var(--accent);
-  }
-
   /* Header controls never wrap their own text into two lines; when the row
      gets tight the media query below drops the labels instead. */
   .notebooks-btn {
@@ -1582,13 +1538,6 @@
     .notebooks-btn {
       gap: 0;
     }
-  }
-
-  .header-divider {
-    width: 1px;
-    height: 18px;
-    background: var(--border);
-    margin: 0 0.15rem;
   }
 
   /* Mobile: collapse the header to icons so it fits narrow screens. */
