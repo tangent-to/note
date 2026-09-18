@@ -42,6 +42,41 @@ fn free_port() -> std::io::Result<u16> {
     Ok(port)
 }
 
+fn port_is_free(port: u16) -> bool {
+    TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).is_ok()
+}
+
+/// The same port as last time, whenever it is still free.
+///
+/// The port is part of the origin, and everything a browser keeps — the
+/// library, the offline cache and its frozen snapshot, the theme, the chat —
+/// is keyed to the origin. A fresh port each launch would therefore be a fresh
+/// browser each launch: an empty library, a cold cache, a folder that is frozen
+/// on disk but has nothing cached to be frozen to. So the port is remembered
+/// beside the folder, and only changes when something else has taken it.
+fn companion_port(app: &tauri::AppHandle) -> std::io::Result<u16> {
+    let file = config_file(app, "port.txt");
+    let remembered = file
+        .as_ref()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|text| text.trim().parse::<u16>().ok());
+
+    if let Some(port) = remembered {
+        if port_is_free(port) {
+            return Ok(port);
+        }
+    }
+
+    let port = free_port()?;
+    if let Some(path) = file {
+        if let Some(dir) = path.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        let _ = fs::write(path, port.to_string());
+    }
+    Ok(port)
+}
+
 /// Wait until the companion answers, so the window never opens on a dead port.
 fn wait_until_listening(port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
@@ -59,10 +94,14 @@ fn wait_until_listening(port: u16, timeout: Duration) -> bool {
     false
 }
 
-/// Where the choice of folder is remembered. Plain text, so it can be read and
-/// edited by hand.
+/// Where this app remembers things between launches. Plain text, so they can be
+/// read and edited by hand.
+fn config_file(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join(name))
+}
+
 fn pointer_file(app: &tauri::AppHandle) -> Option<PathBuf> {
-    app.path().app_config_dir().ok().map(|dir| dir.join("folder.txt"))
+    config_file(app, "folder.txt")
 }
 
 fn remember_folder(app: &tauri::AppHandle, folder: &Path) {
@@ -143,7 +182,7 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
             let folder = notebooks_folder(&handle);
-            let port = free_port()?;
+            let port = companion_port(&handle)?;
 
             let mut args = vec![
                 folder.to_string_lossy().to_string(),
