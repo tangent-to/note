@@ -15,6 +15,13 @@
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
   import {
+    cacheStats,
+    clearRemoteCache,
+    offlineReady,
+    online,
+    refreshCacheStats,
+  } from '../utils/offlineCache';
+  import {
     backupState,
     checkStoragePersisted,
     lastBackupAt,
@@ -110,6 +117,7 @@
     refreshDatasets();
     refreshLibrary();
     void checkStoragePersisted();
+    void refreshCacheStats();
   }
 
   // A long library turns the panel into a wall. Ctrl+K is the finder for
@@ -445,6 +453,35 @@
           {/if}
         </div>
       </div>
+
+      {#if $offlineReady}
+        <!-- Libraries and soundfonts a cell loaded from the network, kept so the
+             notebook still runs without one. -->
+        <div class="backup-box">
+          <div class="backup-head">
+            <span class="backup-title">Offline</span>
+            <span class="backup-age">{$online ? 'online' : 'no network'}</span>
+          </div>
+          <p class="backup-note">
+            {#if $cacheStats}
+              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'} and
+              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library or data file' : 'library and data files'} kept.
+              The app opens and its notebooks run without a network, as far as what they have already loaded.
+            {:else}
+              Libraries a cell loads are kept, so the app and its notebooks still work without a network.
+            {/if}
+          </p>
+          <div class="backup-actions">
+            <button
+              class="backup-btn"
+              onclick={async () => {
+                const cleared = await clearRemoteCache();
+                toast(cleared ? 'Cleared what was cached from the network.' : 'Nothing to clear.', 'info');
+              }}
+            >Clear downloads</button>
+          </div>
+        </div>
+      {/if}
 
       {#if !$libraryPersistent}
         <div class="storage-warning">

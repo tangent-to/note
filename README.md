@@ -53,6 +53,14 @@ A notebook can be opened directly from a URL, which is handy for sharing:
 
 Both `.js` (tangent/note format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md)) and `.json` exports work. The host serving the file must allow cross-origin requests (GitHub raw content does). Nothing runs automatically: you still choose when to run cells.
 
+### Work without a network
+
+Cells load their libraries from a CDN as they run, so a notebook that works today would not open on a train. A service worker keeps what has been fetched — the app's own files, the libraries, the soundfonts — and serves them when there is no network: the app opens, and a notebook runs as far as what it has already loaded once.
+
+It is *unfrozen*: while there is a network, requests go to it first, so a notebook follows what its imports resolve to today. Pinning a notebook to exact versions is a later step.
+
+The Storage panel says how much is kept and offers to clear it; the app's own files are never cleared, so it still opens afterwards. The companion's socket and files are never cached, being live state. The cache only runs in a built app (`npm run serve`, or a deployed site), not under the Vite dev server, where it would serve the previous build.
+
 ### Back up what lives in the browser
 
 Without the companion, notebooks and datasets are kept in the browser's own storage, which the browser may clear when space runs low and "clear site data" clears on purpose. The **Storage** panel says when the last backup was made, and asks for one — with a dot on its tab — when work that exists only in this browser has changed: a day after new work first appears, then at most weekly.

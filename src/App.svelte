@@ -30,6 +30,7 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
+  import { startOfflineCache } from './lib/utils/offlineCache';
   import {
     BACKUP_SNOOZE_KEY,
     LAST_BACKUP_KEY,
@@ -251,6 +252,8 @@
   }
 
   onMount(() => {
+    // Keep the libraries cells load, so a notebook still runs with no network.
+    startOfflineCache();
     // Deep links (/gh/… on GitHub Pages) arrive via the 404.html shim as
     // /?p=<original path>; restore the real URL before routing.
     const redirect = decodeRedirect(window.location.search);

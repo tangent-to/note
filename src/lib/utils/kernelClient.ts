@@ -99,18 +99,35 @@ export class KernelClient {
     });
   }
 
+  /**
+   * The preload of d3 and Plot, once started.
+   *
+   * A run waits for it. The worker handles each message on its own async task,
+   * so an execute sent while setup was still fetching from the CDN ran first —
+   * and a cell using `Plot` on a freshly opened notebook failed with "Plot is
+   * not defined", intermittently, depending on the network.
+   */
+  private setupPromise: Promise<void> | null = null;
+
   /** Preload common libraries (d3, Plot) into the kernel scope. */
-  async setup(): Promise<void> {
-    try {
-      await this.request('setup');
-    } catch (err) {
-      console.warn('Kernel setup (common libraries) failed:', err);
+  setup(): Promise<void> {
+    if (!this.setupPromise) {
+      this.setupPromise = this.request('setup').then(
+        () => undefined,
+        (err) => {
+          console.warn('Kernel setup (common libraries) failed:', err);
+        }
+      );
     }
+    return this.setupPromise;
   }
 
   /** Execute a cell. Queued: one execution at a time, submission order. */
   execute(code: string): Promise<CellOutput> {
     const run = this.execChain.then(async () => {
+      // d3 and Plot first: a cell that uses them must not start before they
+      // are there.
+      await this.setup();
       this.running++;
       this.busy.set(true);
       try {
@@ -166,7 +183,9 @@ export class KernelClient {
     // The clamped decrement in that finally reconciles it back to 0.
     this.busy.set(false);
     this.variables.set([]);
-    // Respawn eagerly so the next run doesn't pay the startup cost.
+    // Respawn eagerly so the next run doesn't pay the startup cost. The new
+    // worker has an empty scope, so the preload has to happen again.
+    this.setupPromise = null;
     void this.spawn().then(() => this.setup());
   }
 
