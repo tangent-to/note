@@ -12,10 +12,13 @@
    * It replaces the row of tabs rather than adding to it, so the panel gains
    * the height that row was taking and nothing is named twice.
    *
-   * The rule between the third and fourth icon is the same boundary the tabs
-   * carried: above it, tools that follow the notebook on screen — Info,
-   * Variables and Console read that notebook's own kernel; below it, tools that
-   * belong to the whole app — one chat, and one place where files live.
+   * The order is the order of a working day: the folder first, because that is
+   * what you are looking for when you have just opened one; then what the
+   * kernel holds and what it printed; then the chat; and Info last, which is
+   * read once and then not again. The tabs used to carry a rule between the
+   * notebook's own tools and the app's, and it is gone with them — it explained
+   * a distinction nobody was asking about, in the one place where the answer
+   * had to be immediate.
    */
   import type { PanelTab } from '../types/panel';
 
@@ -36,17 +39,16 @@
 <nav class="panel-rail" aria-label="Panel">
   <button
     class="rail-btn"
-    class:active={open && activeTab === 'info'}
-    onclick={() => onselect?.('info')}
-    title="Info — about this notebook, and where its cells run"
-    aria-label="Info"
-    aria-pressed={open && activeTab === 'info'}
+    class:active={open && activeTab === 'storage'}
+    onclick={() => onselect?.('storage')}
+    title="Files — the notebooks and data this folder holds, backups and offline ({mod}⇧D)"
+    aria-label="Files"
+    aria-pressed={open && activeTab === 'storage'}
   >
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="M12 11v5" stroke-linecap="round"/>
-      <circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4L11 8.5h8.5A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>
     </svg>
+    {#if backupDue}<span class="rail-dot" title="A backup is due" aria-label="(backup due)"></span>{/if}
   </button>
 
   <button
@@ -77,8 +79,6 @@
     </svg>
   </button>
 
-  <span class="rail-rule" aria-hidden="true"></span>
-
   <button
     class="rail-btn"
     class:active={open && activeTab === 'chat'}
@@ -94,17 +94,19 @@
 
   <button
     class="rail-btn"
-    class:active={open && activeTab === 'storage'}
-    onclick={() => onselect?.('storage')}
-    title="Files — the notebooks and data this folder holds, backups and offline ({mod}⇧D)"
-    aria-label="Files"
-    aria-pressed={open && activeTab === 'storage'}
+    class:active={open && activeTab === 'info'}
+    onclick={() => onselect?.('info')}
+    title="Info — about this notebook, and where its cells run"
+    aria-label="Info"
+    aria-pressed={open && activeTab === 'info'}
   >
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4L11 8.5h8.5A1.5 1.5 0 0 1 21 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 11v5" stroke-linecap="round"/>
+      <circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none"/>
     </svg>
-    {#if backupDue}<span class="rail-dot" title="A backup is due" aria-label="(backup due)"></span>{/if}
   </button>
+
 </nav>
 
 <style>
@@ -145,13 +147,6 @@
   .rail-btn.active {
     background-color: var(--accent-weak-bg);
     color: var(--accent-weak-fg);
-  }
-
-  .rail-rule {
-    width: 18px;
-    height: 1px;
-    margin: 0.3rem 0;
-    background: var(--border-strong);
   }
 
   .rail-dot {
