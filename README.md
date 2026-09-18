@@ -136,6 +136,23 @@ Options: `--port` (default 4321) and `--dist` (default `dist`). The companion ne
 
 Serving from localhost keeps the page same-origin with the companion, so this works the same in every browser, Firefox included. It deliberately does not use the File System Access API, which only Chromium implements.
 
+### As a desktop application
+
+The desktop app is the same app: a window wrapped around the companion. It starts `note serve` for a folder on your machine and opens a window on `http://localhost:<port>`, so the origin is the one a browser would have — the sync socket, the working directory, the offline cache and a local Ollama all behave exactly as they do in a tab, and there is no desktop-only path to keep working.
+
+```bash
+npm run desktop          # run it, rebuilding the app and the companion first
+npm run desktop:build    # a .deb and an AppImage in src-tauri/target/release/bundle
+```
+
+It needs [Rust](https://rustup.rs) and [Deno](https://deno.com) to build, and on Linux the WebKitGTK development packages Tauri asks for; what it produces needs neither.
+
+On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open Folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
+
+The companion travels inside the bundle as a sidecar binary (`deno compile --include dist`, so the built app is inside it too). That binary carries the Deno runtime and weighs about 100 MB, which is most of the bundle; the window itself is the system's own webview, and the Rust side is under 10 MB.
+
+The icons are generated from `src-tauri/app-icon.png` (rendered from `src/assets/images/logo.svg`) with `npx tauri icon src-tauri/app-icon.png`.
+
 ### Keyboard Shortcuts
 
 | Shortcut | Action |

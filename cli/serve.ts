@@ -51,19 +51,42 @@ interface Args {
   targets: string[];
   port: number;
   dist: string;
+  /** Stop when whoever started this stops. See `exitWithParent`. */
+  exitWithParent: boolean;
+}
+
+/**
+ * Where the built app is, when `--dist` does not say.
+ *
+ * Run from the repository, that is `dist/` beside the source. Compiled into a
+ * single binary (`deno compile --include dist`, which is how the desktop app
+ * ships it), the files travel inside the executable and are reachable at the
+ * path they had when it was built — so resolving against this module rather
+ * than the working directory is what lets the binary be run from anywhere.
+ *
+ * The URL does the resolving: inside a compiled binary the embedded files are
+ * looked up by exact path, and a `..` left in the middle of one finds nothing.
+ */
+function defaultDist(): string {
+  if (!import.meta.url.startsWith("file:")) return "dist";
+  const path = decodeURIComponent(new URL("../dist", import.meta.url).pathname);
+  // A Windows file URL carries its drive letter behind a leading slash.
+  return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path;
 }
 
 export function parseArgs(argv: string[]): Args {
   const targets: string[] = [];
   let port = DEFAULT_PORT;
-  let dist = "dist";
+  let dist = defaultDist();
+  let exitWithParent = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port") port = Number(argv[++i]);
     else if (a === "--dist") dist = argv[++i];
+    else if (a === "--exit-with-parent") exitWithParent = true;
     else if (!a.startsWith("-")) targets.push(a);
   }
-  return { targets, port, dist };
+  return { targets, port, dist, exitWithParent };
 }
 
 /** djb2, matching the app's cheap content-change hash. */
@@ -211,8 +234,36 @@ function discover(root: string): NotebookFile[] {
   return found;
 }
 
+/**
+ * Stop when whoever started this stops.
+ *
+ * The desktop app spawns the companion as a child and pipes its stdin. A parent
+ * that is killed rather than closed — a crash, a `kill`, a session ending —
+ * never gets to tidy up, and the companion would go on holding the folder and
+ * its port with no window left to talk to it. The pipe answers that: it reaches
+ * end of file the moment the parent is gone, whatever took it away.
+ *
+ * Only when asked for (`--exit-with-parent`): run from a terminal, stdin is a
+ * keyboard, and read from a script it may be `/dev/null`, which is at end of
+ * file straight away.
+ */
+function exitWithParent() {
+  (async () => {
+    const buffer = new Uint8Array(256);
+    try {
+      while ((await Deno.stdin.read(buffer)) !== null) {
+        // Nothing is sent on this pipe; only its closing means anything.
+      }
+    } catch {
+      // A broken pipe is the same news as the end of one.
+    }
+    Deno.exit(0);
+  })();
+}
+
 export function main(args: Args) {
   const { targets, port, dist } = args;
+  if (args.exitWithParent) exitWithParent();
   const { root, initial } = resolveRoot(targets, Deno.cwd());
 
   let files = discover(root);
