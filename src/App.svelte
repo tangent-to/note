@@ -748,6 +748,12 @@
       showToast(`${path} changed on disk. Save or reload that tab to take the new version.`, 'error');
       return;
     }
+    // A file nobody opened is none of this browser's business. The companion
+    // announces every notebook it sees change, new ones included; taking them
+    // in would copy the whole folder into the library one editor save at a
+    // time, and leave a row behind for every file later deleted. The list of
+    // served files already shows them, as "not opened yet".
+    if (reason === 'disk-change' && !session) return;
     const name = path.split('/').pop() ?? 'notebook.js';
     // Discovery offers Observable `.html` notebooks too, so the parser follows
     // the file rather than assuming Tangent's own format.
