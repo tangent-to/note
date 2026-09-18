@@ -9,12 +9,22 @@
   },
   "app": {
     "windows": [],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
-    "targets": ["appimage", "deb"],
-    "icon": ["icons/icon.png"],
-    "externalBin": ["binaries/note-serve"]
+    "targets": [
+      "appimage",
+      "deb"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/note-serve"
+    ]
   }
 }

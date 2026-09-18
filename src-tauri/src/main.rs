@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -101,13 +100,20 @@ fn notebooks_folder(app: &tauri::AppHandle) -> PathBuf {
 
 /// Open another folder.
 ///
+/// Called from the page's own File menu rather than a native menu bar: a menu
+/// bar holding one item costs a whole strip of the window, above a header that
+/// already has a File menu — two menus, one of them nearly empty. The page is
+/// remote (http://localhost), so this is reachable only because the capability
+/// beside this file lets that origin talk to the app.
+///
 /// The whole app is restarted rather than the companion swapped underneath it:
 /// a companion owns one root, and the page's sync socket, caches and open tabs
 /// are all keyed to that root, so starting again is both the simplest path and
 /// the one with nothing left over from the folder before.
-fn choose_folder(app: &tauri::AppHandle) {
+#[tauri::command]
+fn open_folder(app: tauri::AppHandle) {
     let handle = app.clone();
-    let current = notebooks_folder(app);
+    let current = notebooks_folder(&app);
     app.dialog()
         .file()
         .set_title("Open a folder of notebooks")
@@ -129,28 +135,11 @@ fn choose_folder(app: &tauri::AppHandle) {
         });
 }
 
-/// The one thing the desktop app has that a browser tab does not: a choice of
-/// which folder to open. Everything else lives in the app's own File menu.
-fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let open = MenuItem::with_id(app, "open-folder", "Open Folder…", true, Some("CmdOrCtrl+Shift+O"))?;
-    let file = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[&open, &PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::quit(app, None)?],
-    )?;
-    Menu::with_items(app, &[&file])
-}
-
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .on_menu_event(|app, event| {
-            if event.id() == "open-folder" {
-                choose_folder(app);
-            }
-        })
+        .invoke_handler(tauri::generate_handler![open_folder])
         .setup(|app| {
             let handle = app.handle().clone();
             let folder = notebooks_folder(&handle);
@@ -202,7 +191,6 @@ fn main() {
                 WebviewUrl::External(format!("http://localhost:{port}").parse()?),
             )
             .title(format!("tangent/note — {name}"))
-            .menu(build_menu(app.handle())?)
             .inner_size(1360.0, 900.0)
             .min_inner_size(640.0, 480.0)
             .build()?;

@@ -20,6 +20,8 @@
     canClose?: boolean;
     onnew?: () => void;
     onopen?: () => void;
+    /** Only the desktop app has a folder to choose; in a browser this is absent. */
+    onopenfolder?: () => void;
     onsave?: () => void;
     onsaveas?: () => void;
     onexport?: () => void;
@@ -31,6 +33,7 @@
     canClose = true,
     onnew,
     onopen,
+    onopenfolder,
     onsave,
     onsaveas,
     onexport,
@@ -129,6 +132,11 @@
       <button role="menuitem" class="file-item" onclick={() => run(onopen)}>
         <span>Open file…</span><kbd>{mod}O</kbd>
       </button>
+      {#if onopenfolder}
+        <button role="menuitem" class="file-item" onclick={() => run(onopenfolder)}>
+          <span>Open folder…</span><kbd>{mod}⇧O</kbd>
+        </button>
+      {/if}
       <div class="file-sep" role="separator"></div>
       <button role="menuitem" class="file-item" onclick={() => run(onsave)}>
         <span>{saveLabel}</span><kbd>{mod}S</kbd>

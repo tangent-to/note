@@ -147,7 +147,9 @@ npm run desktop:build    # a .deb and an AppImage in src-tauri/target/release/bu
 
 It needs [Rust](https://rustup.rs) and [Deno](https://deno.com) to build, and on Linux the WebKitGTK development packages Tauri asks for; what it produces needs neither.
 
-On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open Folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
+On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
+
+That item is in the app's own File menu, not a native menu bar: a menu bar holding one item costs a strip of the window above a header that already has a File menu. It is there only in the desktop app, which the page can tell because Tauri injects its bridge into the window it opens — and because the page is served over http rather than Tauri's own protocol, the one command it may call is named explicitly in `src-tauri/permissions/`.
 
 The companion travels inside the bundle as a sidecar binary (`deno compile --include dist`, so the built app is inside it too). That binary carries the Deno runtime and weighs about 100 MB, which is most of the bundle; the window itself is the system's own webview, and the Rust side is under 10 MB.
 
