@@ -7,6 +7,7 @@
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import TabStrip from './lib/components/TabStrip.svelte';
   import FileMenu from './lib/components/FileMenu.svelte';
+  import PanelRail from './lib/components/PanelRail.svelte';
   import RunMenu from './lib/components/RunMenu.svelte';
   import StatusBar from './lib/components/StatusBar.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
@@ -38,6 +39,7 @@
   import {
     BACKUP_SNOOZE_KEY,
     LAST_BACKUP_KEY,
+    backupState,
     createLibraryBackup,
     markBackedUp,
     restoreLibraryBackup,
@@ -95,8 +97,7 @@
     type LoadReason,
   } from './lib/utils/serverSync';
   import type { Notebook as NotebookDoc } from './lib/types/notebook';
-
-  type PanelTab = 'info' | 'variables' | 'console' | 'chat' | 'storage';
+  import type { PanelTab } from './lib/types/panel';
 
   /**
    * Whether the side panel starts open.
@@ -329,6 +330,10 @@
           if (get(sessions).length === 0 && hello.files.length > 0) {
             openSyncFile(hello.files[0].path);
           }
+          // A folder with more than one notebook opens showing the folder: one
+          // of them is on screen, and the answer to "where are the others" is
+          // the panel, not a hunt for it.
+          if (hello.files.length > 1) rightSidebarTab = 'storage';
         }
         for (const session of get(sessions)) {
           const origin = get(session.origin);
@@ -1242,18 +1247,6 @@
           </svg>
         {/if}
       </button>
-      <button
-        class="icon-btn"
-        class:active={rightSidebarOpen}
-        onclick={() => setPanelOpen(!rightSidebarOpen)}
-        title="Side panel"
-        aria-label="Toggle side panel"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="16" rx="2"/>
-          <line x1="14.5" y1="4" x2="14.5" y2="20"/>
-        </svg>
-      </button>
     </div>
   </header>
 
@@ -1273,7 +1266,6 @@
         ></div>
         <RightSidebar
           bind:activeTab={rightSidebarTab}
-          onclose={() => setPanelOpen(false)}
           oninsertCode={handleInsertCode}
           oneditCell={handleEditCell}
           onopenNotebook={({ id }) => openFromLibrary(id)}
@@ -1285,6 +1277,13 @@
         />
       </aside>
     {/if}
+
+    <PanelRail
+      activeTab={rightSidebarTab}
+      open={rightSidebarOpen}
+      backupDue={$backupState.due}
+      onselect={togglePanelTab}
+    />
   </div>
 
   <StatusBar
@@ -1649,13 +1648,22 @@
   @media (max-width: 768px) {
     .right-sidebar-container {
       position: fixed;
-      right: 0;
+      /* Floating over the notebook, but never over the rail: the icon that
+         opened the panel is the one that closes it. */
+      right: 44px;
       top: 48px;
       bottom: 0;
       z-index: 30;
       box-shadow: var(--shadow-md);
       /* Never wider than the viewport, whatever width was dragged on desktop. */
-      max-width: 100vw;
+      max-width: calc(100vw - 44px);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .right-sidebar-container {
+      right: 38px;
+      max-width: calc(100vw - 38px);
     }
   }
 

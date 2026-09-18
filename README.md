@@ -188,7 +188,9 @@ Under the notebook, a quiet strip says what is true: the file this notebook writ
 
 ### The side panel
 
-Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console │ Chat, Storage. The rule marks where the panel stops following the notebook on screen — Variables and Console read that notebook's own kernel, while Chat is one conversation for the whole app and Storage is about the browser. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
+Everything that is not the notebook lives in one collapsible panel on the right, opened from a rail of icons down the very edge of the window: Info, Variables, Console │ Chat, Files. The rail is always there, panel open or shut, because a panel that only names its tools once opened has no way of saying it exists — someone who has just opened a folder should be able to see where its contents are rather than guess. Clicking the icon of the tool already showing closes the panel; each tool also has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
+
+The rule between the third icon and the fourth marks where the panel stops following the notebook on screen — Variables and Console read that notebook's own kernel, while Chat is one conversation for the whole app and Files is everything this folder and this browser hold. A folder with more than one notebook opens showing Files, so the rest of it is on screen from the start; its notebooks and data come first there, and backups, the offline cache and freezing sit below them.
 
 ### The notebook library
 

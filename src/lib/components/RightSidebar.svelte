@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { PanelTab } from '../types/panel';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
@@ -44,8 +45,7 @@
   import ChatSidebar from './ChatSidebar.svelte';
 
   interface Props {
-    onclose?: () => void;
-    activeTab?: 'info' | 'variables' | 'console' | 'chat' | 'storage';
+    activeTab?: PanelTab;
     oninsertCode?: (detail: { code: string }) => void;
     /** Chat applying (or reverting) a proposed rewrite of one cell. */
     oneditCell?: (detail: { cellId: string; content: string }) => void;
@@ -60,7 +60,6 @@
   }
 
   let {
-    onclose,
     activeTab = $bindable('info'),
     oninsertCode,
     oneditCell,
@@ -309,28 +308,6 @@
 </script>
 
 <div class="right-sidebar">
-  <div class="sidebar-header">
-    <div class="tab-bar">
-      <button class="tab-btn" class:active={activeTab === 'info'} onclick={() => activeTab = 'info'}>Info</button>
-      <button class="tab-btn" class:active={activeTab === 'variables'} onclick={() => { activeTab = 'variables'; refreshVariables(); }}>Variables</button>
-      <button class="tab-btn" class:active={activeTab === 'console'} onclick={() => activeTab = 'console'}>Console</button>
-      <!-- The rule marks where the panel stops following the notebook on
-           screen. Info, Variables and Console all switch with the active tab —
-           Variables and Console read that notebook's own kernel. Chat is one
-           conversation for the whole app, and Storage is about the browser. -->
-      <button class="tab-btn tab-app" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
-      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>
-        Storage{#if $backupState.due}<span class="backup-dot" title="A backup is due" aria-label="(backup due)"></span>{/if}
-      </button>
-    </div>
-    <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="4" y1="4" x2="12" y2="12"/>
-        <line x1="12" y1="4" x2="4" y2="12"/>
-      </svg>
-    </button>
-  </div>
-
   {#if activeTab === 'info'}
     {#if $currentNotebook}
       <div class="sidebar-content">
@@ -452,117 +429,6 @@
       </div>
 
       <div class="storage-scroll">
-      <!-- Backup. Without the companion, this browser's storage is the only
-           copy of these notebooks, and the browser may clear it; the archive is
-           the copy elsewhere. A status that is always here, and a nudge only
-           when there is something to lose. -->
-      <div class="backup-box" class:due={$backupState.due}>
-        <div class="backup-head">
-          <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
-          <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
-        </div>
-        {#if $backupState.pending > 0}
-          <p class="backup-note">
-            {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
-            only in this browser and changed since the last backup.
-          </p>
-        {/if}
-        {#if $storagePersisted === false}
-          <p class="backup-note">
-            The browser may clear this storage when space runs low.
-            <button class="backup-link" onclick={async () => {
-              const granted = await requestStoragePersistence();
-              toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
-            }}>Ask it to keep it</button>
-          </p>
-        {/if}
-        <label class="backup-choice">
-          <input type="checkbox" bind:checked={backupLibraries} />
-          Include the libraries, so the backup still runs offline elsewhere (larger)
-        </label>
-        <div class="backup-actions">
-          <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
-          <button class="backup-btn" onclick={() => onrestore?.()}>Restore…</button>
-          {#if $backupState.due}
-            <button class="backup-link" onclick={() => snoozeBackupReminder(3)}>Remind me later</button>
-          {/if}
-        </div>
-      </div>
-
-      {#if $offlineReady}
-        <!-- Libraries and soundfonts a cell loaded from the network, kept so the
-             notebook still runs without one. -->
-        <div class="backup-box">
-          <div class="backup-head">
-            <span class="backup-title">Offline</span>
-            <span class="backup-age">{$online ? 'online' : 'no network'}</span>
-          </div>
-          <p class="backup-note">
-            {#if $cacheStats}
-              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'} and
-              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library or data file' : 'library and data files'} kept.
-              The app opens and its notebooks run without a network, as far as what they have already loaded.
-            {:else}
-              Libraries a cell loads are kept, so the app and its notebooks still work without a network.
-            {/if}
-          </p>
-          {#if $lockFolder !== null}
-            <p class="backup-note">
-              {#if $currentLock?.frozen}
-                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length} pinned
-                {Object.keys($currentLock.modules).length === 1 ? 'file' : 'files'}
-                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
-              {:else}
-                Not frozen: this folder follows whatever its imports resolve to today.
-                Freezing writes {$lockFolder ? `${$lockFolder}/` : ''}tangent.lock, pinning each library to the exact
-                bytes it loaded. Run All first — only what has actually loaded can be pinned.
-              {/if}
-            </p>
-          {/if}
-          <div class="backup-actions">
-            {#if $lockFolder !== null}
-              {#if $currentLock?.frozen}
-                <button
-                  class="backup-btn"
-                  onclick={async () => {
-                    try {
-                      await unfreezeEnvironment();
-                      toast('Unfrozen. This folder follows the network again.', 'info');
-                    } catch (error: any) {
-                      toast(error?.message ?? 'Could not unfreeze.', 'error');
-                    }
-                  }}
-                >Unfreeze</button>
-              {:else}
-                <button
-                  class="backup-btn primary"
-                  onclick={async () => {
-                    try {
-                      const { count } = await freezeEnvironment();
-                      toast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
-                    } catch (error: any) {
-                      toast(error?.message ?? 'Could not freeze.', 'error');
-                    }
-                  }}
-                >Freeze…</button>
-              {/if}
-            {/if}
-            <button
-              class="backup-btn"
-              onclick={async () => {
-                const cleared = await clearRemoteCache();
-                toast(cleared ? 'Cleared what was cached from the network.' : 'Nothing to clear.', 'info');
-              }}
-            >Clear downloads</button>
-          </div>
-          {#if $currentLock?.frozen}
-            <p class="backup-note lock-list">
-              {Object.keys($currentLock.modules).slice(0, 4).map(shortName).join(', ')}{Object.keys($currentLock.modules).length > 4 ? '…' : ''}
-            </p>
-          {/if}
-        </div>
-      {/if}
-
       {#if !$libraryPersistent}
         <div class="storage-warning">
           This browser refused persistent storage (private window, or another tab
@@ -752,6 +618,118 @@
            not duplicated here; what this answers is "what else is on my machine,
            and how do I get rid of it" — the AI key in particular, which is
            stored unencrypted and had no way out until now. -->
+      <!-- Housekeeping: what to do about all of the above, below it. -->
+      <!-- Backup. Without the companion, this browser's storage is the only
+           copy of these notebooks, and the browser may clear it; the archive is
+           the copy elsewhere. A status that is always here, and a nudge only
+           when there is something to lose. -->
+      <div class="backup-box" class:due={$backupState.due}>
+        <div class="backup-head">
+          <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
+          <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
+        </div>
+        {#if $backupState.pending > 0}
+          <p class="backup-note">
+            {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
+            only in this browser and changed since the last backup.
+          </p>
+        {/if}
+        {#if $storagePersisted === false}
+          <p class="backup-note">
+            The browser may clear this storage when space runs low.
+            <button class="backup-link" onclick={async () => {
+              const granted = await requestStoragePersistence();
+              toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
+            }}>Ask it to keep it</button>
+          </p>
+        {/if}
+        <label class="backup-choice">
+          <input type="checkbox" bind:checked={backupLibraries} />
+          Include the libraries, so the backup still runs offline elsewhere (larger)
+        </label>
+        <div class="backup-actions">
+          <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
+          <button class="backup-btn" onclick={() => onrestore?.()}>Restore…</button>
+          {#if $backupState.due}
+            <button class="backup-link" onclick={() => snoozeBackupReminder(3)}>Remind me later</button>
+          {/if}
+        </div>
+      </div>
+
+      {#if $offlineReady}
+        <!-- Libraries and soundfonts a cell loaded from the network, kept so the
+             notebook still runs without one. -->
+        <div class="backup-box">
+          <div class="backup-head">
+            <span class="backup-title">Offline</span>
+            <span class="backup-age">{$online ? 'online' : 'no network'}</span>
+          </div>
+          <p class="backup-note">
+            {#if $cacheStats}
+              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'} and
+              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library or data file' : 'library and data files'} kept.
+              The app opens and its notebooks run without a network, as far as what they have already loaded.
+            {:else}
+              Libraries a cell loads are kept, so the app and its notebooks still work without a network.
+            {/if}
+          </p>
+          {#if $lockFolder !== null}
+            <p class="backup-note">
+              {#if $currentLock?.frozen}
+                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length} pinned
+                {Object.keys($currentLock.modules).length === 1 ? 'file' : 'files'}
+                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
+              {:else}
+                Not frozen: this folder follows whatever its imports resolve to today.
+                Freezing writes {$lockFolder ? `${$lockFolder}/` : ''}tangent.lock, pinning each library to the exact
+                bytes it loaded. Run All first — only what has actually loaded can be pinned.
+              {/if}
+            </p>
+          {/if}
+          <div class="backup-actions">
+            {#if $lockFolder !== null}
+              {#if $currentLock?.frozen}
+                <button
+                  class="backup-btn"
+                  onclick={async () => {
+                    try {
+                      await unfreezeEnvironment();
+                      toast('Unfrozen. This folder follows the network again.', 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not unfreeze.', 'error');
+                    }
+                  }}
+                >Unfreeze</button>
+              {:else}
+                <button
+                  class="backup-btn primary"
+                  onclick={async () => {
+                    try {
+                      const { count } = await freezeEnvironment();
+                      toast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not freeze.', 'error');
+                    }
+                  }}
+                >Freeze…</button>
+              {/if}
+            {/if}
+            <button
+              class="backup-btn"
+              onclick={async () => {
+                const cleared = await clearRemoteCache();
+                toast(cleared ? 'Cleared what was cached from the network.' : 'Nothing to clear.', 'info');
+              }}
+            >Clear downloads</button>
+          </div>
+          {#if $currentLock?.frozen}
+            <p class="backup-note lock-list">
+              {Object.keys($currentLock.modules).slice(0, 4).map(shortName).join(', ')}{Object.keys($currentLock.modules).length > 4 ? '…' : ''}
+            </p>
+          {/if}
+        </div>
+      {/if}
+
       <div class="storage-section">
         <h4 class="section-title">Other browser data</h4>
         <p class="storage-note">Chat history, AI key and preferences, in localStorage.</p>
@@ -800,79 +778,6 @@
 
 <style>
   .right-sidebar { height: 100%; display: flex; flex-direction: column; }
-
-  .sidebar-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border);
-  }
-
-  /* Five tabs in a panel the reader can drag as narrow as 240px: let the row
-     scroll rather than push the close button out of the panel. */
-  .tab-bar {
-    display: flex;
-    gap: 0;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .tab-bar::-webkit-scrollbar { display: none; }
-
-  .tab-btn { flex: 0 0 auto; }
-
-  .tab-btn {
-    background: transparent;
-    border: none;
-    /* Five tabs plus a rule have to fit the default panel width; every tenth of
-       a rem here is ten pixels across the row. */
-    padding: 0.4rem 0.45rem;
-    /* Buttons don't inherit font-family; without this the tabs fall back to the
-       browser default instead of the UI sans. */
-    font-family: var(--font-sans);
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: var(--radius-pill);
-    transition: all 0.15s ease;
-  }
-
-  /* The boundary between "follows the notebook on screen" and "does not". A
-     rule rather than a gap, so it survives the row scrolling at narrow widths,
-     and it sits on the first tab of the right-hand group rather than between
-     them, so the two never drift apart.
-
-     It has to come AFTER .tab-btn: that rule sets `border: none` at the same
-     specificity, so declared first this one lost the cascade and the divider
-     never appeared. --border-strong, not --border, because a hairline meant to
-     be read as a separator has to be perceptible against the panel. */
-  .tab-app {
-    margin-left: 0.25rem;
-    padding-left: 0.5rem;
-    border-left: 1px solid var(--border-strong);
-    border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
-  }
-
-  .tab-btn:hover { color: var(--heading); background-color: var(--surface-hover); }
-  .tab-btn.active { color: var(--heading); background-color: var(--surface-2); }
-
-  .close-btn {
-    background: transparent;
-    border: none;
-    padding: 0.25rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-pill);
-    transition: all 0.15s ease;
-  }
-
-  .close-btn:hover { background-color: var(--surface-hover); color: var(--heading); }
 
   .sidebar-content { padding: 1rem; overflow-y: auto; flex: 1; }
 
@@ -1032,16 +937,6 @@
   }
 
   .storage-total-size { font-family: var(--font-mono); color: var(--text); }
-
-  .backup-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    margin-left: 0.3rem;
-    vertical-align: middle;
-    border-radius: 50%;
-    background: var(--warn-fg);
-  }
 
   .backup-box {
     margin-top: 0.75rem;
