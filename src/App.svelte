@@ -1624,7 +1624,10 @@
     position: relative;
     border-left: 1px solid var(--border);
     background-color: var(--bg);
-    overflow-y: auto;
+    /* Each tool scrolls its own content (Files, Info, the console): a
+       scrolling container around them put a second scrollbar beside the
+       first. */
+    overflow: hidden;
     flex-shrink: 0;
   }
 
