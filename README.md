@@ -106,11 +106,11 @@ Saving writes back the format the file is in, so an Observable notebook stays an
 The companion serves the app from localhost and keeps those files and the open tabs in sync in both directions:
 
 - **Editor to browser**: files are watched, so a change made in Zed, VS Code or by a coding agent is pushed to the tab holding that file — wherever you happen to be looking.
-- **Browser to disk**: `Ctrl/Cmd + S` writes that notebook's own file in place, so `git diff` shows an ordinary modification instead of an untracked download. A tab opened from a link or from the library has no file to write to, and says so in the header; there `Ctrl/Cmd + S` still exports a download.
+- **Browser to disk**: `Ctrl/Cmd + S` writes that notebook's own file in place, so `git diff` shows an ordinary modification instead of an untracked download. A tab opened from a link or from the library has no file to write to, and the status bar says so; there `Ctrl/Cmd + S` still exports a download.
 
 Every message is keyed by a path relative to the served root, and the companion resolves it through a single guard: anything that would leave that root — an absolute path, a `..` that climbs out — is refused rather than resolved. The browser names files for a local process here, and any page can be pointed at localhost.
 
-This is what makes an external editor and the notebook usable together: write and refactor with an agent in your editor, run and visualize in tangent/note, commit from the repository as usual. The header shows the linked file name while a companion is connected.
+This is what makes an external editor and the notebook usable together: write and refactor with an agent in your editor, run and visualize in tangent/note, commit from the repository as usual. The status bar names the linked file.
 
 If the file changed on disk since the tab loaded, a save is refused once and warns you, so a background edit is not silently overwritten. Saving again overwrites deliberately.
 
@@ -170,6 +170,12 @@ The icons are generated from `src-tauri/app-icon.png` (rendered from `src/assets
 | `` Ctrl/Cmd + ` `` | Toggle Console |
 | `Ctrl/Cmd + Shift + D` | Toggle Storage Panel |
 
+### The header and the status bar
+
+The header is for doing, the status bar for knowing. On the left of the header: the command palette, the File menu, the open tabs. On the right: **Run All**, which is the one action frequent enough to be a button, with a chevron holding the rest — run the stale cells, reactive mode, restart the kernel, restart and run all. While cells are running, Run All becomes **Stop** in the same place. All of it is in `Ctrl/Cmd + K` too, so nothing lives only there.
+
+Under the notebook, a quiet strip says what is true: the file this notebook writes to (or "not on disk", or "in this browser"), whether it has unsaved changes, how many cells it has, how many are waiting to be re-run, whether the kernel is running, and where cells run — worker or main thread, the first thing to check when an audio player renders but stays silent. Reactive mode and the kernel are also switches there: click the mode to flip it, click the kernel to open the Info panel where it is chosen.
+
 ### The side panel
 
 Everything that is not the notebook lives in one collapsible panel on the right, with a tab per tool: Info, Variables, Console │ Chat, Storage. The rule marks where the panel stops following the notebook on screen — Variables and Console read that notebook's own kernel, while Chat is one conversation for the whole app and Storage is about the browser. One button in the header opens and closes it, each tool has its own shortcut, and the panel is resized by dragging its left edge (the width is remembered).
@@ -181,7 +187,7 @@ Every notebook you open or create is kept in this browser, in IndexedDB. Opening
 That splits "saved" into two things that used to be one:
 
 - **Saved to the library** happens on its own, a couple of seconds after you stop typing. It is not something you do.
-- **Saved to its origin** — the file a `note serve` companion owns, or an exported `.js` — is what `Ctrl/Cmd + S` does, and what the "modified" mark in the header means.
+- **Saved to its origin** — the file a `note serve` companion owns, or an exported `.js` — is what `Ctrl/Cmd + S` does, and what "unsaved" in the status bar means.
 
 Several notebooks can be open at once. They appear as tabs in the header row — the strip is hidden while only one is open, and on narrow screens, where `Ctrl/Cmd + K` switches notebooks instead — and each tab shows what its notebook is doing even when you are not looking at it: a dot while it differs from its file, a spinner while its own cells are running. Closing a tab does not delete anything; the notebook stays in the library. The set of open tabs is restored when you come back.
 

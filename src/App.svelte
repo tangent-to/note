@@ -7,6 +7,8 @@
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import TabStrip from './lib/components/TabStrip.svelte';
   import FileMenu from './lib/components/FileMenu.svelte';
+  import RunMenu from './lib/components/RunMenu.svelte';
+  import StatusBar from './lib/components/StatusBar.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
     currentNotebook,
@@ -1077,7 +1079,6 @@
       executorFor(session.id).resetScope();
     }
     resetRunState(session);
-    restartArmed = false;
     if (opts.runAll) {
       window.dispatchEvent(new CustomEvent('run-all-cells'));
     } else {
@@ -1088,26 +1089,6 @@
         'info'
       );
     }
-  }
-
-  /**
-   * The header button asks twice. A restart throws away every variable, which
-   * for a notebook that loads audio or data is minutes of re-running; one stray
-   * click should not cost that. The second click has to come within a few
-   * seconds, and the button says what it is waiting for.
-   */
-  let restartArmed = $state(false);
-  let restartTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function onRestartClick() {
-    if (restartArmed) {
-      if (restartTimer) clearTimeout(restartTimer);
-      restartKernel();
-      return;
-    }
-    restartArmed = true;
-    if (restartTimer) clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => (restartArmed = false), 3500);
   }
 
   function clearAllOutputs() {
@@ -1211,103 +1192,17 @@
 
     <div class="header-right">
       {#if $currentNotebook}
-        {#if $staleCells.size > 0}
-          <button
-            class="run-stale-btn"
-            onclick={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
-            title="Re-run cells whose dependencies changed"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <path d="M12 9v4M12 17h.01"/>
-            </svg>
-            <span class="btn-label">Run {$staleCells.size} stale</span>
-          </button>
-        {/if}
-        <button
-          class="reactive-toggle"
-          class:active={$reactiveMode}
-          onclick={() => reactiveMode.update(v => !v)}
-          title="Reactive mode: when on, running a cell automatically re-runs the cells that depend on it"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
-          </svg>
-          <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
-        </button>
-        {#if $kernelBusy}
-          <!-- No fade-in: the kill switch must never look half-disabled. -->
-          <button
-            class="stop-kernel-btn"
-            onclick={() => { restartKernel(); }}
-            title="Stop the running computation (restarts the kernel; notebook variables are cleared)"
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="2.5" y="2.5" width="9" height="9" rx="1.5"/>
-            </svg>
-            <span class="btn-label">Stop</span>
-          </button>
-        {/if}
-        <span class="header-meta">
-          {#if $notebookDirty}
-            <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
-          {/if}
-          {$currentNotebook.cells.length} {$currentNotebook.cells.length === 1 ? 'cell' : 'cells'}
-        </span>
-        {#if $syncStatus === 'connected'}
-          <!-- Saving writes this file in place, so the state on disk (and in
-               git) is what you see. Worth showing: it changes what Ctrl+S does.
-               With a companion owning a directory, the answer differs per tab —
-               one opened from a link or the library has no file to write to,
-               and a badge that claimed otherwise would make Ctrl+S surprising. -->
-          {#if $currentOrigin.kind === 'disk'}
-            <span class="sync-badge" title={`Linked to ${$currentOrigin.path}. Ctrl/Cmd+S writes this file.`}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/>
-                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>
-              </svg>
-              {$currentOrigin.path.split('/').pop()}
-            </span>
-          {:else}
-            <span
-              class="sync-badge unlinked"
-              title={`This notebook has no file on disk. Ctrl/Cmd+S exports a download; the Storage panel lists the ${$syncFiles.length} notebook${$syncFiles.length === 1 ? '' : 's'} the companion is serving.`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/>
-                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>
-                <path d="M3 3l18 18"/>
-              </svg>
-              not on disk
-            </span>
-          {/if}
-        {/if}
-        <button
-          class="restart-kernel-btn"
-          class:armed={restartArmed}
-          onclick={onRestartClick}
-          onblur={() => (restartArmed = false)}
-          title={restartArmed
-            ? 'Click again to restart: variables and execution numbers are cleared'
-            : 'Restart kernel'}
-          aria-label={restartArmed ? 'Confirm restart kernel' : 'Restart kernel'}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 3-6.7"/>
-            <path d="M3 4v5h5"/>
-          </svg>
-          <span class="btn-label">{restartArmed ? 'Restart?' : 'Restart'}</span>
-        </button>
-        <button
-          class="run-all-header-btn"
-          onclick={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
-          title="Run All Cells"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <path d="M3 2l9 5-9 5V2z"/>
-          </svg>
-          <span class="btn-label">Run All</span>
-        </button>
+        <RunMenu
+          busy={$kernelBusy}
+          reactive={$reactiveMode}
+          stale={$staleCells.size}
+          onrunall={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
+          onrunstale={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
+          onstop={() => restartKernel()}
+          onrestart={() => restartKernel()}
+          onrestartrunall={() => restartKernel({ runAll: true })}
+          ontogglereactive={() => reactiveMode.update((v) => !v)}
+        />
         <span class="header-divider" aria-hidden="true"></span>
       {/if}
       <button
@@ -1371,6 +1266,20 @@
       </aside>
     {/if}
   </div>
+
+  <StatusBar
+    origin={$currentOrigin}
+    connected={$syncStatus === 'connected'}
+    cells={$currentNotebook ? $currentNotebook.cells.length : null}
+    dirty={$notebookDirty}
+    busy={$kernelBusy}
+    reactive={$reactiveMode}
+    stale={$staleCells.size}
+    kernel={$kernelMode}
+    onrunstale={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
+    ontogglereactive={() => reactiveMode.update((v) => !v)}
+    onkernel={() => { setPanelOpen(true); rightSidebarTab = 'info'; }}
+  />
 
   <CommandPalette
     bind:visible={showCommandPalette}
@@ -1626,20 +1535,9 @@
     color: var(--accent);
   }
 
-  .header-meta {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Header controls never wrap their own text into two lines ("Reactive
-     on", "16 cells"); when the row gets tight the media query below drops
-     the labels instead. */
-  .notebooks-btn,
-  .run-all-header-btn,
-  .restart-kernel-btn {
+  /* Header controls never wrap their own text into two lines; when the row
+     gets tight the media query below drops the labels instead. */
+  .notebooks-btn {
     display: flex;
     align-items: center;
     gap: 0.3rem;
@@ -1654,28 +1552,6 @@
     transition: all 0.15s ease;
   }
 
-  .restart-kernel-btn:hover {
-    background-color: var(--surface-hover);
-    color: var(--heading);
-  }
-
-  /* Waiting for the confirming click: the warning colours, so the second click
-     is a decision and not a reflex. */
-  .restart-kernel-btn.armed {
-    background: var(--warn-bg);
-    border-color: var(--warn-border);
-    color: var(--warn-fg);
-  }
-
-  .run-stale-btn,
-  .reactive-toggle,
-  .header-meta,
-  .sync-badge.unlinked { color: var(--text-faint); }
-
-  .sync-badge {
-    white-space: nowrap;
-  }
-
   /* Awkward middle widths (sidebar open, split screens): collapse the
      button labels to icons well before anything is forced to wrap. The
      ≤640px block below tightens paddings further for phones. */
@@ -1684,10 +1560,7 @@
     .kbd-hint {
       display: none;
     }
-    .notebooks-btn,
-    .run-all-header-btn,
-    .run-stale-btn,
-    .reactive-toggle {
+    .notebooks-btn {
       gap: 0;
     }
   }
@@ -1699,107 +1572,14 @@
     margin: 0 0.15rem;
   }
 
-  .unsaved-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-pill);
-    background: var(--danger-solid);
-    box-shadow: 0 0 0 2px var(--danger-bg);
-    margin-right: 0.45rem;
-  }
-
-  .run-all-header-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--accent-solid);
-    color: var(--accent-on-solid);
-    border: none;
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .run-all-header-btn:hover {
-    background-color: var(--accent-solid-hover);
-  }
-
-  .run-stale-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--warn-bg);
-    color: var(--warn-fg);
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .run-stale-btn:hover {
-    filter: brightness(0.97);
-  }
-
-  .reactive-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .reactive-toggle:hover { background-color: var(--surface-hover); color: var(--heading); }
-
-  /* Active state toggles are QUIET (weak accent fill): solid teal is reserved
-     for the page's one primary action, Run All. */
-  .reactive-toggle.active {
-    background-color: var(--accent-weak-bg);
-    color: var(--accent-weak-fg);
-    border-color: var(--accent-weak-border);
-  }
-
-  .stop-kernel-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--danger-bg);
-    color: var(--danger-fg);
-    border: 1px solid var(--danger-border);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: filter 0.15s ease;
-  }
-
-  .stop-kernel-btn:hover { filter: brightness(0.95); }
-
   /* Mobile: collapse the header to icons so it fits narrow screens. */
   @media (max-width: 640px) {
     .app-header { padding: 0.4rem 0.5rem; }
     .header-left,
     .header-right { gap: 0.1rem; }
     .btn-label,
-    .header-meta,
     .kbd-hint { display: none; }
-    .notebooks-btn,
-    .run-all-header-btn,
-    .run-stale-btn,
-    .reactive-toggle { padding: 0.4rem 0.45rem; gap: 0; }
+    .notebooks-btn { padding: 0.4rem 0.45rem; gap: 0; }
   }
 
   .content-wrapper {
@@ -1830,19 +1610,6 @@
   }
 
   /* Invisible grab strip over the left border; teal on hover/drag. */
-  .sync-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--accent);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-input);
-    padding: 0.15rem 0.4rem;
-    white-space: nowrap;
-  }
-
   .panel-resize-handle {
     position: absolute;
     left: 0;
