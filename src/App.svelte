@@ -33,7 +33,7 @@
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
   import { startOfflineCache } from './lib/utils/offlineCache';
-  import { loadEnvironment } from './lib/stores/environment';
+  import { freezeEnvironment, loadEnvironment, unfreezeEnvironment } from './lib/stores/environment';
   import { pinNotebookImports } from './lib/stores/pinImports';
   import {
     BACKUP_SNOOZE_KEY,
@@ -962,6 +962,26 @@
         break;
       case 'restore-library':
         restoreLibrary();
+        break;
+      case 'freeze-environment':
+        void (async () => {
+          try {
+            const { count } = await freezeEnvironment();
+            showToast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
+          } catch (error: any) {
+            showToast(error?.message ?? 'Could not freeze.', 'error');
+          }
+        })();
+        break;
+      case 'unfreeze-environment':
+        void (async () => {
+          try {
+            await unfreezeEnvironment();
+            showToast('Unfrozen. This folder follows the network again.', 'info');
+          } catch (error: any) {
+            showToast(error?.message ?? 'Could not unfreeze.', 'error');
+          }
+        })();
         break;
       case 'restart-kernel':
         restartKernel();

@@ -514,7 +514,8 @@
                 ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
               {:else}
                 Not frozen: this folder follows whatever its imports resolve to today.
-                Run All first — only what has actually loaded can be pinned.
+                Freezing writes {$lockFolder ? `${$lockFolder}/` : ''}tangent.lock, pinning each library to the exact
+                bytes it loaded. Run All first — only what has actually loaded can be pinned.
               {/if}
             </p>
           {/if}

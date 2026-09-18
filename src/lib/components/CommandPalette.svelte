@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatDate } from '../utils/format';
   import { libraryEntries, originLabel } from '../utils/notebookLibrary';
+  import { currentLock, lockFolder } from '../stores/environment';
 
   interface Props {
     visible?: boolean;
@@ -25,7 +26,7 @@
   let selectedIndex = $state(0);
   let inputElement: HTMLInputElement = $state(null as any);
 
-  const commands: Command[] = [
+  const baseCommands: Command[] = [
     {
       id: 'new-notebook',
       name: 'New Notebook',
@@ -215,6 +216,34 @@
       action: () => oncommand?.({ id: 'keyboard-shortcuts' })
     }
   ];
+
+  /**
+   * Freezing needs a folder, so it is only offered when the notebook on screen
+   * has one — and it is offered by the name of the file it writes, because
+   * `tangent.lock` is what you go looking for afterwards.
+   */
+  const commands: Command[] = $derived(
+    $lockFolder === null
+      ? baseCommands
+      : [
+          ...baseCommands,
+          $currentLock?.frozen
+            ? {
+                id: 'unfreeze-environment',
+                name: 'Unfreeze Environment (tangent.lock)',
+                description: 'Follow what this folder’s imports resolve to again',
+                icon: 'lock',
+                action: () => oncommand?.({ id: 'unfreeze-environment' }),
+              }
+            : {
+                id: 'freeze-environment',
+                name: 'Freeze Environment (tangent.lock)',
+                description: 'Pin every library this folder has loaded to the exact bytes it loaded',
+                icon: 'lock',
+                action: () => oncommand?.({ id: 'freeze-environment' }),
+              },
+        ]
+  );
 
   // The library, as commands. This is how you open another notebook day to day
   // — type its name here — which is what leaves the Storage panel free to be
