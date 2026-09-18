@@ -29,6 +29,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # No FUSE on a runner: the AppImage tools run by extracting themselves.
+  APPIMAGE_EXTRACT_AND_RUN: 1
+
 jobs:
   appimage:
     runs-on: ubuntu-22.04
@@ -71,16 +75,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --bundles appimage
-          tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: tangent/note ${{ github.event.inputs.tag || github.ref_name }}
-          releaseBody: |
-            **Linux (AppImage)** — download it, `chmod +x`, run it. Nothing to install.
+      - name: Build the AppImage
+        run: npx tauri build --bundles appimage
 
-            The app opens `~/tangent-notebooks` the first time; File → Open folder… opens another.
-          releaseDraft: true
-          prerelease: false
+      # An AppImage built on 22.04 carries that release's Wayland libraries, and
+      # on a newer desktop they lose to the host's: WebKit's rendering process
+      # dies with "Could not create default EGL display" and the window is blank
+      # — which is exactly what the first release did. Every desktop that runs a
+      # Wayland app already has these, so the AppImage is repacked without them.
+      - name: Repack without the bundled Wayland libraries
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          APPIMAGE=$(ls *.AppImage)
+          APPDIR=$(ls -d *.AppDir)
+          rm -f "$APPIMAGE" "$APPDIR"/usr/lib/libwayland-*.so.*
+          ARCH=x86_64 OUTPUT="$APPIMAGE" ~/.cache/tauri/linuxdeploy-plugin-appimage.AppImage --appdir "$APPDIR"
+          ls -lh "$APPIMAGE"
+
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          FILE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage)
+          NOTES=$(cat <<'EOF'
+          **Linux (AppImage)** — download it, `chmod +x`, run it. Nothing to install.
+
+          It opens `~/tangent-notebooks` the first time; File → Open folder… opens another. On first launch it writes a desktop entry and an icon under `~/.local/share` so your dock knows what it is; delete `tangent-note.desktop` and `tangent-note.png` there to undo that.
+          EOF
+          )
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" --draft --title "tangent/note $TAG" --notes "$NOTES" "$FILE"
+          fi

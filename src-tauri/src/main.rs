@@ -174,7 +174,54 @@ fn open_folder(app: tauri::AppHandle) {
         });
 }
 
+/// Let the desktop know what this app is, when it arrives as an AppImage.
+///
+/// A window gets its icon from the `.desktop` file whose name matches the
+/// application — that is how GNOME does it, on Wayland and X11 alike — and an
+/// AppImage installs none, so the dock draws a blank square. Two small files in
+/// the reader's own home fix it, and they are rewritten at every launch because
+/// an AppImage is a file people move around.
+///
+/// Only for an AppImage: an installed package brings its own, and a binary run
+/// from a build directory is not something to advertise to the desktop.
+fn integrate_appimage() {
+    let Some(appimage) = std::env::var_os("APPIMAGE") else {
+        return;
+    };
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return;
+    };
+
+    let icons = home.join(".local/share/icons/hicolor/256x256/apps");
+    let applications = home.join(".local/share/applications");
+    if fs::create_dir_all(&icons).is_err() || fs::create_dir_all(&applications).is_err() {
+        return;
+    }
+
+    let _ = fs::write(
+        icons.join("tangent-note.png"),
+        include_bytes!("../icons/128x128@2x.png").as_slice(),
+    );
+
+    // StartupWMClass is what ties a running window back to this entry.
+    let entry = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=tangent/note\n\
+         Comment=Notebooks for JavaScript\n\
+         Exec={} %u\n\
+         Icon=tangent-note\n\
+         Terminal=false\n\
+         Categories=Development;Science;\n\
+         StartupWMClass=tangent-note\n",
+        appimage.to_string_lossy()
+    );
+    let _ = fs::write(applications.join("tangent-note.desktop"), entry);
+}
+
 fn main() {
+    integrate_appimage();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -230,15 +277,22 @@ fn main() {
                 .map(|name| name.to_string_lossy().to_string())
                 .unwrap_or_else(|| folder.to_string_lossy().to_string());
 
-            WebviewWindowBuilder::new(
+            let mut window = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External(format!("http://localhost:{port}").parse()?),
             )
             .title(format!("tangent/note — {name}"))
             .inner_size(1360.0, 900.0)
-            .min_inner_size(640.0, 480.0)
-            .build()?;
+            .min_inner_size(640.0, 480.0);
+
+            // Without this the window carries no icon at all, and the dock
+            // draws a blank square: a window built here does not inherit the
+            // bundle's icon the way a window declared in tauri.conf.json does.
+            if let Some(icon) = app.default_window_icon().cloned() {
+                window = window.icon(icon)?;
+            }
+            window.build()?;
 
             println!("tangent/note  {}  http://localhost:{port}", folder.display());
             Ok(())

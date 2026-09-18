@@ -147,6 +147,8 @@ npm run desktop:build    # a .deb and an AppImage in src-tauri/target/release/bu
 
 Pushing a `v*` tag builds the AppImage on CI and attaches it to a draft release (`.github/workflows/release-desktop.yml`). Only Linux, for now: Tauri cannot cross-compile — the window is the system's own webview — and of the three, Linux is the only one that opens without a paid certificate. An unsigned `.dmg` tells macOS users their download is "damaged", and an unsigned `.exe` puts SmartScreen in front of it. The companion itself cross-compiles fine (`deno compile --target`), so adding those is a matter of extending the matrix.
 
+Two things the AppImage needs that the bundler does not do. It is repacked without the Wayland libraries the build machine put in it — on a newer desktop those lose to the host's and WebKit's rendering process dies with *Could not create default EGL display*, leaving a blank window. And on first launch it writes `tangent-note.desktop` and an icon under `~/.local/share`, because GNOME takes a window's icon from the desktop entry that matches it and an AppImage installs none; deleting those two files undoes it.
+
 It needs [Rust](https://rustup.rs) and [Deno](https://deno.com) to build, and on Linux the WebKitGTK development packages Tauri asks for; what it produces needs neither.
 
 On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
