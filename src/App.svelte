@@ -141,7 +141,9 @@
       // Not remembered, but still done.
     }
   }
-  let rightSidebarTab = $state<PanelTab>('info');
+  // Files, not Info: what is here before what it is made of. Info is read once,
+  // and the panel's first job is to answer "where is the rest of my folder".
+  let rightSidebarTab = $state<PanelTab>('storage');
 
   /**
    * Resolves once the notebook library has migrated the legacy autosave slot
@@ -330,10 +332,6 @@
           if (get(sessions).length === 0 && hello.files.length > 0) {
             openSyncFile(hello.files[0].path);
           }
-          // A folder with more than one notebook opens showing the folder: one
-          // of them is on screen, and the answer to "where are the others" is
-          // the panel, not a hunt for it.
-          if (hello.files.length > 1) rightSidebarTab = 'storage';
         }
         for (const session of get(sessions)) {
           const origin = get(session.origin);
