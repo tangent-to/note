@@ -192,12 +192,24 @@ fn integrate_appimage() {
         return;
     };
 
+    let scalable = home.join(".local/share/icons/hicolor/scalable/apps");
     let icons = home.join(".local/share/icons/hicolor/256x256/apps");
     let applications = home.join(".local/share/applications");
-    if fs::create_dir_all(&icons).is_err() || fs::create_dir_all(&applications).is_err() {
+    if fs::create_dir_all(&scalable).is_err()
+        || fs::create_dir_all(&icons).is_err()
+        || fs::create_dir_all(&applications).is_err()
+    {
         return;
     }
 
+    // The drawing, not a picture of it: a dock scales an icon to whatever size
+    // its theme asks for, and a 256px bitmap enlarged or shrunk by a fraction
+    // is exactly where an icon goes soft. The PNG stays for anything that does
+    // not read SVG.
+    let _ = fs::write(
+        scalable.join("tangent-note.svg"),
+        include_str!("../icons/tangent-note.svg"),
+    );
     let _ = fs::write(
         icons.join("tangent-note.png"),
         include_bytes!("../icons/128x128@2x.png").as_slice(),
