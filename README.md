@@ -153,6 +153,12 @@ That item is in the app's own File menu, not a native menu bar: a menu bar holdi
 
 The companion travels inside the bundle as a sidecar binary (`deno compile --include dist`, so the built app is inside it too). That binary carries the Deno runtime and weighs about 100 MB, which is most of the bundle; the window itself is the system's own webview, and the Rust side is under 10 MB.
 
+Because the built app is *inside* that binary, a change to the page is invisible until the sidecar is compiled again. While working on the app, set `TANGENT_NOTE_DIST` to the repository's `dist` and the companion serves it from disk instead — then `npm run build` is the whole loop:
+
+```bash
+TANGENT_NOTE_DIST=$PWD/dist ./src-tauri/target/release/tangent-note
+```
+
 The icons are generated from `src-tauri/app-icon.png` (rendered from `src/assets/images/logo.svg`) with `npx tauri icon src-tauri/app-icon.png`.
 
 ### Keyboard Shortcuts

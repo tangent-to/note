@@ -163,7 +163,14 @@
       </button>
       <div class="run-sep" role="separator"></div>
       <button role="menuitemcheckbox" class="run-item check" aria-checked={reactive} onclick={() => run(ontogglereactive)}>
-        <span class="tick" aria-hidden="true">{reactive ? '✓' : ''}</span>
+        <!-- The box is drawn whether or not it is ticked: a checkbox that is
+             only there when checked reads as an item that has moved. -->
+        <svg class="box" class:on={reactive} width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="13" height="13" rx="3.5" fill={reactive ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="1.4"/>
+          {#if reactive}
+            <path d="M4.5 8.3l2.4 2.4 4.6-5" fill="none" stroke="var(--surface)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+          {/if}
+        </svg>
         <span>Reactive mode</span>
       </button>
       <div class="run-sep" role="separator"></div>
@@ -290,11 +297,12 @@
     gap: 0.4rem;
   }
 
-  .tick {
-    display: inline-block;
-    width: 0.8rem;
-    color: var(--accent-weak-fg);
+  .box {
+    flex-shrink: 0;
+    color: var(--border-strong);
   }
+
+  .box.on { color: var(--accent-solid); }
 
   .run-item kbd {
     flex-shrink: 0;

@@ -145,18 +145,24 @@ fn main() {
             let folder = notebooks_folder(&handle);
             let port = free_port()?;
 
-            let (mut events, child) = handle
-                .shell()
-                .sidecar("note-serve")?
-                .args([
-                    folder.to_string_lossy().to_string(),
-                    "--port".into(),
-                    port.to_string(),
-                    // A window killed rather than closed never gets to tidy up;
-                    // the companion watches its own stdin and goes with it.
-                    "--exit-with-parent".into(),
-                ])
-                .spawn()?;
+            let mut args = vec![
+                folder.to_string_lossy().to_string(),
+                "--port".into(),
+                port.to_string(),
+                // A window killed rather than closed never gets to tidy up;
+                // the companion watches its own stdin and goes with it.
+                "--exit-with-parent".into(),
+            ];
+            // Working on the app itself: the built files live inside the
+            // sidecar, so a change to the page would otherwise mean recompiling
+            // 100 MB of Deno to see it. Point this at the repository's `dist`
+            // and `npm run build` is the whole loop.
+            if let Some(dist) = std::env::var_os("TANGENT_NOTE_DIST") {
+                args.push("--dist".into());
+                args.push(dist.to_string_lossy().to_string());
+            }
+
+            let (mut events, child) = handle.shell().sidecar("note-serve")?.args(args).spawn()?;
             // The child is owned by the app, so it lives as long as the window
             // and is killed with it rather than outliving it.
             app.manage(Companion(Mutex::new(Some(child))));
