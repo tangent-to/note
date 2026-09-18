@@ -486,15 +486,18 @@
    * IndexedDB and are deliberately untouched — they have their own rows.
    */
   /** Download everything this browser holds, and remember that it was done. */
-  async function backupLibrary() {
+  async function backupLibrary(opts: { includeLibraries?: boolean } = {}) {
     try {
-      const { bytes, filename, notebooks, datasets: count } = await createLibraryBackup();
+      const { bytes, filename, notebooks, datasets: count, files, libraries } =
+        await createLibraryBackup(new Date(), opts);
       downloadBytes(bytes, filename, 'application/zip');
       markBackedUp();
+      const parts = [`${notebooks} notebook${notebooks === 1 ? '' : 's'}`];
+      if (count) parts.push(`${count} dataset${count === 1 ? '' : 's'}`);
+      if (files) parts.push(`${files} file${files === 1 ? '' : 's'}`);
+      if (libraries) parts.push(`${libraries} library file${libraries === 1 ? '' : 's'}`);
       showToast(
-        `Backed up ${notebooks} notebook${notebooks === 1 ? '' : 's'}` +
-          (count ? ` and ${count} dataset${count === 1 ? '' : 's'}` : '') +
-          ` to ${filename}. Keep it somewhere other than this browser.`,
+        `Backed up ${parts.join(', ')} to ${filename}. Keep it somewhere other than this browser.`,
         'info'
       );
     } catch (error: any) {
@@ -1322,7 +1325,7 @@
           onopenDiskFile={({ path }) => openDiskFile(path)}
           ondeleteNotebook={({ entry }) => removeFromLibrary(entry)}
           onclearBrowserData={clearBrowserData}
-          onbackup={backupLibrary}
+          onbackup={({ includeLibraries }) => void backupLibrary({ includeLibraries })}
           onrestore={restoreLibrary}
         />
       </aside>

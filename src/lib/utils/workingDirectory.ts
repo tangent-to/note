@@ -9,10 +9,13 @@
  * and a leading `/` means the served root. Nothing outside the served directory
  * can be read or written; the companion refuses it.
  *
- * Without the companion there is no folder to read or write, so the same calls
- * degrade rather than break: reads come from the datasets dropped into the
- * Storage panel, and a save becomes a download. A notebook written against the
- * working directory still runs online.
+ * Without the companion the notebook still has a folder: its own, in the
+ * browser's private file system (opfs.ts). The same calls work there, so a
+ * notebook written against the working directory runs online too — what changes
+ * is that the folder is storage rather than a place in a file manager, which is
+ * why the Storage panel lists those files and can download them. Reads also fall
+ * back to the datasets dropped into that panel. Where even that is unavailable,
+ * a save becomes a download rather than an error.
  *
  * `FileAttachment` follows Observable's API, so notebooks move between the two
  * without rewriting their data loading.
@@ -21,20 +24,39 @@
  * here are tested without a browser.
  */
 
-export interface WorkingDirectory {
-  /** Where the companion is, e.g. `http://localhost:4321`. */
-  base: string;
-  /** The notebook's folder, relative to the served root; `''` at the root. */
-  dir: string;
+/**
+ * Where a notebook's files live.
+ *
+ * `companion` is a real folder on disk, served by note serve. `virtual` is the
+ * notebook's own folder in the browser's private file system, which is what
+ * there is when nothing serves the notebook — storage rather than a folder you
+ * can open in a file manager, but a real working directory as far as a cell is
+ * concerned.
+ */
+export type WorkingDirectory =
+  | { kind: 'companion'; base: string; dir: string }
+  | { kind: 'virtual'; dir: string };
+
+/**
+ * What a working directory can do. Two implementations, one contract, so
+ * FileAttachment and save do not know which kind they are talking to.
+ */
+export interface FileStore {
+  /** The file's bytes, or null when it is not there. */
+  read(name: string): Promise<Response | null>;
+  write(name: string, bytes: Uint8Array, mimeType: string): Promise<{ path: string; size: number }>;
+  /** Where a missing file was looked for, for the error message. */
+  describe(): string;
+  /** A URL a library can fetch itself, where the store has one. */
+  url?(name: string): string;
 }
 
 export interface FileApiDeps {
-  /** The working directory for the cell running now, or null when there is none. */
-  workingDirectory: () => WorkingDirectory | null;
-  fetch: typeof fetch;
+  /** The store for the cell running now, or null when it has no folder at all. */
+  store: () => FileStore | null;
   /** A dataset's text from the Storage panel, or undefined. */
   datasetText: (name: string) => Promise<string | undefined>;
-  /** Hand bytes to the reader as a download (no working directory). */
+  /** Hand bytes to the reader as a download (no folder to write to). */
   download: (name: string, bytes: Uint8Array, mimeType: string) => void;
   /** d3, for csv/tsv parsing and formatting. */
   d3: () => Promise<any>;
@@ -92,9 +114,66 @@ export function resolveName(wd: WorkingDirectory, name: string): string {
   return out.join('/');
 }
 
-export function fileUrl(wd: WorkingDirectory, name: string): string {
+export function fileUrl(wd: Extract<WorkingDirectory, { kind: 'companion' }>, name: string): string {
   const path = resolveName(wd, name).split('/').map(encodeURIComponent).join('/');
   return `${wd.base.replace(/\/+$/, '')}/__files/${path}`;
+}
+
+/** A folder on disk, through the companion. */
+export function companionStore(
+  wd: Extract<WorkingDirectory, { kind: 'companion' }>,
+  doFetch: typeof fetch
+): FileStore {
+  return {
+    describe: () => (wd.dir ? `${wd.dir}/` : 'the served directory'),
+    url: (name) => fileUrl(wd, name),
+    async read(name) {
+      let response: Response;
+      try {
+        response = await doFetch(fileUrl(wd, name), { cache: 'no-store' });
+      } catch {
+        throw new Error('note serve is not reachable.');
+      }
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(await responseError(response, `read failed (${response.status})`));
+      return response;
+    },
+    async write(name, bytes, mimeType) {
+      let response: Response;
+      try {
+        response = await doFetch(fileUrl(wd, name), {
+          method: 'PUT',
+          body: bytes.slice(),
+          headers: { 'content-type': mimeType },
+        });
+      } catch {
+        throw new Error('note serve is not reachable.');
+      }
+      if (!response.ok) throw new Error(await responseError(response, `write failed (${response.status})`));
+      return (await response.json()) as { path: string; size: number };
+    },
+  };
+}
+
+export interface VirtualBackend {
+  read(dir: string, name: string): Promise<{ bytes: ArrayBuffer; type: string } | null>;
+  write(dir: string, name: string, bytes: Uint8Array): Promise<{ path: string; size: number }>;
+}
+
+/** The notebook's own folder in the browser's private file system. */
+export function virtualStore(
+  wd: Extract<WorkingDirectory, { kind: 'virtual' }>,
+  backend: VirtualBackend
+): FileStore {
+  return {
+    describe: () => 'this notebook’s files',
+    async read(name) {
+      const file = await backend.read(wd.dir, name);
+      if (!file) return null;
+      return new Response(file.bytes, { headers: { 'content-type': file.type || mimeTypeOf(name) } });
+    },
+    write: (name, bytes) => backend.write(wd.dir, name, bytes),
+  };
 }
 
 async function responseError(response: Response, fallback: string): Promise<string> {
@@ -191,26 +270,25 @@ export function createFileApi(deps: FileApiDeps): FileApi {
         `working directory. Drop "${name}" into the Storage panel to read it here.`
     );
 
-  /** The file's bytes, from the working directory or the Storage panel. */
+  /**
+   * The file's bytes: the working directory first, then the datasets dropped
+   * into the Storage panel — a notebook written before it had a folder still
+   * finds its data.
+   */
   async function read(name: string): Promise<Response> {
-    const wd = deps.workingDirectory();
-    if (!wd) {
-      const text = await deps.datasetText(name);
-      if (text === undefined) throw noDirectory(name);
-      return new Response(text, { headers: { 'content-type': mimeTypeOf(name) } });
+    const store = deps.store();
+    if (store) {
+      try {
+        const response = await store.read(name);
+        if (response) return response;
+      } catch (error: any) {
+        throw new Error(`FileAttachment("${name}"): ${error?.message ?? error}`);
+      }
     }
-    let response: Response;
-    try {
-      response = await deps.fetch(fileUrl(wd, name), { cache: 'no-store' });
-    } catch {
-      throw new Error(`FileAttachment("${name}"): note serve is not reachable.`);
-    }
-    if (!response.ok) {
-      const where = wd.dir ? `${wd.dir}/` : 'the served directory';
-      const fallback = response.status === 404 ? `no file "${name}" in ${where}` : `read failed (${response.status})`;
-      throw new Error(`FileAttachment("${name}"): ${await responseError(response, fallback)}`);
-    }
-    return response;
+    const text = await deps.datasetText(name);
+    if (text !== undefined) return new Response(text, { headers: { 'content-type': mimeTypeOf(name) } });
+    if (store) throw new Error(`FileAttachment("${name}"): no file "${name}" in ${store.describe()}.`);
+    throw noDirectory(name);
   }
 
   function FileAttachment(name: string): FileAttachmentHandle {
@@ -229,8 +307,8 @@ export function createFileApi(deps: FileApiDeps): FileApi {
       name,
       mimeType: mimeTypeOf(name),
       async url() {
-        const wd = deps.workingDirectory();
-        if (wd) return fileUrl(wd, name);
+        const direct = deps.store()?.url?.(name);
+        if (direct) return direct;
         return URL.createObjectURL(await (await read(name)).blob());
       },
       async blob() {
@@ -265,29 +343,19 @@ export function createFileApi(deps: FileApiDeps): FileApi {
   async function save(name: string, data: unknown) {
     if (typeof name !== 'string' || !name) throw new Error('save needs a file name, e.g. save("summary.json", value).');
     const { bytes, mimeType } = await encodeForSave(name, data, deps.d3);
-    const wd = deps.workingDirectory();
+    const store = deps.store();
 
-    if (!wd) {
-      // No folder to write to: hand it over as a download, the one way a
-      // browser page can put a file on the reader's disk.
+    if (!store) {
+      // Nowhere to write: hand it over as a download, the one way a browser
+      // page with no file system can put a file on the reader's disk.
       deps.download(name.slice(name.lastIndexOf('/') + 1), bytes, mimeType);
       return { downloaded: name, size: bytes.length };
     }
-
-    let response: Response;
     try {
-      response = await deps.fetch(fileUrl(wd, name), {
-        method: 'PUT',
-        body: bytes.slice(),
-        headers: { 'content-type': mimeType },
-      });
-    } catch {
-      throw new Error(`save("${name}"): note serve is not reachable.`);
+      return await store.write(name, bytes, mimeType);
+    } catch (error: any) {
+      throw new Error(`save("${name}"): ${error?.message ?? error}`);
     }
-    if (!response.ok) {
-      throw new Error(`save("${name}"): ${await responseError(response, `write failed (${response.status})`)}`);
-    }
-    return (await response.json()) as { path: string; size: number };
   }
 
   return { FileAttachment, save };

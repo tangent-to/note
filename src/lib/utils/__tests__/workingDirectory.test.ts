@@ -10,7 +10,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { parseHTML } from 'linkedom';
 import {
+  companionStore,
   createFileApi,
+  virtualStore,
   encodeForSave,
   fileUrl,
   mimeTypeOf,
@@ -55,7 +57,7 @@ function fakeD3() {
 }
 const d3 = fakeD3();
 
-const WD: WorkingDirectory = { base: 'http://localhost:4321', dir: 'compo/oa' };
+const WD = { kind: 'companion', base: 'http://localhost:4321', dir: 'compo/oa' } as const;
 const getD3 = async () => d3;
 const decode = (b: Uint8Array) => new TextDecoder().decode(b);
 
@@ -84,8 +86,7 @@ function api(overrides: Partial<Parameters<typeof createFileApi>[0]> = {}) {
   });
   const download = vi.fn();
   const deps = {
-    workingDirectory: () => WD,
-    fetch: companion.fetch,
+    store: () => companionStore(WD, companion.fetch),
     datasetText: async () => undefined,
     download,
     d3: getD3,
@@ -132,7 +133,7 @@ describe('FileAttachment with a working directory', () => {
 
   it('says which file is missing and where it looked', async () => {
     const { FileAttachment } = api();
-    await expect(FileAttachment('nope.csv').text()).rejects.toThrow(/FileAttachment\("nope\.csv"\).*No file compo\/oa\/nope\.csv/);
+    await expect(FileAttachment('nope.csv').text()).rejects.toThrow(/FileAttachment\("nope\.csv"\).*no file "nope\.csv" in compo\/oa\//);
   });
 
   it('gives the file’s own URL, for libraries that want one', async () => {
@@ -144,14 +145,14 @@ describe('FileAttachment with a working directory', () => {
 describe('FileAttachment without note serve', () => {
   it('reads a dataset dropped into Storage instead', async () => {
     const { FileAttachment } = api({
-      workingDirectory: () => null,
+      store: () => null,
       datasetText: async (name) => (name === 'penguins.csv' ? 'species,mass\nAdelie,3750\n' : undefined),
     });
     expect((await FileAttachment('penguins.csv').csv({ typed: true }))[0].mass).toBe(3750);
   });
 
   it('explains what to do when the file is in neither place', async () => {
-    const { FileAttachment } = api({ workingDirectory: () => null });
+    const { FileAttachment } = api({ store: () => null });
     await expect(FileAttachment('penguins.csv').text()).rejects.toThrow(/not a file served by note serve.*Storage panel/);
   });
 });
@@ -164,7 +165,7 @@ describe('save', () => {
   });
 
   it('downloads instead when there is no folder to write to', async () => {
-    const { save, download, companion } = api({ workingDirectory: () => null });
+    const { save, download, companion } = api({ store: () => null });
     expect(await save('figures/fig1.svg', '<svg/>')).toEqual({ downloaded: 'figures/fig1.svg', size: 6 });
     expect(download).toHaveBeenCalledWith('fig1.svg', expect.any(Uint8Array), 'image/svg+xml');
     expect(companion.calls).toEqual([]);
@@ -172,7 +173,7 @@ describe('save', () => {
 
   it('passes the companion’s refusal through', async () => {
     const refusing = vi.fn(async () => new Response(JSON.stringify({ error: 'oa/piece.html is a notebook; save() will not overwrite it.' }), { status: 409 }));
-    const { save } = api({ fetch: refusing as unknown as typeof fetch });
+    const { save } = api({ store: () => companionStore(WD, refusing as unknown as typeof fetch) });
     await expect(save('piece.html', 'x')).rejects.toThrow(/is a notebook/);
   });
 });
@@ -214,5 +215,58 @@ describe('encodeForSave', () => {
     const circular: any = {};
     circular.self = circular;
     await expect(enc('a.json', circular)).rejects.toThrow(/cannot be written as JSON/);
+  });
+});
+
+describe('the virtual folder, when nothing serves the notebook', () => {
+  /** A stand-in for the browser's private file system. */
+  function fakeOpfs(files: Record<string, string> = {}) {
+    const disk = new Map(Object.entries(files));
+    return {
+      disk,
+      backend: {
+        async read(dir: string, name: string) {
+          const text = disk.get(`${dir}/${name}`);
+          return text === undefined ? null : { bytes: new TextEncoder().encode(text).buffer, type: '' };
+        },
+        async write(dir: string, name: string, bytes: Uint8Array) {
+          disk.set(`${dir}/${name}`, decode(bytes));
+          return { path: `${dir}/${name}`, size: bytes.length };
+        },
+      },
+    };
+  }
+
+  const virtualApi = (files?: Record<string, string>) => {
+    const opfs = fakeOpfs(files);
+    const download = vi.fn();
+    const wd = { kind: 'virtual', dir: 'notebooks/taaiot' } as const;
+    return {
+      ...createFileApi({
+        store: () => virtualStore(wd, opfs.backend),
+        datasetText: async () => undefined,
+        download,
+        d3: getD3,
+      }),
+      opfs,
+      download,
+    };
+  };
+
+  it('reads and writes the notebook’s own files', async () => {
+    const { FileAttachment, save, opfs, download } = virtualApi({
+      'notebooks/taaiot/penguins.csv': 'species,mass\nAdelie,3750\n',
+    });
+    expect((await FileAttachment('penguins.csv').csv({ typed: true }))[0].mass).toBe(3750);
+    expect(await save('out/summary.json', { n: 1 })).toEqual({ path: 'notebooks/taaiot/out/summary.json', size: 12 });
+    // A save is a file the notebook can read back, not a download it cannot.
+    expect(download).not.toHaveBeenCalled();
+    expect(await FileAttachment('out/summary.json').json()).toEqual({ n: 1 });
+    expect(opfs.disk.size).toBe(2);
+  });
+
+  it('says where it looked when the file is not there', async () => {
+    const { FileAttachment } = virtualApi();
+    await expect(FileAttachment('nope.csv').text()).rejects.toThrow(/no file "nope\.csv" in this notebook’s files/);
   });
 });

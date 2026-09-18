@@ -16,7 +16,13 @@ import type { CellOutput, LogLine } from "../types/notebook";
 import { getDataset, listDatasetNames } from "./dataStore";
 import { tableSpec, type TableSpec } from "./tableData";
 import { describeValue, previewJson } from "./valuePreview";
-import { createFileApi, type WorkingDirectory } from "./workingDirectory";
+import {
+  companionStore,
+  createFileApi,
+  virtualStore,
+  type WorkingDirectory,
+} from "./workingDirectory";
+import { readVirtualFile, writeVirtualFile } from "./opfs";
 import {
   hasSyntaxErrors,
   topLevelDeclarations,
@@ -278,8 +284,18 @@ export class JavaScriptExecutor {
    */
   private setupFileAccess(): void {
     const api = createFileApi({
-      workingDirectory: () => this.workingDir,
-      fetch: (input, init) => fetch(input, init),
+      store: () => {
+        const wd = this.workingDir;
+        if (!wd) return null;
+        if (wd.kind === "companion") return companionStore(wd, (input, init) => fetch(input, init));
+        return virtualStore(wd, {
+          read: async (dir, name) => {
+            const file = await readVirtualFile(dir, name);
+            return file ? { bytes: await file.arrayBuffer(), type: file.type } : null;
+          },
+          write: writeVirtualFile,
+        });
+      },
       datasetText: async (name) => (await getDataset(name))?.text,
       download: (name, bytes, mimeType) => this.downloader(name, bytes, mimeType),
       d3: async () => {

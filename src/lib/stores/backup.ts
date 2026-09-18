@@ -19,6 +19,8 @@ import { allDatasets, datasets, putDataset, refreshDatasets } from '../utils/dat
 import {
   DAY,
   backupFolderName,
+  type CachedResponse,
+  type NotebookFile,
   backupStatus,
   buildBackupEntries,
   parseBackupEntries,
@@ -26,7 +28,60 @@ import {
   summarizeRestore,
 } from '../utils/libraryBackup';
 import { createZip, readZip } from '../utils/zip';
+import {
+  folderForNotebook,
+  listVirtualFiles,
+  opfsAvailable,
+  readVirtualFile,
+  writeVirtualFile,
+} from '../utils/opfs';
 import { sessionById, sessions, withoutRunState } from './sessions';
+
+/** The caches the service worker fills; the page can read and write them too. */
+const REMOTE_CACHE = 'tangent-remote-v1';
+
+/** Every library kept from the network, as it was received. */
+async function collectCache(): Promise<CachedResponse[]> {
+  if (typeof caches === 'undefined') return [];
+  try {
+    const cache = await caches.open(REMOTE_CACHE);
+    const out: CachedResponse[] = [];
+    for (const request of await cache.keys()) {
+      const response = await cache.match(request);
+      if (!response) continue;
+      try {
+        out.push({
+          url: request.url,
+          bytes: new Uint8Array(await response.arrayBuffer()),
+          type: response.headers.get('content-type') ?? '',
+        });
+      } catch {
+        // An opaque response cannot be read, so it cannot be carried.
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Files each notebook wrote into its own folder in this browser. */
+async function collectNotebookFiles(ids: string[]): Promise<Map<string, NotebookFile[]>> {
+  const files = new Map<string, NotebookFile[]>();
+  if (!opfsAvailable()) return files;
+  for (const id of ids) {
+    const folder = folderForNotebook(id);
+    const listed = await listVirtualFiles(folder);
+    if (listed.length === 0) continue;
+    const own: NotebookFile[] = [];
+    for (const entry of listed) {
+      const file = await readVirtualFile(folder, entry.name);
+      if (file) own.push({ name: entry.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+    }
+    if (own.length > 0) files.set(id, own);
+  }
+  return files;
+}
 
 export const LAST_BACKUP_KEY = 'tangent-last-backup';
 export const BACKUP_SNOOZE_KEY = 'tangent-backup-snoozed-until';
@@ -95,11 +150,16 @@ export async function requestStoragePersistence(): Promise<boolean> {
  * Open tabs contribute what is on screen rather than their last autosave: a
  * backup made a second after typing should contain the typing.
  */
-export async function createLibraryBackup(now = new Date()): Promise<{
+export async function createLibraryBackup(
+  now = new Date(),
+  opts: { includeLibraries?: boolean } = {}
+): Promise<{
   bytes: Uint8Array;
   filename: string;
   notebooks: number;
   datasets: number;
+  files: number;
+  libraries: number;
 }> {
   const stored = await allNotebookRecords();
   const byId = new Map<string, LibraryRecord>(stored.map((r) => [r.id, r]));
@@ -110,8 +170,19 @@ export async function createLibraryBackup(now = new Date()): Promise<{
     }
   }
   const data = await allDatasets();
-  const bytes = await createZip(buildBackupEntries([...byId.values()], data, now));
-  return { bytes, filename: `${backupFolderName(now)}.zip`, notebooks: byId.size, datasets: data.length };
+  const files = await collectNotebookFiles([...byId.keys()]);
+  // The libraries are the heavy part, and only worth carrying when the archive
+  // is meant to run somewhere else without a network.
+  const cache = opts.includeLibraries ? await collectCache() : [];
+  const bytes = await createZip(buildBackupEntries([...byId.values()], data, now, { files, cache }));
+  return {
+    bytes,
+    filename: `${backupFolderName(now)}.zip`,
+    notebooks: byId.size,
+    datasets: data.length,
+    files: [...files.values()].reduce((n, list) => n + list.length, 0),
+    libraries: cache.length,
+  };
 }
 
 /** Record that a backup was made, which also clears any snooze. */
@@ -159,6 +230,34 @@ export async function restoreLibraryBackup(bytes: Uint8Array): Promise<string[]>
     await putNotebook(record.notebook, record.origin);
   }
   for (const dataset of plan.datasetsToAdd) await putDataset(dataset);
+
+  // Files a notebook had written, back into its folder in this browser.
+  if (opfsAvailable()) {
+    for (const [id, files] of parsed.files) {
+      for (const file of files) {
+        try {
+          await writeVirtualFile(folderForNotebook(id), file.name, file.bytes);
+        } catch {
+          // One unwritable file must not stop the rest of the restore.
+        }
+      }
+    }
+  }
+
+  // And the libraries, so a restored backup runs with no network.
+  if (parsed.cache.length > 0 && typeof caches !== 'undefined') {
+    try {
+      const cache = await caches.open(REMOTE_CACHE);
+      for (const entry of parsed.cache) {
+        await cache.put(
+          entry.url,
+          new Response(entry.bytes.slice(), { headers: entry.type ? { 'content-type': entry.type } : {} })
+        );
+      }
+    } catch {
+      // No cache here (no service worker): the notebooks still restored.
+    }
+  }
 
   await Promise.all([refreshLibrary(), refreshDatasets()]);
   return summarizeRestore(plan, parsed);

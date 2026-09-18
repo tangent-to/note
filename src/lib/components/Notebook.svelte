@@ -21,6 +21,7 @@
   import { kernelFor } from '../utils/kernelClient';
   import { syncStatus } from '../utils/serverSync';
   import type { WorkingDirectory } from '../utils/workingDirectory';
+  import { folderForNotebook, opfsAvailable } from '../utils/opfs';
   import {
     activeSessionId,
     current as currentSession,
@@ -161,15 +162,26 @@
   /**
    * The folder a notebook's cells read and write, or null when it has none.
    *
-   * Only a notebook that is a file served by note serve has one: its own folder
-   * under the served root. Anything else — a library notebook, a link — runs
-   * with FileAttachment reading Storage datasets and save downloading.
+   * A notebook served by note serve gets its own folder under the served root.
+   * Anything else — a library notebook, a link — gets its own folder in the
+   * browser's private file system instead, so the same calls work; only a
+   * browser without one leaves a cell with nothing to write to.
    */
   function workingDirectoryOf(session: NotebookSession): WorkingDirectory | null {
     const origin = get(session.origin);
-    if (origin.kind !== 'disk' || get(syncStatus) !== 'connected') return null;
-    const slash = origin.path.lastIndexOf('/');
-    return { base: location.origin, dir: slash === -1 ? '' : origin.path.slice(0, slash) };
+    if (origin.kind === 'disk' && get(syncStatus) === 'connected') {
+      const slash = origin.path.lastIndexOf('/');
+      return {
+        kind: 'companion',
+        base: location.origin,
+        dir: slash === -1 ? '' : origin.path.slice(0, slash),
+      };
+    }
+    // No file on disk: the notebook's own folder in the browser's private file
+    // system, so the same calls still read and write something the notebook can
+    // find again.
+    if (opfsAvailable()) return { kind: 'virtual', dir: folderForNotebook(session.id) };
+    return null;
   }
 
   async function handleRunCell(

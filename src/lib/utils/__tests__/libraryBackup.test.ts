@@ -153,7 +153,7 @@ describe('the round trip', () => {
 
 describe('planning a restore', () => {
   const parsedWith = (records: LibraryRecord[], datasets: DatasetRecord[] = []) =>
-    ({ records, datasets, warnings: [], exact: true });
+    ({ records, datasets, files: new Map(), cache: [], warnings: [], exact: true });
 
   it('adds what is missing and never replaces newer work with an older copy', () => {
     const parsed = parsedWith([
@@ -231,5 +231,49 @@ describe('when to ask for a backup', () => {
     const datasets = [{ name: 'p.csv', type: 'text/csv', size: 1, addedAt: now - 2 * DAY }];
     expect(backupStatus([], datasets, null, now)).toEqual({ pending: 1, due: true });
     expect(backupStatus([], datasets, null, now, now + DAY).due).toBe(false);
+  });
+});
+
+describe('a notebook’s own files, and the libraries it loaded', () => {
+  const bytes = (s: string) => new TextEncoder().encode(s);
+
+  it('puts a notebook with files in its own folder, so unzipping gives the folder back', () => {
+    const entries = buildBackupEntries(
+      [record(notebook('a', 'Taaiot')), record(notebook('b', 'Luum'))],
+      [],
+      NOW,
+      { files: new Map([['a', [{ name: 'out/summary.json', bytes: bytes('{}') }]]]) }
+    );
+    const root = backupFolderName(NOW);
+    expect(paths(entries)).toEqual([
+      `${root}/luum.js`,
+      `${root}/taaiot/taaiot.js`,
+      `${root}/taaiot/out/summary.json`,
+      `${root}/.tangent/backup.json`,
+    ]);
+  });
+
+  it('round-trips those files and the libraries', async () => {
+    const zip = await createZip(
+      buildBackupEntries([record(notebook('a', 'Taaiot'))], [], NOW, {
+        files: new Map([['a', [{ name: 'out/summary.json', bytes: bytes('{"n":2}') }]]]),
+        cache: [{ url: 'https://cdn.jsdelivr.net/npm/d3/+esm', bytes: bytes('export const d3 = 1;'), type: 'text/javascript' }],
+      })
+    );
+    const parsed = parseBackupEntries(await readZip(zip));
+    expect(parsed.files.get('a')?.[0].name).toBe('out/summary.json');
+    expect(new TextDecoder().decode(parsed.files.get('a')![0].bytes)).toBe('{"n":2}');
+    expect(parsed.cache).toHaveLength(1);
+    expect(parsed.cache[0].url).toBe('https://cdn.jsdelivr.net/npm/d3/+esm');
+
+    const report = summarizeRestore(planRestore(parsed, new Map(), new Map()), parsed).join('\n');
+    expect(report).toMatch(/Restored 1 file that a notebook had written/);
+    expect(report).toMatch(/Restored 1 library file, so these notebooks run without a network/);
+  });
+
+  it('leaves the archive as it was when there are neither', async () => {
+    const parsed = parseBackupEntries(await readZip(await createZip(buildBackupEntries([record(notebook('a', 'A'))], [], NOW))));
+    expect(parsed.files.size).toBe(0);
+    expect(parsed.cache).toEqual([]);
   });
 });

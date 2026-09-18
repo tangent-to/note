@@ -15,6 +15,15 @@
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
   import { currentLock, freezeEnvironment, lockFolder, unfreezeEnvironment } from '../stores/environment';
+  import {
+    deleteVirtualFile,
+    folderForNotebook,
+    listVirtualFiles,
+    opfsAvailable,
+    readVirtualFile,
+    type VirtualFile,
+  } from '../utils/opfs';
+  import { downloadBytes } from '../utils/fileOperations';
   import { shortName } from '../utils/environment';
   import {
     cacheStats,
@@ -45,7 +54,7 @@
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
     onclearBrowserData?: () => void;
     /** Download a backup of everything this browser holds. */
-    onbackup?: () => void;
+    onbackup?: (detail: { includeLibraries: boolean }) => void;
     /** Pick a backup archive and restore it. */
     onrestore?: () => void;
   }
@@ -62,6 +71,9 @@
     onbackup,
     onrestore,
   }: Props = $props();
+
+  /** Whether a backup carries the libraries too — heavier, but it runs offline. */
+  let backupLibraries = $state(false);
 
   /** "today", "yesterday", "3 days ago": how old the last backup is, in words. */
   function backupAge(at: number | null): string {
@@ -115,11 +127,28 @@
     toast(`Removed ${name}`, 'info');
   }
 
+  /**
+   * The files of the notebook on screen, when they live in this browser rather
+   * than on disk. With the companion they are in the folder, where the reader's
+   * own file manager shows them; here, this panel is the only place they exist.
+   */
+  let virtualFiles: VirtualFile[] = $state([]);
+  const virtualFolder = $derived(
+    $currentNotebook && $lockFolder === null && opfsAvailable()
+      ? folderForNotebook($currentNotebook.id)
+      : null
+  );
+
+  async function refreshVirtualFiles() {
+    virtualFiles = virtualFolder ? await listVirtualFiles(virtualFolder) : [];
+  }
+
   function refreshStorage() {
     refreshDatasets();
     refreshLibrary();
     void checkStoragePersisted();
     void refreshCacheStats();
+    void refreshVirtualFiles();
   }
 
   // A long library turns the panel into a wall. Ctrl+K is the finder for
@@ -447,8 +476,12 @@
             }}>Ask it to keep it</button>
           </p>
         {/if}
+        <label class="backup-choice">
+          <input type="checkbox" bind:checked={backupLibraries} />
+          Include the libraries, so the backup still runs offline elsewhere (larger)
+        </label>
         <div class="backup-actions">
-          <button class="backup-btn primary" onclick={() => onbackup?.()}>Back up…</button>
+          <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
           <button class="backup-btn" onclick={() => onrestore?.()}>Restore…</button>
           {#if $backupState.due}
             <button class="backup-link" onclick={() => snoozeBackupReminder(3)}>Remind me later</button>
@@ -599,6 +632,58 @@
           </div>
         {/if}
       </div>
+
+      {#if virtualFolder && virtualFiles.length > 0}
+        <!-- Files this notebook's cells wrote with save(), kept in the browser
+             because nothing is serving the notebook from a folder. -->
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">This notebook's files ({virtualFiles.length})</h4>
+            <span class="storage-section-size">{formatBytes(virtualFiles.reduce((n, f) => n + f.size, 0))}</span>
+          </div>
+          <div class="dataset-list">
+            {#each virtualFiles as file (file.name)}
+              <div class="dataset-item">
+                <div class="notebook-main">
+                  <div class="dataset-name">{file.name}</div>
+                  <div class="dataset-meta">in this browser · {formatBytes(file.size)}</div>
+                </div>
+                <div class="dataset-actions">
+                  <button
+                    class="ds-btn"
+                    title="Download this file"
+                    aria-label="Download {file.name}"
+                    onclick={async () => {
+                      const handle = virtualFolder && (await readVirtualFile(virtualFolder, file.name));
+                      if (!handle) return;
+                      downloadBytes(new Uint8Array(await handle.arrayBuffer()), file.name.split('/').pop() ?? file.name, handle.type || 'application/octet-stream');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="ds-btn ds-danger"
+                    title="Delete this file"
+                    aria-label="Delete {file.name}"
+                    onclick={async () => {
+                      if (!virtualFolder) return;
+                      await deleteVirtualFile(virtualFolder, file.name);
+                      await refreshVirtualFiles();
+                      toast(`Deleted ${file.name}`, 'info');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- Datasets. Files are read in the browser and cached in IndexedDB.
            Nothing is uploaded or served publicly. -->
@@ -1004,6 +1089,17 @@
     font-size: 0.74rem;
     line-height: 1.4;
     color: var(--text-muted);
+  }
+
+  .backup-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin-top: 0.45rem;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--text-muted);
+    cursor: pointer;
   }
 
   .backup-actions {

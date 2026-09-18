@@ -71,7 +71,7 @@ The Storage panel says how much is kept and offers to clear it; the app's own fi
 
 Without the companion, notebooks and datasets are kept in the browser's own storage, which the browser may clear when space runs low and "clear site data" clears on purpose. The **Storage** panel says when the last backup was made, and asks for one — with a dot on its tab — when work that exists only in this browser has changed: a day after new work first appears, then at most weekly.
 
-**Back up…** downloads `tangent-backup-YYYY-MM-DD.zip`. Unzipped, it is an ordinary folder: one `.js` per notebook and a `data/` directory, which `note serve` can open as it is — so a backup is also how work moves from the browser to a local folder. `.tangent/backup.json` inside it keeps what the `.js` files cannot: outputs, where each notebook came from, and its dates.
+**Back up…** downloads `tangent-backup-YYYY-MM-DD.zip`. Tick *include the libraries* and it also carries everything cells loaded from the network, so the archive restores an environment that runs with no network at all — on another machine, in another browser. Unzipped, it is an ordinary folder: one `.js` per notebook — a notebook that wrote files gets a folder of its own, with them beside it — and a `data/` directory, which `note serve` can open as it is — so a backup is also how work moves from the browser to a local folder. `.tangent/backup.json` inside it keeps what the `.js` files cannot: outputs, where each notebook came from, and its dates.
 
 **Restore…** brings an archive back. It never replaces anything newer in this browser with an older copy, and reports what it restored, what it kept and what it skipped. An archive without the index (a folder zipped by hand) still restores, from its files.
 
@@ -122,7 +122,7 @@ await save("figures/chart.svg", Plot.plot({ marks: [Plot.dot(rows, { x: "mass" }
 
 `FileAttachment` follows Observable's API (`.text()`, `.json()`, `.csv()`, `.tsv()`, `.arrayBuffer()`, `.blob()`, `.url()`, `.image()`), so data loading moves between the two unchanged. `save` writes what the file name asks for: text, JSON, records as CSV or TSV, a chart or any element containing an `<svg>` as a standalone SVG, a canvas as an image, and Blobs or typed arrays as they are. Names are relative to the notebook, a leading `/` starts at the served root, and missing folders are created. Nothing outside the served directory can be read or written, and `save` refuses to overwrite a notebook file.
 
-Without the companion there is no folder, and the same calls degrade rather than break: `FileAttachment` reads datasets dropped into the Storage panel, and `save` downloads the file.
+Without the companion the notebook still has a folder: its own, in the browser's private file system. The same calls work — `save` writes a file the notebook can read back, not a download it cannot — and the Storage panel lists those files with a way to download or delete each one. Reads also fall back to datasets dropped into that panel. It is storage rather than a place in your file manager, and the browser may clear it, which is what the backup is for.
 
 Only the app itself can use the companion's socket and file endpoints. Every web page open in your browser can send requests to localhost, and a WebSocket ignores the same-origin policy, so the companion checks the Host, Origin and Sec-Fetch-Site of each request and refuses anything that is not the app on its own port.
 

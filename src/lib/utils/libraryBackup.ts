@@ -37,6 +37,30 @@ export interface BackupManifest {
   createdAt: string;
   notebooks: Array<{ file: string; record: LibraryRecord }>;
   datasets: Array<{ file: string; meta: DatasetMeta }>;
+  /** Files a notebook's cells wrote, kept in the browser for want of a folder. */
+  files?: Array<{ notebook: string; file: string; name: string }>;
+  /** Libraries as fetched, so the archive restores an environment that runs offline. */
+  cache?: Array<{ url: string; file: string; type: string }>;
+}
+
+/** A file a notebook wrote into its own folder in the browser. */
+export interface NotebookFile {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/** One response kept from the network, as it was received. */
+export interface CachedResponse {
+  url: string;
+  bytes: Uint8Array;
+  type: string;
+}
+
+export interface BackupExtras {
+  /** notebook id → the files that notebook wrote. */
+  files?: Map<string, NotebookFile[]>;
+  /** The module cache, for a backup that still runs with no network. */
+  cache?: CachedResponse[];
 }
 
 const encoder = new TextEncoder();
@@ -74,7 +98,8 @@ function unique(base: string, ext: string, used: Set<string>): string {
 export function buildBackupEntries(
   records: LibraryRecord[],
   datasets: DatasetRecord[],
-  now: Date
+  now: Date,
+  extras: BackupExtras = {}
 ): ZipEntry[] {
   const root = backupFolderName(now);
   const entries: ZipEntry[] = [];
@@ -88,13 +113,23 @@ export function buildBackupEntries(
   };
 
   for (const record of [...records].sort((a, b) => a.name.localeCompare(b.name))) {
-    const file = unique(slug(record.name), '.js', used);
+    const own = extras.files?.get(record.id) ?? [];
+    // A notebook with files of its own gets a folder, so unzipping gives the
+    // working directory back rather than everyone's files in one heap.
+    const base = slug(record.name);
+    const folder = own.length > 0 ? unique(base, '', used) : null;
+    const file = folder ? `${folder}/${base}.js` : unique(base, '.js', used);
     entries.push({
       path: `${root}/${file}`,
       data: encoder.encode(serializeNotebook(record.notebook)),
       modified: new Date(record.updatedAt),
     });
     manifest.notebooks.push({ file, record: { ...record, notebook: serializableNotebook(record.notebook) } });
+    for (const own_file of own) {
+      const path = `${folder}/${own_file.name}`;
+      entries.push({ path: `${root}/${path}`, data: own_file.bytes, modified: now });
+      (manifest.files ??= []).push({ notebook: record.id, file: path, name: own_file.name });
+    }
   }
 
   const usedData = new Set<string>();
@@ -107,6 +142,14 @@ export function buildBackupEntries(
     manifest.datasets.push({ file, meta });
   }
 
+  // The libraries themselves, under .tangent/ where they are out of the way:
+  // this is what makes a restored backup run with no network.
+  (extras.cache ?? []).forEach((response, index) => {
+    const file = `.tangent/cache/${String(index).padStart(4, '0')}`;
+    entries.push({ path: `${root}/${file}`, data: response.bytes, modified: now });
+    (manifest.cache ??= []).push({ url: response.url, file, type: response.type });
+  });
+
   entries.push({
     path: `${root}/${MANIFEST}`,
     data: encoder.encode(JSON.stringify(manifest, null, 2)),
@@ -118,6 +161,10 @@ export function buildBackupEntries(
 export interface ParsedBackup {
   records: LibraryRecord[];
   datasets: DatasetRecord[];
+  /** notebook id → files to put back in its folder. */
+  files: Map<string, NotebookFile[]>;
+  /** Libraries to put back in the offline cache. */
+  cache: CachedResponse[];
   /** Things in the archive that were not restored, and why. */
   warnings: string[];
   /** True when `.tangent/backup.json` was found and used. */
@@ -168,9 +215,29 @@ export function parseBackupEntries(entries: ZipEntry[], now: number = Date.now()
       }
       datasets.push({ ...meta, text: decoder.decode(entry.data) });
     }
+    const files = new Map<string, NotebookFile[]>();
+    for (const entry of manifest.files ?? []) {
+      const found = byPath.get(`${base}${entry.file}`);
+      if (!found) {
+        warnings.push(`${entry.name}: missing from the archive, not restored.`);
+        continue;
+      }
+      const list = files.get(entry.notebook) ?? [];
+      list.push({ name: entry.name, bytes: found.data });
+      files.set(entry.notebook, list);
+    }
+
+    const cache: CachedResponse[] = [];
+    for (const entry of manifest.cache ?? []) {
+      const found = byPath.get(`${base}${entry.file}`);
+      if (found) cache.push({ url: entry.url, bytes: found.data, type: entry.type });
+    }
+
     return {
       records: (manifest.notebooks ?? []).map((n) => n.record),
       datasets,
+      files,
+      cache,
       warnings,
       exact: true,
     };
@@ -214,7 +281,7 @@ export function parseBackupEntries(entries: ZipEntry[], now: number = Date.now()
       warnings.push(`${entry.path}: not a notebook or text data, skipped.`);
     }
   }
-  return { records, datasets, warnings, exact: false };
+  return { records, datasets, files: new Map(), cache: [], warnings, exact: false };
 }
 
 export interface RestorePlan {
@@ -281,6 +348,13 @@ export function summarizeRestore(plan: RestorePlan, parsed: ParsedBackup): strin
     lines.push(
       `Kept the version here of ${plural(plan.datasetsConflicting.length, 'dataset')} that differ${plan.datasetsConflicting.length === 1 ? 's' : ''} from the backup: ${plan.datasetsConflicting.map((d) => d.name).join(', ')}. Delete it first to restore the backup's.`
     );
+  }
+  if (parsed.files.size > 0) {
+    const count = [...parsed.files.values()].reduce((n, list) => n + list.length, 0);
+    lines.push(`Restored ${plural(count, 'file')} that ${count === 1 ? 'a notebook' : 'notebooks'} had written.`);
+  }
+  if (parsed.cache.length > 0) {
+    lines.push(`Restored ${plural(parsed.cache.length, 'library file')}, so these notebooks run without a network.`);
   }
   if (!parsed.exact && (plan.put.length || plan.datasetsToAdd.length)) {
     lines.push('This archive has no tangent/note index, so outputs and where notebooks came from were not in it.');
