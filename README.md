@@ -145,6 +145,8 @@ npm run desktop          # run it, rebuilding the app and the companion first
 npm run desktop:build    # a .deb and an AppImage in src-tauri/target/release/bundle
 ```
 
+Pushing a `v*` tag builds the AppImage on CI and attaches it to a draft release (`.github/workflows/release-desktop.yml`). Only Linux, for now: Tauri cannot cross-compile — the window is the system's own webview — and of the three, Linux is the only one that opens without a paid certificate. An unsigned `.dmg` tells macOS users their download is "damaged", and an unsigned `.exe` puts SmartScreen in front of it. The companion itself cross-compiles fine (`deno compile --target`), so adding those is a matter of extending the matrix.
+
 It needs [Rust](https://rustup.rs) and [Deno](https://deno.com) to build, and on Linux the WebKitGTK development packages Tauri asks for; what it produces needs neither.
 
 On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
