@@ -24,6 +24,19 @@ export function slugify(value: string): string {
     .trim() || 'notebook';
 }
 
+/** Offer bytes as a download, e.g. a backup archive. */
+export function downloadBytes(bytes: Uint8Array, filename: string, mime: string) {
+  const blob = new Blob([bytes.slice()], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  // Revoked later rather than at once: some browsers start reading the blob
+  // only after the click handler returns.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function downloadText(text: string, filename: string, mime: string) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);

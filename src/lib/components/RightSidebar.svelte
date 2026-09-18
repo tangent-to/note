@@ -14,6 +14,32 @@
   } from '../utils/notebookLibrary';
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
+  import { currentLock, freezeEnvironment, lockFolder, unfreezeEnvironment } from '../stores/environment';
+  import {
+    deleteVirtualFile,
+    folderForNotebook,
+    listVirtualFiles,
+    opfsAvailable,
+    readVirtualFile,
+    type VirtualFile,
+  } from '../utils/opfs';
+  import { downloadBytes } from '../utils/fileOperations';
+  import { shortName } from '../utils/environment';
+  import {
+    cacheStats,
+    clearRemoteCache,
+    offlineReady,
+    online,
+    refreshCacheStats,
+  } from '../utils/offlineCache';
+  import {
+    backupState,
+    checkStoragePersisted,
+    lastBackupAt,
+    requestStoragePersistence,
+    snoozeBackupReminder,
+    storagePersisted,
+  } from '../stores/backup';
   import Console from './Console.svelte';
   import ChatSidebar from './ChatSidebar.svelte';
 
@@ -27,6 +53,10 @@
     onopenDiskFile?: (detail: { path: string }) => void;
     ondeleteNotebook?: (detail: { entry: LibraryEntry }) => void;
     onclearBrowserData?: () => void;
+    /** Download a backup of everything this browser holds. */
+    onbackup?: (detail: { includeLibraries: boolean }) => void;
+    /** Pick a backup archive and restore it. */
+    onrestore?: () => void;
   }
 
   let {
@@ -38,7 +68,21 @@
     onopenDiskFile,
     ondeleteNotebook,
     onclearBrowserData,
+    onbackup,
+    onrestore,
   }: Props = $props();
+
+  /** Whether a backup carries the libraries too — heavier, but it runs offline. */
+  let backupLibraries = $state(false);
+
+  /** "today", "yesterday", "3 days ago": how old the last backup is, in words. */
+  function backupAge(at: number | null): string {
+    if (at === null) return 'never';
+    const days = Math.floor((Date.now() - at) / (24 * 60 * 60 * 1000));
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    return `${days} days ago`;
+  }
 
   let variables: Record<string, any> = $state({});
   let refreshTimer: number | null = null;
@@ -83,9 +127,28 @@
     toast(`Removed ${name}`, 'info');
   }
 
+  /**
+   * The files of the notebook on screen, when they live in this browser rather
+   * than on disk. With the companion they are in the folder, where the reader's
+   * own file manager shows them; here, this panel is the only place they exist.
+   */
+  let virtualFiles: VirtualFile[] = $state([]);
+  const virtualFolder = $derived(
+    $currentNotebook && $lockFolder === null && opfsAvailable()
+      ? folderForNotebook($currentNotebook.id)
+      : null
+  );
+
+  async function refreshVirtualFiles() {
+    virtualFiles = virtualFolder ? await listVirtualFiles(virtualFolder) : [];
+  }
+
   function refreshStorage() {
     refreshDatasets();
     refreshLibrary();
+    void checkStoragePersisted();
+    void refreshCacheStats();
+    void refreshVirtualFiles();
   }
 
   // A long library turns the panel into a wall. Ctrl+K is the finder for
@@ -256,7 +319,9 @@
            Variables and Console read that notebook's own kernel. Chat is one
            conversation for the whole app, and Storage is about the browser. -->
       <button class="tab-btn tab-app" class:active={activeTab === 'chat'} onclick={() => activeTab = 'chat'}>Chat</button>
-      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>Storage</button>
+      <button class="tab-btn" class:active={activeTab === 'storage'} onclick={() => { activeTab = 'storage'; refreshStorage(); }}>
+        Storage{#if $backupState.due}<span class="backup-dot" title="A backup is due" aria-label="(backup due)"></span>{/if}
+      </button>
     </div>
     <button class="close-btn" onclick={() => onclose?.()} aria-label="Close sidebar" title="Close">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -387,6 +452,117 @@
       </div>
 
       <div class="storage-scroll">
+      <!-- Backup. Without the companion, this browser's storage is the only
+           copy of these notebooks, and the browser may clear it; the archive is
+           the copy elsewhere. A status that is always here, and a nudge only
+           when there is something to lose. -->
+      <div class="backup-box" class:due={$backupState.due}>
+        <div class="backup-head">
+          <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
+          <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
+        </div>
+        {#if $backupState.pending > 0}
+          <p class="backup-note">
+            {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
+            only in this browser and changed since the last backup.
+          </p>
+        {/if}
+        {#if $storagePersisted === false}
+          <p class="backup-note">
+            The browser may clear this storage when space runs low.
+            <button class="backup-link" onclick={async () => {
+              const granted = await requestStoragePersistence();
+              toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
+            }}>Ask it to keep it</button>
+          </p>
+        {/if}
+        <label class="backup-choice">
+          <input type="checkbox" bind:checked={backupLibraries} />
+          Include the libraries, so the backup still runs offline elsewhere (larger)
+        </label>
+        <div class="backup-actions">
+          <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
+          <button class="backup-btn" onclick={() => onrestore?.()}>Restore…</button>
+          {#if $backupState.due}
+            <button class="backup-link" onclick={() => snoozeBackupReminder(3)}>Remind me later</button>
+          {/if}
+        </div>
+      </div>
+
+      {#if $offlineReady}
+        <!-- Libraries and soundfonts a cell loaded from the network, kept so the
+             notebook still runs without one. -->
+        <div class="backup-box">
+          <div class="backup-head">
+            <span class="backup-title">Offline</span>
+            <span class="backup-age">{$online ? 'online' : 'no network'}</span>
+          </div>
+          <p class="backup-note">
+            {#if $cacheStats}
+              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'} and
+              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library or data file' : 'library and data files'} kept.
+              The app opens and its notebooks run without a network, as far as what they have already loaded.
+            {:else}
+              Libraries a cell loads are kept, so the app and its notebooks still work without a network.
+            {/if}
+          </p>
+          {#if $lockFolder !== null}
+            <p class="backup-note">
+              {#if $currentLock?.frozen}
+                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length} pinned
+                {Object.keys($currentLock.modules).length === 1 ? 'file' : 'files'}
+                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
+              {:else}
+                Not frozen: this folder follows whatever its imports resolve to today.
+                Freezing writes {$lockFolder ? `${$lockFolder}/` : ''}tangent.lock, pinning each library to the exact
+                bytes it loaded. Run All first — only what has actually loaded can be pinned.
+              {/if}
+            </p>
+          {/if}
+          <div class="backup-actions">
+            {#if $lockFolder !== null}
+              {#if $currentLock?.frozen}
+                <button
+                  class="backup-btn"
+                  onclick={async () => {
+                    try {
+                      await unfreezeEnvironment();
+                      toast('Unfrozen. This folder follows the network again.', 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not unfreeze.', 'error');
+                    }
+                  }}
+                >Unfreeze</button>
+              {:else}
+                <button
+                  class="backup-btn primary"
+                  onclick={async () => {
+                    try {
+                      const { count } = await freezeEnvironment();
+                      toast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not freeze.', 'error');
+                    }
+                  }}
+                >Freeze…</button>
+              {/if}
+            {/if}
+            <button
+              class="backup-btn"
+              onclick={async () => {
+                const cleared = await clearRemoteCache();
+                toast(cleared ? 'Cleared what was cached from the network.' : 'Nothing to clear.', 'info');
+              }}
+            >Clear downloads</button>
+          </div>
+          {#if $currentLock?.frozen}
+            <p class="backup-note lock-list">
+              {Object.keys($currentLock.modules).slice(0, 4).map(shortName).join(', ')}{Object.keys($currentLock.modules).length > 4 ? '…' : ''}
+            </p>
+          {/if}
+        </div>
+      {/if}
+
       {#if !$libraryPersistent}
         <div class="storage-warning">
           This browser refused persistent storage (private window, or another tab
@@ -457,6 +633,58 @@
           </div>
         {/if}
       </div>
+
+      {#if virtualFolder && virtualFiles.length > 0}
+        <!-- Files this notebook's cells wrote with save(), kept in the browser
+             because nothing is serving the notebook from a folder. -->
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">This notebook's files ({virtualFiles.length})</h4>
+            <span class="storage-section-size">{formatBytes(virtualFiles.reduce((n, f) => n + f.size, 0))}</span>
+          </div>
+          <div class="dataset-list">
+            {#each virtualFiles as file (file.name)}
+              <div class="dataset-item">
+                <div class="notebook-main">
+                  <div class="dataset-name">{file.name}</div>
+                  <div class="dataset-meta">in this browser · {formatBytes(file.size)}</div>
+                </div>
+                <div class="dataset-actions">
+                  <button
+                    class="ds-btn"
+                    title="Download this file"
+                    aria-label="Download {file.name}"
+                    onclick={async () => {
+                      const handle = virtualFolder && (await readVirtualFile(virtualFolder, file.name));
+                      if (!handle) return;
+                      downloadBytes(new Uint8Array(await handle.arrayBuffer()), file.name.split('/').pop() ?? file.name, handle.type || 'application/octet-stream');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="ds-btn ds-danger"
+                    title="Delete this file"
+                    aria-label="Delete {file.name}"
+                    onclick={async () => {
+                      if (!virtualFolder) return;
+                      await deleteVirtualFile(virtualFolder, file.name);
+                      await refreshVirtualFiles();
+                      toast(`Deleted ${file.name}`, 'info');
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       <!-- Datasets. Files are read in the browser and cached in IndexedDB.
            Nothing is uploaded or served publicly. -->
@@ -804,6 +1032,113 @@
   }
 
   .storage-total-size { font-family: var(--font-mono); color: var(--text); }
+
+  .backup-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 0.3rem;
+    vertical-align: middle;
+    border-radius: 50%;
+    background: var(--warn-fg);
+  }
+
+  .backup-box {
+    margin-top: 0.75rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-input);
+    background: var(--surface);
+  }
+
+  /* Due: the warning colours, the same ones the restart button uses when it
+     is waiting for a decision. */
+  .backup-box.due {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+  }
+
+  .backup-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .backup-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--heading);
+  }
+
+  .backup-box.due .backup-title { color: var(--warn-fg); }
+
+  .backup-age {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+  }
+
+  .lock-list {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    overflow-wrap: anywhere;
+  }
+
+  .backup-note {
+    margin: 0.35rem 0 0;
+    font-size: 0.74rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+  }
+
+  .backup-choice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin-top: 0.45rem;
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .backup-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+  }
+
+  .backup-btn {
+    padding: 0.28rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+
+  .backup-btn:hover { background: var(--surface-hover); color: var(--heading); }
+
+  .backup-btn.primary {
+    background: var(--accent-solid);
+    border-color: var(--accent-solid);
+    color: var(--accent-on-solid);
+  }
+
+  .backup-link {
+    padding: 0;
+    font-size: 0.74rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    text-decoration: underline;
+    cursor: pointer;
+  }
 
   .storage-warning {
     margin-top: 0.75rem;

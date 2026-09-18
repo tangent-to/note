@@ -275,6 +275,11 @@ export async function refreshLibrary(): Promise<void> {
   libraryEntries.set(sortEntries(all.map(entryOf)));
 }
 
+/** Every stored notebook with its payload. Reads it all — for a backup, not the autosave path. */
+export function allNotebookRecords(): Promise<LibraryRecord[]> {
+  return readAll();
+}
+
 export async function getNotebookRecord(id: string): Promise<LibraryRecord | undefined> {
   if (!persistent) return memory.get(id);
   try {

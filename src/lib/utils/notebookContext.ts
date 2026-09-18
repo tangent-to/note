@@ -144,9 +144,10 @@ const RUNTIME_NOTES =
   'Runtime (important):\n' +
   '- This runs in the BROWSER, not Node.js. Never use Node APIs (require, module, ' +
   'createRequire, fs, process, __dirname).\n' +
-  '- Import libraries as browser ESM from a CDN, e.g. ' +
-  'import * as d3 from "https://cdn.jsdelivr.net/npm/d3/+esm"; a bare specifier like ' +
-  'import * as aq from "arquero" also works (resolved from jsDelivr). Top-level await ' +
+  '- Import libraries as browser ESM from a CDN, **naming the version**, e.g. ' +
+  'import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm". A bare specifier ' +
+  '(import * as aq from "arquero") also works but loads whatever is newest that day, so ' +
+  'the notebook can change without being edited; prefer the pinned URL. Top-level await ' +
   'is allowed.\n' +
   '- d3 and Plot (Observable Plot) are preloaded as globals; Plotly, Vega-Lite and ' +
   'Arquero are available via import. \n' +
@@ -156,6 +157,11 @@ const RUNTIME_NOTES =
   "Observable's width): size charts with Plot.plot({ width }).\n" +
   '- To display a result, end the cell with an expression, or return a DOM node ' +
   '(e.g. an SVG/chart element) to render it.\n' +
+  '- Files: `await FileAttachment("data.csv").csv({ typed: true })` reads a file next to the ' +
+  'notebook (also .text(), .json(), .tsv(), .arrayBuffer(), .blob(), .url()); ' +
+  '`await save("out/result.json", value)` writes one (strings, objects as JSON, arrays of ' +
+  'records as .csv/.tsv, a chart as .svg, Blobs and typed arrays as bytes). Paths are ' +
+  'relative to the notebook; subfolders are created.\n' +
   '- `display(value)` also works, like Observable\'s: call it anywhere, as often ' +
   'as you like. One displayed value renders normally (table, chart, inspector); ' +
   'several stack in the order you displayed them.';

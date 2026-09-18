@@ -19,6 +19,9 @@
   } from '../stores/notebook';
   import { executorFor } from '../utils/mainExecutor';
   import { kernelFor } from '../utils/kernelClient';
+  import { syncStatus } from '../utils/serverSync';
+  import type { WorkingDirectory } from '../utils/workingDirectory';
+  import { folderForNotebook, opfsAvailable } from '../utils/opfs';
   import {
     activeSessionId,
     current as currentSession,
@@ -156,6 +159,31 @@
    * stores this component reads always mean "the active notebook". A long run
    * is precisely when someone goes to look at something else.
    */
+  /**
+   * The folder a notebook's cells read and write, or null when it has none.
+   *
+   * A notebook served by note serve gets its own folder under the served root.
+   * Anything else — a library notebook, a link — gets its own folder in the
+   * browser's private file system instead, so the same calls work; only a
+   * browser without one leaves a cell with nothing to write to.
+   */
+  function workingDirectoryOf(session: NotebookSession): WorkingDirectory | null {
+    const origin = get(session.origin);
+    if (origin.kind === 'disk' && get(syncStatus) === 'connected') {
+      const slash = origin.path.lastIndexOf('/');
+      return {
+        kind: 'companion',
+        base: location.origin,
+        dir: slash === -1 ? '' : origin.path.slice(0, slash),
+      };
+    }
+    // No file on disk: the notebook's own folder in the browser's private file
+    // system, so the same calls still read and write something the notebook can
+    // find again.
+    if (opfsAvailable()) return { kind: 'virtual', dir: folderForNotebook(session.id) };
+    return null;
+  }
+
   async function handleRunCell(
     { cellId }: { cellId: string },
     session: NotebookSession | null = currentSession()
@@ -195,14 +223,18 @@
       // every run; a user variable named `width` is never overwritten.
       const outputWidth = measureOutputWidth(cell);
 
+      const workingDirectory = workingDirectoryOf(session);
+
       let output;
       if (get(kernelMode) === 'worker') {
+        await kernel.setWorkingDirectory(workingDirectory);
         if (outputWidth) await kernel.setVariable('width', outputWidth, { builtin: true });
         output = await kernel.execute(cell.content);
       } else {
         // Claim window.__tangent_scope for this notebook: the reader may have
         // switched tabs since the run started, pointing it at another one.
         executor.activate();
+        executor.setWorkingDirectory(workingDirectory);
         await executor.setupCommonLibraries();
         if (outputWidth) executor.setBuiltin('width', outputWidth);
         output = await executor.executeCode(cell.content);

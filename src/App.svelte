@@ -7,6 +7,8 @@
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import TabStrip from './lib/components/TabStrip.svelte';
   import FileMenu from './lib/components/FileMenu.svelte';
+  import RunMenu from './lib/components/RunMenu.svelte';
+  import StatusBar from './lib/components/StatusBar.svelte';
   import ExportDialog from './lib/components/ExportDialog.svelte';
   import {
     currentNotebook,
@@ -30,6 +32,16 @@
     currentOrigin
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
+  import { startOfflineCache } from './lib/utils/offlineCache';
+  import { freezeEnvironment, loadEnvironment, unfreezeEnvironment } from './lib/stores/environment';
+  import { pinNotebookImports } from './lib/stores/pinImports';
+  import {
+    BACKUP_SNOOZE_KEY,
+    LAST_BACKUP_KEY,
+    createLibraryBackup,
+    markBackedUp,
+    restoreLibraryBackup,
+  } from './lib/stores/backup';
   import { looksLikeObservableNotebook, summarizeLosses, type Loss } from './lib/utils/observableFormat';
   import { frontmatterId, pathNotebookId } from '../cli/notebookPaths';
   import { kernel, kernelBusy, kernelFor } from './lib/utils/kernelClient';
@@ -47,6 +59,7 @@
     startPersistingSessions,
   } from './lib/stores/sessions';
   import { theme, toggleTheme } from './lib/utils/theme';
+  import { isDesktopApp, openFolder } from './lib/utils/desktop';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import {
     saveNotebook,
@@ -55,6 +68,7 @@
     parseNotebookFile,
     serializeForPath,
     slugify,
+    downloadBytes,
     importNotebookFromFile,
   } from './lib/utils/fileOperations';
   import {
@@ -231,6 +245,14 @@
     { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
   ];
 
+  // The frozen environment belongs to the folder, so it follows the notebook on
+  // screen: opening a frozen folder freezes the cache, leaving it thaws.
+  $effect(() => {
+    $currentOrigin;
+    $syncStatus;
+    void loadEnvironment();
+  });
+
   // Mirror the notebook name into the browser tab so multiple notebooks are
   // tellable apart; falls back to the app name.
   $effect(() => {
@@ -243,6 +265,8 @@
   }
 
   onMount(() => {
+    // Keep the libraries cells load, so a notebook still runs with no network.
+    startOfflineCache();
     // Deep links (/gh/… on GitHub Pages) arrive via the 404.html shim as
     // /?p=<original path>; restore the real URL before routing.
     const redirect = decodeRedirect(window.location.search);
@@ -465,6 +489,84 @@
    * of the app) and the UI preferences. Notebooks and datasets are in
    * IndexedDB and are deliberately untouched — they have their own rows.
    */
+  /** Download everything this browser holds, and remember that it was done. */
+  async function backupLibrary(opts: { includeLibraries?: boolean } = {}) {
+    try {
+      const { bytes, filename, notebooks, datasets: count, files, libraries } =
+        await createLibraryBackup(new Date(), opts);
+      downloadBytes(bytes, filename, 'application/zip');
+      markBackedUp();
+      const parts = [`${notebooks} notebook${notebooks === 1 ? '' : 's'}`];
+      if (count) parts.push(`${count} dataset${count === 1 ? '' : 's'}`);
+      if (files) parts.push(`${files} file${files === 1 ? '' : 's'}`);
+      if (libraries) parts.push(`${libraries} library file${libraries === 1 ? '' : 's'}`);
+      showToast(
+        `Backed up ${parts.join(', ')} to ${filename}. Keep it somewhere other than this browser.`,
+        'info'
+      );
+    } catch (error: any) {
+      console.error('Backup failed:', error);
+      showToast(`Couldn’t make the backup: ${error?.message ?? error}`, 'error');
+    }
+  }
+
+  /** Pick an archive and restore it; nothing newer here is overwritten. */
+  function restoreLibrary() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const lines = await restoreLibraryBackup(new Uint8Array(await file.arrayBuffer()));
+        conversionReport = {
+          title: file.name,
+          heading: 'Backup restored',
+          intro: `From ${file.name}. Nothing newer in this browser was replaced.`,
+          lines,
+        };
+      } catch (error: any) {
+        console.error('Restore failed:', error);
+        showToast(`Couldn’t restore ${file.name}: ${error?.message ?? error}`, 'error');
+      }
+    };
+    input.click();
+  }
+
+  /**
+   * Rewrite this notebook's unpinned imports to the versions they resolve to
+   * now, so the notebook stays itself when a library moves.
+   */
+  async function pinImports() {
+    const notebook = get(currentNotebook);
+    if (!notebook) return;
+    showToast('Looking up versions…', 'info');
+    try {
+      const report = await pinNotebookImports();
+      const lines = [
+        ...report.pinned,
+        ...report.unresolved.map((spec) => `${spec} — nothing said what it resolves to; left as it is.`),
+      ];
+      if (report.alreadyPinned > 0) {
+        lines.push(`${report.alreadyPinned} import${report.alreadyPinned === 1 ? '' : 's'} already named a version.`);
+      }
+      if (lines.length === 0) lines.push('This notebook imports nothing from a CDN.');
+      conversionReport = {
+        title: notebook.name,
+        heading: report.pinned.length > 0 ? 'Imports pinned' : 'Imports checked',
+        intro:
+          report.pinned.length > 0
+            ? 'These now name the exact version they were loading. Run the cells to check, then save.'
+            : 'Nothing was changed.',
+        lines,
+      };
+    } catch (error: any) {
+      console.error('Pinning imports failed:', error);
+      showToast(`Couldn’t pin the imports: ${error?.message ?? error}`, 'error');
+    }
+  }
+
   function clearBrowserData() {
     if (!confirm('Clear the chat history, AI key and preferences kept in this browser? Notebooks and datasets are not affected.')) return;
     try {
@@ -473,6 +575,9 @@
         // The library's pointer to the open notebook is not "browser data" in
         // this sense: dropping it would silently reopen something else.
         if (key === 'tangent-active-notebook') continue;
+        // Nor is when the notebooks were last backed up: they are not what
+        // this clears, and forgetting it would nag about a backup already made.
+        if (key === LAST_BACKUP_KEY || key === BACKUP_SNOOZE_KEY) continue;
         localStorage.removeItem(key);
       }
       showToast('Cleared. Reload to start from defaults.', 'info');
@@ -529,7 +634,7 @@
    * usable either way, and the reader needs to be able to read the list, not
    * catch it going past. Nothing to say means nothing on screen.
    */
-  let conversionReport: { title: string; lines: string[] } | null = $state(null);
+  let conversionReport: { title: string; lines: string[]; heading?: string; intro?: string } | null = $state(null);
 
   function reportLosses(name: string, losses: Loss[]) {
     const lines = summarizeLosses(losses);
@@ -612,6 +717,7 @@
       find: (replace) => window.dispatchEvent(new CustomEvent('open-find', { detail: { replace } })),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
+      openFolder: isDesktopApp() ? () => void openFolder() : undefined,
       undo: () => handleUndo(),
     });
   }
@@ -848,6 +954,35 @@
       case 'save-notebook-as':
         openSaveAs();
         break;
+      case 'pin-imports':
+        void pinImports();
+        break;
+      case 'backup-library':
+        void backupLibrary();
+        break;
+      case 'restore-library':
+        restoreLibrary();
+        break;
+      case 'freeze-environment':
+        void (async () => {
+          try {
+            const { count } = await freezeEnvironment();
+            showToast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
+          } catch (error: any) {
+            showToast(error?.message ?? 'Could not freeze.', 'error');
+          }
+        })();
+        break;
+      case 'unfreeze-environment':
+        void (async () => {
+          try {
+            await unfreezeEnvironment();
+            showToast('Unfrozen. This folder follows the network again.', 'info');
+          } catch (error: any) {
+            showToast(error?.message ?? 'Could not unfreeze.', 'error');
+          }
+        })();
+        break;
       case 'restart-kernel':
         restartKernel();
         break;
@@ -964,7 +1099,6 @@
       executorFor(session.id).resetScope();
     }
     resetRunState(session);
-    restartArmed = false;
     if (opts.runAll) {
       window.dispatchEvent(new CustomEvent('run-all-cells'));
     } else {
@@ -975,26 +1109,6 @@
         'info'
       );
     }
-  }
-
-  /**
-   * The header button asks twice. A restart throws away every variable, which
-   * for a notebook that loads audio or data is minutes of re-running; one stray
-   * click should not cost that. The second click has to come within a few
-   * seconds, and the button says what it is waiting for.
-   */
-  let restartArmed = $state(false);
-  let restartTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function onRestartClick() {
-    if (restartArmed) {
-      if (restartTimer) clearTimeout(restartTimer);
-      restartKernel();
-      return;
-    }
-    restartArmed = true;
-    if (restartTimer) clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => (restartArmed = false), 3500);
   }
 
   function clearAllOutputs() {
@@ -1083,6 +1197,7 @@
         canClose={$activeSessionId !== null}
         onnew={handleNewNotebook}
         onopen={handleImportNotebook}
+        onopenfolder={isDesktopApp() ? () => void openFolder() : undefined}
         onsave={() => void performSaveShortcut()}
         onsaveas={openSaveAs}
         onexport={handleExportNotebook}
@@ -1097,103 +1212,17 @@
 
     <div class="header-right">
       {#if $currentNotebook}
-        {#if $staleCells.size > 0}
-          <button
-            class="run-stale-btn"
-            onclick={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
-            title="Re-run cells whose dependencies changed"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <path d="M12 9v4M12 17h.01"/>
-            </svg>
-            <span class="btn-label">Run {$staleCells.size} stale</span>
-          </button>
-        {/if}
-        <button
-          class="reactive-toggle"
-          class:active={$reactiveMode}
-          onclick={() => reactiveMode.update(v => !v)}
-          title="Reactive mode: when on, running a cell automatically re-runs the cells that depend on it"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
-          </svg>
-          <span class="btn-label">Reactive {$reactiveMode ? 'on' : 'off'}</span>
-        </button>
-        {#if $kernelBusy}
-          <!-- No fade-in: the kill switch must never look half-disabled. -->
-          <button
-            class="stop-kernel-btn"
-            onclick={() => { restartKernel(); }}
-            title="Stop the running computation (restarts the kernel; notebook variables are cleared)"
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor">
-              <rect x="2.5" y="2.5" width="9" height="9" rx="1.5"/>
-            </svg>
-            <span class="btn-label">Stop</span>
-          </button>
-        {/if}
-        <span class="header-meta">
-          {#if $notebookDirty}
-            <span class="unsaved-dot" title="Unsaved changes. Press Ctrl/Cmd+S to checkpoint"></span>
-          {/if}
-          {$currentNotebook.cells.length} {$currentNotebook.cells.length === 1 ? 'cell' : 'cells'}
-        </span>
-        {#if $syncStatus === 'connected'}
-          <!-- Saving writes this file in place, so the state on disk (and in
-               git) is what you see. Worth showing: it changes what Ctrl+S does.
-               With a companion owning a directory, the answer differs per tab —
-               one opened from a link or the library has no file to write to,
-               and a badge that claimed otherwise would make Ctrl+S surprising. -->
-          {#if $currentOrigin.kind === 'disk'}
-            <span class="sync-badge" title={`Linked to ${$currentOrigin.path}. Ctrl/Cmd+S writes this file.`}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/>
-                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>
-              </svg>
-              {$currentOrigin.path.split('/').pop()}
-            </span>
-          {:else}
-            <span
-              class="sync-badge unlinked"
-              title={`This notebook has no file on disk. Ctrl/Cmd+S exports a download; the Storage panel lists the ${$syncFiles.length} notebook${$syncFiles.length === 1 ? '' : 's'} the companion is serving.`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/>
-                <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>
-                <path d="M3 3l18 18"/>
-              </svg>
-              not on disk
-            </span>
-          {/if}
-        {/if}
-        <button
-          class="restart-kernel-btn"
-          class:armed={restartArmed}
-          onclick={onRestartClick}
-          onblur={() => (restartArmed = false)}
-          title={restartArmed
-            ? 'Click again to restart: variables and execution numbers are cleared'
-            : 'Restart kernel'}
-          aria-label={restartArmed ? 'Confirm restart kernel' : 'Restart kernel'}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 3-6.7"/>
-            <path d="M3 4v5h5"/>
-          </svg>
-          <span class="btn-label">{restartArmed ? 'Restart?' : 'Restart'}</span>
-        </button>
-        <button
-          class="run-all-header-btn"
-          onclick={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
-          title="Run All Cells"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <path d="M3 2l9 5-9 5V2z"/>
-          </svg>
-          <span class="btn-label">Run All</span>
-        </button>
+        <RunMenu
+          busy={$kernelBusy}
+          reactive={$reactiveMode}
+          stale={$staleCells.size}
+          onrunall={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}
+          onrunstale={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
+          onstop={() => restartKernel()}
+          onrestart={() => restartKernel()}
+          onrestartrunall={() => restartKernel({ runAll: true })}
+          ontogglereactive={() => reactiveMode.update((v) => !v)}
+        />
         <span class="header-divider" aria-hidden="true"></span>
       {/if}
       <button
@@ -1251,10 +1280,26 @@
           onopenDiskFile={({ path }) => openDiskFile(path)}
           ondeleteNotebook={({ entry }) => removeFromLibrary(entry)}
           onclearBrowserData={clearBrowserData}
+          onbackup={({ includeLibraries }) => void backupLibrary({ includeLibraries })}
+          onrestore={restoreLibrary}
         />
       </aside>
     {/if}
   </div>
+
+  <StatusBar
+    origin={$currentOrigin}
+    connected={$syncStatus === 'connected'}
+    cells={$currentNotebook ? $currentNotebook.cells.length : null}
+    dirty={$notebookDirty}
+    busy={$kernelBusy}
+    reactive={$reactiveMode}
+    stale={$staleCells.size}
+    kernel={$kernelMode}
+    onrunstale={() => window.dispatchEvent(new CustomEvent('run-stale-cells'))}
+    ontogglereactive={() => reactiveMode.update((v) => !v)}
+    onkernel={() => { setPanelOpen(true); rightSidebarTab = 'info'; }}
+  />
 
   <CommandPalette
     bind:visible={showCommandPalette}
@@ -1357,7 +1402,7 @@
     >
       <div class="shortcuts-modal report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
         <div class="shortcuts-head">
-          <h3 id="report-title">Imported with notes</h3>
+          <h3 id="report-title">{conversionReport.heading ?? 'Imported with notes'}</h3>
           <button class="shortcuts-close" onclick={() => conversionReport = null} aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M3 3l8 8M11 3l-8 8"/>
@@ -1365,8 +1410,12 @@
           </button>
         </div>
         <p class="report-intro">
-          “{conversionReport.title}” is open. Observable and Tangent run notebooks
-          differently, so some things came across as text rather than behaviour:
+          {#if conversionReport.intro}
+            {conversionReport.intro}
+          {:else}
+            “{conversionReport.title}” is open. Observable and Tangent run notebooks
+            differently, so some things came across as text rather than behaviour:
+          {/if}
         </p>
         <ul class="report-list">
           {#each conversionReport.lines as line}
@@ -1506,20 +1555,9 @@
     color: var(--accent);
   }
 
-  .header-meta {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Header controls never wrap their own text into two lines ("Reactive
-     on", "16 cells"); when the row gets tight the media query below drops
-     the labels instead. */
-  .notebooks-btn,
-  .run-all-header-btn,
-  .restart-kernel-btn {
+  /* Header controls never wrap their own text into two lines; when the row
+     gets tight the media query below drops the labels instead. */
+  .notebooks-btn {
     display: flex;
     align-items: center;
     gap: 0.3rem;
@@ -1534,28 +1572,6 @@
     transition: all 0.15s ease;
   }
 
-  .restart-kernel-btn:hover {
-    background-color: var(--surface-hover);
-    color: var(--heading);
-  }
-
-  /* Waiting for the confirming click: the warning colours, so the second click
-     is a decision and not a reflex. */
-  .restart-kernel-btn.armed {
-    background: var(--warn-bg);
-    border-color: var(--warn-border);
-    color: var(--warn-fg);
-  }
-
-  .run-stale-btn,
-  .reactive-toggle,
-  .header-meta,
-  .sync-badge.unlinked { color: var(--text-faint); }
-
-  .sync-badge {
-    white-space: nowrap;
-  }
-
   /* Awkward middle widths (sidebar open, split screens): collapse the
      button labels to icons well before anything is forced to wrap. The
      ≤640px block below tightens paddings further for phones. */
@@ -1564,10 +1580,7 @@
     .kbd-hint {
       display: none;
     }
-    .notebooks-btn,
-    .run-all-header-btn,
-    .run-stale-btn,
-    .reactive-toggle {
+    .notebooks-btn {
       gap: 0;
     }
   }
@@ -1579,107 +1592,14 @@
     margin: 0 0.15rem;
   }
 
-  .unsaved-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--radius-pill);
-    background: var(--danger-solid);
-    box-shadow: 0 0 0 2px var(--danger-bg);
-    margin-right: 0.45rem;
-  }
-
-  .run-all-header-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--accent-solid);
-    color: var(--accent-on-solid);
-    border: none;
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .run-all-header-btn:hover {
-    background-color: var(--accent-solid-hover);
-  }
-
-  .run-stale-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--warn-bg);
-    color: var(--warn-fg);
-    border: 1px solid var(--warn-border);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .run-stale-btn:hover {
-    filter: brightness(0.97);
-  }
-
-  .reactive-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .reactive-toggle:hover { background-color: var(--surface-hover); color: var(--heading); }
-
-  /* Active state toggles are QUIET (weak accent fill): solid teal is reserved
-     for the page's one primary action, Run All. */
-  .reactive-toggle.active {
-    background-color: var(--accent-weak-bg);
-    color: var(--accent-weak-fg);
-    border-color: var(--accent-weak-border);
-  }
-
-  .stop-kernel-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.7rem;
-    background-color: var(--danger-bg);
-    color: var(--danger-fg);
-    border: 1px solid var(--danger-border);
-    border-radius: var(--radius-pill);
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: filter 0.15s ease;
-  }
-
-  .stop-kernel-btn:hover { filter: brightness(0.95); }
-
   /* Mobile: collapse the header to icons so it fits narrow screens. */
   @media (max-width: 640px) {
     .app-header { padding: 0.4rem 0.5rem; }
     .header-left,
     .header-right { gap: 0.1rem; }
     .btn-label,
-    .header-meta,
     .kbd-hint { display: none; }
-    .notebooks-btn,
-    .run-all-header-btn,
-    .run-stale-btn,
-    .reactive-toggle { padding: 0.4rem 0.45rem; gap: 0; }
+    .notebooks-btn { padding: 0.4rem 0.45rem; gap: 0; }
   }
 
   .content-wrapper {
@@ -1710,19 +1630,6 @@
   }
 
   /* Invisible grab strip over the left border; teal on hover/drag. */
-  .sync-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--accent);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-input);
-    padding: 0.15rem 0.4rem;
-    white-space: nowrap;
-  }
-
   .panel-resize-handle {
     position: absolute;
     left: 0;

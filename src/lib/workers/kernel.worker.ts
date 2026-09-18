@@ -88,6 +88,15 @@ import type { CellOutput } from '../types/notebook';
 
 const executor = new JavaScriptExecutor();
 
+// A worker has no page to click a download link on, so a save without a working
+// directory is handed to the main thread, which does. The bytes are transferred,
+// not copied.
+executor.setDownloader((name, bytes, mimeType) => {
+  const copy = bytes.slice();
+  // `self` is typed as a Window here; in a worker the second argument is the transfer list.
+  (self as unknown as Worker).postMessage({ id: -1, type: 'download', name, bytes: copy, mimeType }, [copy.buffer]);
+});
+
 // ---------------------------------------------------------------------------
 // ui.* inputs → declarative widget specs (real controls live on the main
 // thread; changed values are posted back with a `set-var` message).
@@ -195,7 +204,7 @@ function variableSummaries(): VarSummary[] {
 // ---------------------------------------------------------------------------
 interface KernelRequest {
   id: number;
-  type: 'exec' | 'setup' | 'set-var' | 'reset' | 'get-vars';
+  type: 'exec' | 'setup' | 'set-var' | 'set-cwd' | 'reset' | 'get-vars';
   code?: string;
   name?: string;
   value?: any;
@@ -219,6 +228,11 @@ self.onmessage = async (event: MessageEvent<KernelRequest>) => {
           output: serializeOutput(output),
           variables: variableSummaries(),
         });
+        break;
+      }
+      case 'set-cwd': {
+        executor.setWorkingDirectory(msg.value ?? null);
+        self.postMessage({ id: msg.id, type: 'result' });
         break;
       }
       case 'set-var': {

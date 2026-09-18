@@ -35,9 +35,12 @@ import {
   resolveWithin,
   shouldSkipDir,
 } from "./notebookPaths.ts";
+import { checkRequest } from "./requestGuard.ts";
 
 const DEFAULT_PORT = 4321;
 const SYNC_PATH = "/__sync";
+/** The working directory: files next to the notebooks, read and written by cells. */
+const FILES_PATH = "/__files/";
 // A write lands as one or more fs events; coalesce them before reading.
 const WATCH_DEBOUNCE_MS = 120;
 // Enough to see the frontmatter fence and its title without reading a large
@@ -48,19 +51,42 @@ interface Args {
   targets: string[];
   port: number;
   dist: string;
+  /** Stop when whoever started this stops. See `exitWithParent`. */
+  exitWithParent: boolean;
+}
+
+/**
+ * Where the built app is, when `--dist` does not say.
+ *
+ * Run from the repository, that is `dist/` beside the source. Compiled into a
+ * single binary (`deno compile --include dist`, which is how the desktop app
+ * ships it), the files travel inside the executable and are reachable at the
+ * path they had when it was built — so resolving against this module rather
+ * than the working directory is what lets the binary be run from anywhere.
+ *
+ * The URL does the resolving: inside a compiled binary the embedded files are
+ * looked up by exact path, and a `..` left in the middle of one finds nothing.
+ */
+function defaultDist(): string {
+  if (!import.meta.url.startsWith("file:")) return "dist";
+  const path = decodeURIComponent(new URL("../dist", import.meta.url).pathname);
+  // A Windows file URL carries its drive letter behind a leading slash.
+  return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path;
 }
 
 export function parseArgs(argv: string[]): Args {
   const targets: string[] = [];
   let port = DEFAULT_PORT;
-  let dist = "dist";
+  let dist = defaultDist();
+  let exitWithParent = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port") port = Number(argv[++i]);
     else if (a === "--dist") dist = argv[++i];
+    else if (a === "--exit-with-parent") exitWithParent = true;
     else if (!a.startsWith("-")) targets.push(a);
   }
-  return { targets, port, dist };
+  return { targets, port, dist, exitWithParent };
 }
 
 /** djb2, matching the app's cheap content-change hash. */
@@ -85,6 +111,32 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".map": "application/json; charset=utf-8",
 };
+
+const FILE_MIME: Record<string, string> = {
+  ...MIME,
+  ".csv": "text/csv; charset=utf-8",
+  ".tsv": "text/tab-separated-values; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".ndjson": "application/x-ndjson; charset=utf-8",
+  ".geojson": "application/geo+json; charset=utf-8",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".mid": "audio/midi",
+  ".midi": "audio/midi",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".jpeg": "image/jpeg",
+  ".pdf": "application/pdf",
+  ".arrow": "application/vnd.apache.arrow.file",
+  ".parquet": "application/vnd.apache.parquet",
+};
+
+function fileContentType(path: string): string {
+  const dot = path.lastIndexOf(".");
+  return (dot >= 0 && FILE_MIME[path.slice(dot).toLowerCase()]) || "application/octet-stream";
+}
 
 function contentType(path: string): string {
   const dot = path.lastIndexOf(".");
@@ -182,8 +234,36 @@ function discover(root: string): NotebookFile[] {
   return found;
 }
 
+/**
+ * Stop when whoever started this stops.
+ *
+ * The desktop app spawns the companion as a child and pipes its stdin. A parent
+ * that is killed rather than closed — a crash, a `kill`, a session ending —
+ * never gets to tidy up, and the companion would go on holding the folder and
+ * its port with no window left to talk to it. The pipe answers that: it reaches
+ * end of file the moment the parent is gone, whatever took it away.
+ *
+ * Only when asked for (`--exit-with-parent`): run from a terminal, stdin is a
+ * keyboard, and read from a script it may be `/dev/null`, which is at end of
+ * file straight away.
+ */
+function exitWithParent() {
+  (async () => {
+    const buffer = new Uint8Array(256);
+    try {
+      while ((await Deno.stdin.read(buffer)) !== null) {
+        // Nothing is sent on this pipe; only its closing means anything.
+      }
+    } catch {
+      // A broken pipe is the same news as the end of one.
+    }
+    Deno.exit(0);
+  })();
+}
+
 export function main(args: Args) {
   const { targets, port, dist } = args;
+  if (args.exitWithParent) exitWithParent();
   const { root, initial } = resolveRoot(targets, Deno.cwd());
 
   let files = discover(root);
@@ -220,6 +300,71 @@ export function main(args: Args) {
     broadcast({ type: "files", files });
   };
 
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+
+  /**
+   * A file in the working directory: GET reads it, PUT writes it.
+   *
+   * Paths are relative to the served root and go through resolveWithin like
+   * every other path here. Written files never replace a notebook the companion
+   * serves — a cell calling save("piece.js") would otherwise overwrite its own
+   * notebook. Responses are sandboxed: an HTML or SVG file opened from here must
+   * not run scripts with the app's origin, which is the origin allowed to use
+   * the sync socket.
+   */
+  async function handleFile(req: Request, url: URL): Promise<Response> {
+    let relative: string;
+    try {
+      relative = url.pathname.slice(FILES_PATH.length).split("/").map(decodeURIComponent).join("/");
+    } catch {
+      return json(400, { error: "That path is not valid." });
+    }
+    const absolute = resolveWithin(root, relative);
+    if (!absolute) return json(403, { error: "That path is outside the served directory." });
+    const target = relativeTo(root, absolute) ?? relative;
+
+    if (req.method === "GET") {
+      try {
+        if (Deno.statSync(absolute).isDirectory) return json(404, { error: `${target} is a directory.` });
+      } catch {
+        return json(404, { error: `No file ${target}.` });
+      }
+      return new Response(await Deno.readFile(absolute), {
+        headers: {
+          "content-type": fileContentType(target),
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+          "content-security-policy": "sandbox",
+        },
+      });
+    }
+
+    if (req.method === "PUT") {
+      if (files.some((file) => file.path === target)) {
+        return json(409, { error: `${target} is a notebook; save() will not overwrite it.` });
+      }
+      try {
+        const bytes = new Uint8Array(await req.arrayBuffer());
+        Deno.mkdirSync(absolute.slice(0, absolute.lastIndexOf("/")), { recursive: true });
+        const tmp = `${absolute}.tangent-tmp`;
+        Deno.writeFileSync(tmp, bytes);
+        Deno.renameSync(tmp, absolute);
+        console.log(`  wrote     ${target}  ${bytes.length} bytes`);
+        // A cell can write a notebook-shaped file; let the list catch up.
+        rescan();
+        return json(201, { path: target, size: bytes.length });
+      } catch (error) {
+        return json(500, { error: `Could not write ${target}: ${error instanceof Error ? error.message : error}` });
+      }
+    }
+
+    return json(405, { error: "Only GET and PUT are supported." });
+  }
+
   Deno.serve({ port, hostname: "127.0.0.1", onListen: () => {
     console.log(`tangent/note`);
     console.log(`  root      ${root}`);
@@ -227,6 +372,19 @@ export function main(args: Args) {
     console.log(`  open      http://localhost:${port}`);
   } }, async (req) => {
     const url = new URL(req.url);
+
+    // The sync socket and the working directory read and write the reader's
+    // files, so only the app itself may use them — not any other page open in
+    // the same browser (see requestGuard.ts). The static app stays open.
+    if (url.pathname === SYNC_PATH || url.pathname.startsWith(FILES_PATH)) {
+      const verdict = checkRequest((name) => req.headers.get(name), port);
+      if (!verdict.ok) {
+        console.warn(`  refused   ${url.pathname} (${verdict.reason})`);
+        return new Response("Forbidden", { status: 403 });
+      }
+    }
+
+    if (url.pathname.startsWith(FILES_PATH)) return handleFile(req, url);
 
     if (url.pathname === SYNC_PATH) {
       const { socket, response } = Deno.upgradeWebSocket(req);

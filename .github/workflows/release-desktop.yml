@@ -1,0 +1,86 @@
+# The desktop app, built and attached to a release.
+#
+# Tauri cannot cross-compile: the window is the system's own webview, so each
+# platform needs its own runner. Only Linux is built here for now, because it is
+# the only one that needs no money to be openable — an unsigned .dmg tells macOS
+# users their download is "damaged", and an unsigned .exe puts SmartScreen in
+# front of it. Adding those later is a matter of extending the matrix and buying
+# the certificates.
+#
+# The companion is compiled into the bundle by tauri.conf.json's
+# beforeBuildCommand (npm run desktop:sidecar), which needs Deno and reads the
+# target triple from rustc — both installed below.
+#
+# Ubuntu 22.04 on purpose: an AppImage links against the glibc of the machine
+# that built it, so building on the newest Ubuntu would refuse to start on
+# anything older.
+
+name: Release desktop app
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish the draft release under (e.g. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install the webview and its build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf \
+            build-essential \
+            file \
+            wget
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles appimage
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: tangent/note ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            **Linux (AppImage)** — download it, `chmod +x`, run it. Nothing to install.
+
+            The app opens `~/tangent-notebooks` the first time; File → Open folder… opens another.
+          releaseDraft: true
+          prerelease: false

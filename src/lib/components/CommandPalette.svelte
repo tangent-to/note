@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatDate } from '../utils/format';
   import { libraryEntries, originLabel } from '../utils/notebookLibrary';
+  import { currentLock, lockFolder } from '../stores/environment';
 
   interface Props {
     visible?: boolean;
@@ -25,7 +26,7 @@
   let selectedIndex = $state(0);
   let inputElement: HTMLInputElement = $state(null as any);
 
-  const commands: Command[] = [
+  const baseCommands: Command[] = [
     {
       id: 'new-notebook',
       name: 'New Notebook',
@@ -95,6 +96,27 @@
       shortcut: 'Ctrl+Shift+Enter',
       icon: 'play-circle',
       action: () => oncommand?.({ id: 'run-all' })
+    },
+    {
+      id: 'pin-imports',
+      name: 'Pin Imports to Their Versions',
+      description: 'Rewrite this notebook’s imports to the exact versions they load right now',
+      icon: 'lock',
+      action: () => oncommand?.({ id: 'pin-imports' })
+    },
+    {
+      id: 'backup-library',
+      name: 'Back Up Library',
+      description: 'Download every notebook and dataset in this browser as a .zip',
+      icon: 'archive',
+      action: () => oncommand?.({ id: 'backup-library' })
+    },
+    {
+      id: 'restore-library',
+      name: 'Restore Library Backup',
+      description: 'Bring back notebooks and datasets from a backup .zip; nothing newer is replaced',
+      icon: 'archive',
+      action: () => oncommand?.({ id: 'restore-library' })
     },
     {
       id: 'restart-kernel',
@@ -194,6 +216,34 @@
       action: () => oncommand?.({ id: 'keyboard-shortcuts' })
     }
   ];
+
+  /**
+   * Freezing needs a folder, so it is only offered when the notebook on screen
+   * has one — and it is offered by the name of the file it writes, because
+   * `tangent.lock` is what you go looking for afterwards.
+   */
+  const commands: Command[] = $derived(
+    $lockFolder === null
+      ? baseCommands
+      : [
+          ...baseCommands,
+          $currentLock?.frozen
+            ? {
+                id: 'unfreeze-environment',
+                name: 'Unfreeze Environment (tangent.lock)',
+                description: 'Follow what this folder’s imports resolve to again',
+                icon: 'lock',
+                action: () => oncommand?.({ id: 'unfreeze-environment' }),
+              }
+            : {
+                id: 'freeze-environment',
+                name: 'Freeze Environment (tangent.lock)',
+                description: 'Pin every library this folder has loaded to the exact bytes it loaded',
+                icon: 'lock',
+                action: () => oncommand?.({ id: 'freeze-environment' }),
+              },
+        ]
+  );
 
   // The library, as commands. This is how you open another notebook day to day
   // — type its name here — which is what leaves the Storage panel free to be
