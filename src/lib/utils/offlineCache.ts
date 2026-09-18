@@ -17,6 +17,8 @@ export interface CacheStats {
   app: number;
   /** Everything fetched from elsewhere: libraries, soundfonts, data. */
   remote: number;
+  /** Whether the cache is currently answering from a frozen environment. */
+  frozen: boolean;
 }
 
 export const offlineReady = writable(false);
@@ -24,7 +26,7 @@ export const cacheStats = writable<CacheStats | null>(null);
 /** False while the browser says there is no network. */
 export const online = writable(true);
 
-function ask<T>(type: string, timeout = 3000): Promise<T | null> {
+function ask<T>(type: string, timeout = 3000, payload: Record<string, unknown> = {}): Promise<T | null> {
   const worker = navigator.serviceWorker?.controller;
   if (!worker) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -38,13 +40,34 @@ function ask<T>(type: string, timeout = 3000): Promise<T | null> {
     };
     const timer = setTimeout(() => done(null), timeout);
     navigator.serviceWorker.addEventListener('message', onMessage);
-    worker.postMessage({ type });
+    worker.postMessage({ type, ...payload });
   });
 }
 
 export async function refreshCacheStats(): Promise<void> {
   const stats = await ask<CacheStats & { type: string }>('cache-stats');
-  cacheStats.set(stats ? { app: stats.app ?? 0, remote: stats.remote ?? 0 } : null);
+  cacheStats.set(
+    stats ? { app: stats.app ?? 0, remote: stats.remote ?? 0, frozen: Boolean(stats.frozen) } : null
+  );
+}
+
+/**
+ * What the cache holds from the network, with a hash of each stored response:
+ * the material a freeze pins.
+ */
+export async function snapshotModules(): Promise<Record<string, string> | null> {
+  const result = await ask<{ modules: Record<string, string> }>('snapshot', 20_000);
+  return result?.modules ?? null;
+}
+
+/**
+ * Put the cache into (or out of) frozen mode. Frozen, it answers from the
+ * snapshot and refuses anything the lock does not name.
+ */
+export async function applyFrozen(modules: Record<string, string> | null): Promise<boolean> {
+  const result = await ask<{ frozen: boolean }>('set-frozen', 10_000, { modules });
+  await refreshCacheStats();
+  return Boolean(result?.frozen);
 }
 
 /** Drop what came from elsewhere. The app's own files stay, so it still opens. */

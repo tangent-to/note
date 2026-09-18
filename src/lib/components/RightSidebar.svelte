@@ -14,6 +14,8 @@
   } from '../utils/notebookLibrary';
   import { formatDate, formatDateTime } from '../utils/format';
   import { toast } from '../utils/toast';
+  import { currentLock, freezeEnvironment, lockFolder, unfreezeEnvironment } from '../stores/environment';
+  import { shortName } from '../utils/environment';
   import {
     cacheStats,
     clearRemoteCache,
@@ -471,7 +473,46 @@
               Libraries a cell loads are kept, so the app and its notebooks still work without a network.
             {/if}
           </p>
+          {#if $lockFolder !== null}
+            <p class="backup-note">
+              {#if $currentLock?.frozen}
+                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length} pinned
+                {Object.keys($currentLock.modules).length === 1 ? 'file' : 'files'}
+                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
+              {:else}
+                Not frozen: this folder follows whatever its imports resolve to today.
+                Run All first — only what has actually loaded can be pinned.
+              {/if}
+            </p>
+          {/if}
           <div class="backup-actions">
+            {#if $lockFolder !== null}
+              {#if $currentLock?.frozen}
+                <button
+                  class="backup-btn"
+                  onclick={async () => {
+                    try {
+                      await unfreezeEnvironment();
+                      toast('Unfrozen. This folder follows the network again.', 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not unfreeze.', 'error');
+                    }
+                  }}
+                >Unfreeze</button>
+              {:else}
+                <button
+                  class="backup-btn primary"
+                  onclick={async () => {
+                    try {
+                      const { count } = await freezeEnvironment();
+                      toast(`Frozen: ${count} ${count === 1 ? 'file' : 'files'} pinned in tangent.lock.`, 'info');
+                    } catch (error: any) {
+                      toast(error?.message ?? 'Could not freeze.', 'error');
+                    }
+                  }}
+                >Freeze…</button>
+              {/if}
+            {/if}
             <button
               class="backup-btn"
               onclick={async () => {
@@ -480,6 +521,11 @@
               }}
             >Clear downloads</button>
           </div>
+          {#if $currentLock?.frozen}
+            <p class="backup-note lock-list">
+              {Object.keys($currentLock.modules).slice(0, 4).map(shortName).join(', ')}{Object.keys($currentLock.modules).length > 4 ? '…' : ''}
+            </p>
+          {/if}
         </div>
       {/if}
 
@@ -944,6 +990,13 @@
   .backup-age {
     font-size: 0.72rem;
     color: var(--text-faint);
+  }
+
+  .lock-list {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    overflow-wrap: anywhere;
   }
 
   .backup-note {

@@ -31,6 +31,7 @@
   } from './lib/stores/notebook';
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
   import { startOfflineCache } from './lib/utils/offlineCache';
+  import { loadEnvironment } from './lib/stores/environment';
   import {
     BACKUP_SNOOZE_KEY,
     LAST_BACKUP_KEY,
@@ -239,6 +240,14 @@
     { keys: '⌘/Ctrl + Shift + D', action: 'Toggle data panel' },
     { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
   ];
+
+  // The frozen environment belongs to the folder, so it follows the notebook on
+  // screen: opening a frozen folder freezes the cache, leaving it thaws.
+  $effect(() => {
+    $currentOrigin;
+    $syncStatus;
+    void loadEnvironment();
+  });
 
   // Mirror the notebook name into the browser tab so multiple notebooks are
   // tellable apart; falls back to the app name.

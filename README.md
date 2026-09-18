@@ -57,7 +57,13 @@ Both `.js` (tangent/note format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md)) a
 
 Cells load their libraries from a CDN as they run, so a notebook that works today would not open on a train. A service worker keeps what has been fetched — the app's own files, the libraries, the soundfonts — and serves them when there is no network: the app opens, and a notebook runs as far as what it has already loaded once.
 
-It is *unfrozen*: while there is a network, requests go to it first, so a notebook follows what its imports resolve to today. Pinning a notebook to exact versions is a later step.
+#### Freezing a folder
+
+By default a folder is *unfrozen*: while there is a network, requests go to it first, so notebooks follow what their imports resolve to today. That is fine for working, and not enough for keeping: half the imports in a real notebook point at a moving target — `@main`, or a bare `d3` resolving to whatever is newest — so a piece can change without its file changing.
+
+**Freeze** (Storage panel) writes `tangent.lock` in the notebook's folder: every URL its notebooks have actually loaded, with the hash of what came back. Frozen, the cache answers everything; a URL in the lock but missing from this browser is fetched once and checked against its hash, so a frozen folder cloned from git is the same environment; a URL in neither is refused, and says so in the cell rather than failing as an unexplained network error. **Unfreeze** goes back to following the network and keeps the lock as the record.
+
+Only what has run can be pinned — a soundfont is fetched when a note using it plays — so the gesture is Run All, then Freeze. The lock is a file in the folder, so the environment belongs to the work and travels with it in git; one folder is active at a time, the one of the notebook on screen.
 
 The Storage panel says how much is kept and offers to clear it; the app's own files are never cleared, so it still opens afterwards. The companion's socket and files are never cached, being live state. The cache only runs in a built app (`npm run serve`, or a deployed site), not under the Vite dev server, where it would serve the previous build.
 
