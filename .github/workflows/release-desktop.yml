@@ -105,7 +105,10 @@ jobs:
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # A draft rebuilt from a moved tag: replace the file and the notes,
+            # so a draft never describes a build it does not hold.
             gh release upload "$TAG" "$FILE" --clobber
+            gh release edit "$TAG" --notes "$NOTES"
           else
             gh release create "$TAG" --draft --title "tangent/note $TAG" --notes "$NOTES" "$FILE"
           fi
