@@ -32,6 +32,7 @@
   import { extractCodeFromMessage } from './lib/utils/cellEdit';
   import { startOfflineCache } from './lib/utils/offlineCache';
   import { loadEnvironment } from './lib/stores/environment';
+  import { pinNotebookImports } from './lib/stores/pinImports';
   import {
     BACKUP_SNOOZE_KEY,
     LAST_BACKUP_KEY,
@@ -530,6 +531,39 @@
     input.click();
   }
 
+  /**
+   * Rewrite this notebook's unpinned imports to the versions they resolve to
+   * now, so the notebook stays itself when a library moves.
+   */
+  async function pinImports() {
+    const notebook = get(currentNotebook);
+    if (!notebook) return;
+    showToast('Looking up versions…', 'info');
+    try {
+      const report = await pinNotebookImports();
+      const lines = [
+        ...report.pinned,
+        ...report.unresolved.map((spec) => `${spec} — nothing said what it resolves to; left as it is.`),
+      ];
+      if (report.alreadyPinned > 0) {
+        lines.push(`${report.alreadyPinned} import${report.alreadyPinned === 1 ? '' : 's'} already named a version.`);
+      }
+      if (lines.length === 0) lines.push('This notebook imports nothing from a CDN.');
+      conversionReport = {
+        title: notebook.name,
+        heading: report.pinned.length > 0 ? 'Imports pinned' : 'Imports checked',
+        intro:
+          report.pinned.length > 0
+            ? 'These now name the exact version they were loading. Run the cells to check, then save.'
+            : 'Nothing was changed.',
+        lines,
+      };
+    } catch (error: any) {
+      console.error('Pinning imports failed:', error);
+      showToast(`Couldn’t pin the imports: ${error?.message ?? error}`, 'error');
+    }
+  }
+
   function clearBrowserData() {
     if (!confirm('Clear the chat history, AI key and preferences kept in this browser? Notebooks and datasets are not affected.')) return;
     try {
@@ -915,6 +949,9 @@
         break;
       case 'save-notebook-as':
         openSaveAs();
+        break;
+      case 'pin-imports':
+        void pinImports();
         break;
       case 'backup-library':
         void backupLibrary();

@@ -11,8 +11,9 @@ const STORAGE_KEY = 'tangent-ai-context';
 export const DEFAULT_AI_CONTEXT = `# Tangent reference (Observable Plot, Arquero, tangent/ds)
 
 Render: end a cell with a bare expression, or return a DOM node, to display it.
-Preloaded globals: d3, Plot. Import anything else as browser ESM, e.g.
-import * as aq from "arquero";  // bare specifier, resolved from a CDN
+Preloaded globals: d3, Plot. Import anything else as browser ESM, naming the version:
+import * as aq from "https://cdn.jsdelivr.net/npm/arquero@8.0.4/+esm";
+A bare specifier ("arquero") works too but loads whatever is newest that day.
 
 ## Observable Plot (global Plot)
 Plot.plot(options) returns an element; end the cell with it to render.

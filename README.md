@@ -57,9 +57,15 @@ Both `.js` (tangent/note format, see [NOTEBOOK_FORMAT.md](NOTEBOOK_FORMAT.md)) a
 
 Cells load their libraries from a CDN as they run, so a notebook that works today would not open on a train. A service worker keeps what has been fetched — the app's own files, the libraries, the soundfonts — and serves them when there is no network: the app opens, and a notebook runs as far as what it has already loaded once.
 
+#### Pinning imports
+
+The best place for a version is the import itself: `import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm"` travels with the notebook, reads plainly in a diff, and needs nothing from this app to be reproducible somewhere else. jsDelivr's `+esm` bundles pin their own dependencies exactly, so pinning the top level pins the whole tree.
+
+**Pin Imports to Their Versions** (command palette) rewrites a notebook's unpinned imports to what they load right now: a bare `"d3"` becomes the versioned URL, an unversioned CDN URL gains its version, and a GitHub branch becomes the commit it points at — `@main` pinned to `@main` would pin nothing. Imports that already name a version are left alone, and so is anything whose host does not say what it resolved to.
+
 #### Freezing a folder
 
-By default a folder is *unfrozen*: while there is a network, requests go to it first, so notebooks follow what their imports resolve to today. That is fine for working, and not enough for keeping: half the imports in a real notebook point at a moving target — `@main`, or a bare `d3` resolving to whatever is newest — so a piece can change without its file changing.
+Pinned imports cover most of this on their own. Freezing covers the rest — an import whose host says nothing, a soundfont fetched by note, anything loaded by a library that builds its own URLs — and records it in one place.
 
 **Freeze** (Storage panel) writes `tangent.lock` in the notebook's folder: every URL its notebooks have actually loaded, with the hash of what came back. Frozen, the cache answers everything; a URL in the lock but missing from this browser is fetched once and checked against its hash, so a frozen folder cloned from git is the same environment; a URL in neither is refused, and says so in the cell rather than failing as an unexplained network error. **Unfreeze** goes back to following the network and keeps the lock as the record.
 

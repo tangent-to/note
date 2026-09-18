@@ -97,6 +97,13 @@
       action: () => oncommand?.({ id: 'run-all' })
     },
     {
+      id: 'pin-imports',
+      name: 'Pin Imports to Their Versions',
+      description: 'Rewrite this notebook’s imports to the exact versions they load right now',
+      icon: 'lock',
+      action: () => oncommand?.({ id: 'pin-imports' })
+    },
+    {
       id: 'backup-library',
       name: 'Back Up Library',
       description: 'Download every notebook and dataset in this browser as a .zip',
