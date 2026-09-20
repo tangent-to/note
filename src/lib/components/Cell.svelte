@@ -622,6 +622,14 @@
     margin-bottom: 1.1rem;
     padding-left: 0.375rem;
     transition: all 0.2s ease;
+    /* A notebook is a long column of independent blocks, and the engine has no
+       way of knowing that: without this it lays out and paints every cell on
+       every scroll, which is what made a long notebook feel heavy — most of all
+       in the desktop app, whose engine is slower at layout than a browser's.
+       `auto` keeps each cell's last measured height, so the scrollbar does not
+       jump, and a cell that comes into view is laid out then. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 260px;
   }
 
   /* The frame takes focus only when the cell has no editor to hand it to, and
