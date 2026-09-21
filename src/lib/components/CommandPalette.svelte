@@ -2,6 +2,7 @@
   import { formatDate } from '../utils/format';
   import { libraryEntries, originLabel } from '../utils/notebookLibrary';
   import { currentLock, lockFolder } from '../stores/environment';
+  import { kernelMode } from '../stores/notebook';
 
   interface Props {
     visible?: boolean;
@@ -222,8 +223,17 @@
    * has one — and it is offered by the name of the file it writes, because
    * `tangent.lock` is what you go looking for afterwards.
    */
-  const commands: Command[] = $derived(
-    $lockFolder === null
+  const commands: Command[] = $derived([
+    ...($kernelMode === 'main'
+      ? [{
+          id: 'restart-kernel-reload',
+          name: 'Restart Kernel and Reload the Page',
+          description: 'The only way to clear libraries the page is holding, on the main-thread kernel',
+          icon: 'rotate-ccw',
+          action: () => oncommand?.({ id: 'restart-kernel-reload' }),
+        }]
+      : []),
+    ...($lockFolder === null
       ? baseCommands
       : [
           ...baseCommands,
@@ -242,8 +252,8 @@
                 icon: 'lock',
                 action: () => oncommand?.({ id: 'freeze-environment' }),
               },
-        ]
-  );
+        ]),
+  ]);
 
   // The library, as commands. This is how you open another notebook day to day
   // — type its name here — which is what leaves the Storage panel free to be

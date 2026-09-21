@@ -52,6 +52,7 @@
     activeSessionId,
     closeSession,
     current as currentSession,
+    flushAutosave,
     openSession,
     rekeySession,
     resetRunState,
@@ -997,6 +998,9 @@
       case 'restart-kernel':
         restartKernel();
         break;
+      case 'restart-kernel-reload':
+        restartAndReload();
+        break;
       case 'restart-kernel-run-all':
         restartKernel({ runAll: true });
         break;
@@ -1122,6 +1126,21 @@
     }
   }
 
+  /**
+   * Start over with a new page.
+   *
+   * On the main-thread kernel a restart clears the notebook's variables, but
+   * not the page's module registry: a library imported once is held for the
+   * life of the page, with whatever state it keeps inside itself. Only a new
+   * page has a new registry. Nothing is lost by reloading here, since the
+   * library, the open tabs and the files are all outside the page, but a
+   * pending autosave is written first so the last keystrokes are not.
+   */
+  function restartAndReload() {
+    for (const session of get(sessions)) flushAutosave(session);
+    location.reload();
+  }
+
   function clearAllOutputs() {
     resetExecutionCounter();
     currentNotebook.update(notebook => {
@@ -1224,6 +1243,8 @@
       {#if $currentNotebook}
         <RunMenu
           busy={$kernelBusy}
+          onPage={$kernelMode === 'main'}
+          onreload={restartAndReload}
           reactive={$reactiveMode}
           stale={$staleCells.size}
           onrunall={() => window.dispatchEvent(new CustomEvent('run-all-cells'))}

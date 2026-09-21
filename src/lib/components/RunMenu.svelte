@@ -22,6 +22,8 @@
   interface Props {
     busy?: boolean;
     reactive?: boolean;
+    /** Cells run on the page, where a restart cannot clear the modules. */
+    onPage?: boolean;
     /** Cells whose dependencies changed since they last ran. */
     stale?: number;
     onrunall?: () => void;
@@ -29,18 +31,21 @@
     onstop?: () => void;
     onrestart?: () => void;
     onrestartrunall?: () => void;
+    onreload?: () => void;
     ontogglereactive?: () => void;
   }
 
   let {
     busy = false,
     reactive = false,
+    onPage = false,
     stale = 0,
     onrunall,
     onrunstale,
     onstop,
     onrestart,
     onrestartrunall,
+    onreload,
     ontogglereactive,
   }: Props = $props();
 
@@ -180,6 +185,20 @@
       <button role="menuitem" class="run-item" onclick={() => run(onrestartrunall)}>
         <span>Restart and run all</span>
       </button>
+      {#if onPage}
+        <!-- Cells running on the page share its module registry: a restart
+             clears their variables, but a library that kept state inside itself
+             keeps it, because the page still holds the module. Only a new page
+             is a new registry. -->
+        <button
+          role="menuitem"
+          class="run-item"
+          title="Cells run on this page, which keeps every library they imported. Reloading is the only way to start those over."
+          onclick={() => run(onreload)}
+        >
+          <span>Restart and reload the page</span>
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
