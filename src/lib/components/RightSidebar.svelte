@@ -94,6 +94,47 @@
   // panel: here they are both just bytes kept on this machine, listed with a
   // size and a way to delete them.
   let dragActive = $state(false);
+  /** Dropping onto the folder's list: the file lands in the folder itself. */
+  let dropInFolder = $state(false);
+
+  /**
+   * Write dropped files into the served folder.
+   *
+   * With a folder open, dropping a file means "put it there" — which is what
+   * the companion's file endpoint does, and what makes it readable by
+   * `FileAttachment` a second later, the watcher having seen it arrive. A name
+   * already in the folder is asked about rather than replaced.
+   */
+  async function dropIntoFolder(list: FileList | null) {
+    const files = Array.from(list ?? []);
+    if (files.length === 0) return;
+    const taken = new Set($syncData.map((f) => f.path));
+    let written = 0;
+    for (const file of files) {
+      if (taken.has(file.name) && !confirm(`${file.name} is already in this folder. Replace it?`)) {
+        continue;
+      }
+      try {
+        const response = await fetch(`/__files/${encodeURIComponent(file.name)}`, {
+          method: 'PUT',
+          body: await file.arrayBuffer(),
+          headers: { 'content-type': file.type || 'application/octet-stream' },
+        });
+        if (!response.ok) {
+          const detail = await response.json().catch(() => null);
+          toast(detail?.error ?? `Could not write ${file.name} (${response.status}).`, 'error');
+          continue;
+        }
+        written += 1;
+      } catch {
+        toast('note serve is not reachable.', 'error');
+        return;
+      }
+    }
+    if (written > 0) {
+      toast(`Wrote ${written} file${written === 1 ? '' : 's'} to the folder.`, 'info');
+    }
+  }
   let fileInput: HTMLInputElement = $state(null as any);
 
   async function ingest(files: FileList | File[] | null | undefined) {
@@ -611,16 +652,20 @@
       {:else if shownRows.length === 0 && notebookFilter.trim()}
         <div class="storage-section"><div class="empty-vars">No notebook matches “{notebookFilter}”.</div></div>
       {:else if $syncStatus === 'connected'}
-        <div class="storage-section">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="storage-section"
+          class:drop-target={dropInFolder}
+          ondragover={(e) => { e.preventDefault(); dropInFolder = true; }}
+          ondragleave={() => (dropInFolder = false)}
+          ondrop={(e) => { e.preventDefault(); dropInFolder = false; void dropIntoFolder(e.dataTransfer?.files ?? null); }}
+        >
           <div class="storage-section-head">
             <h4 class="section-title">In this folder ({inFolder.length + $syncData.length})</h4>
             <span class="storage-section-size">{formatBytes(folderSize)}</span>
           </div>
           {#if inFolder.length + $syncData.length === 0}
-            <div class="empty-vars">
-              Nothing here yet. A notebook or a data file put in
-              <code title={$syncRoot ?? undefined}>{shortRoot}</code> appears in this list.
-            </div>
+            <div class="empty-vars">Nothing here yet. Drop a file, or put one in the folder, and it appears in this list.</div>
           {:else}
             <div class="dataset-list">
               {#each inFolder as row (row.id)}
@@ -765,9 +810,9 @@
         />
         {#if $syncStatus === 'connected'}
           <p class="storage-note">
-            A file put in <code title={$syncRoot ?? undefined}>{shortRoot}</code> is listed above
-            and read with <code>FileAttachment</code>. Added here instead, it stays in this browser,
-            where <code>data("name")</code> finds it even away from this folder.
+            A file dropped on the folder above is written there and read with
+            <code>FileAttachment</code>. Added here instead, it stays in this browser, where
+            <code>data("name")</code> finds it even away from this folder.
             <button class="backup-link" onclick={() => fileInput?.click()}>Add a file…</button>
           </p>
         {:else}
@@ -837,9 +882,9 @@
         <p class="backup-note">
           {#if $syncStatus === 'connected'}
             Downloads a <code>.zip</code> of what this browser is holding: every notebook in its
-            library, the datasets dropped into it, and what cells saved here. The notebooks in
-            <code title={$syncRoot ?? undefined}>{shortRoot}</code> are files on disk as well, so
-            those are git's to keep — this is for anything you never wrote to a file.
+            library, the datasets dropped into it, and what cells saved here. The notebooks in this
+            folder are files on disk as well, so those are git's to keep — this is for anything you
+            never wrote to a file.
           {:else}
             Downloads a <code>.zip</code> of everything in this browser: every notebook, the
             datasets dropped in, and the files cells saved. There is no copy anywhere else, so this
@@ -1375,6 +1420,13 @@
 
   /* A sub-directory: one line that says how much it holds, and opens. */
   .folder-group { display: contents; }
+
+  /* A file on its way in. */
+  .drop-target {
+    outline: 2px dashed var(--accent-weak-border);
+    outline-offset: 3px;
+    border-radius: var(--radius-input);
+  }
 
   .folder-row {
     display: flex;
