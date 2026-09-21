@@ -244,7 +244,40 @@ fn browser_command(browser: &str, url: &str, profile: &Path) -> (String, Vec<Str
 /// Start the browser and say whether it stayed. A browser that refuses its
 /// profile exits at once, so "stayed a moment" is the whole test.
 fn start_browser(binary: &str, arguments: &[String]) -> Option<std::process::Child> {
-    let mut child = std::process::Command::new(binary).args(arguments).spawn().ok()?;
+    let mut command = std::process::Command::new(binary);
+    command.args(arguments);
+    // Inside an AppImage, everything here is pointed at the mounted image: its
+    // libraries, its GTK modules, its pixbuf loaders. A browser started from
+    // this process would inherit all of it and go looking for its own files in
+    // a filesystem that is about to disappear — the first sign being
+    // "loaders.cache: No such file or directory" on its way up. It is the
+    // system's browser; it wants the system's environment.
+    if std::env::var_os("APPDIR").is_some() {
+        for leaked in [
+            "APPDIR",
+            "APPIMAGE",
+            "LD_LIBRARY_PATH",
+            "LD_PRELOAD",
+            "GDK_PIXBUF_MODULE_FILE",
+            "GDK_PIXBUF_MODULEDIR",
+            "GTK_PATH",
+            "GTK_DATA_PREFIX",
+            "GTK_EXE_PREFIX",
+            "GTK_IM_MODULE_FILE",
+            "GI_TYPELIB_PATH",
+            "GIO_MODULE_DIR",
+            "GSETTINGS_SCHEMA_DIR",
+            "QT_PLUGIN_PATH",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "FONTCONFIG_FILE",
+            "FONTCONFIG_PATH",
+            "XDG_DATA_DIRS",
+        ] {
+            command.env_remove(leaked);
+        }
+    }
+    let mut child = command.spawn().ok()?;
     std::thread::sleep(Duration::from_millis(2500));
     match child.try_wait() {
         Ok(Some(_)) => None,
