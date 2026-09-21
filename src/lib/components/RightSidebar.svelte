@@ -5,6 +5,7 @@
   import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
+  import { SvelteSet } from 'svelte/reactivity';
   import { syncData, syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
   import {
     libraryEntries,
@@ -229,6 +230,39 @@
    * folder visible for what they are.
    */
   const servedPaths = $derived(new Set($syncFiles.map((f) => f.path)));
+  /**
+   * The folder's files, as a folder rather than a heap.
+   *
+   * A flat list of everything a directory holds is not a listing of it: put a
+   * hundred audio files in `renders/` and the notebooks you came for are gone
+   * from the screen. What is at the top level is shown; a sub-directory is one
+   * line saying how much it holds, and opens when asked.
+   */
+  const dataTree = $derived.by(() => {
+    const here: typeof $syncData = [];
+    const folders = new Map<string, { files: typeof $syncData; size: number }>();
+    for (const file of $syncData) {
+      const slash = file.path.lastIndexOf('/');
+      if (slash === -1) {
+        here.push(file);
+        continue;
+      }
+      const dir = file.path.slice(0, slash);
+      const bucket = folders.get(dir) ?? { files: [], size: 0 };
+      bucket.files.push(file);
+      bucket.size += file.size;
+      folders.set(dir, bucket);
+    }
+    return {
+      here,
+      folders: [...folders.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+    };
+  });
+
+  /** Sub-directories the reader has opened. Closed is the default: the point
+   *  of the listing is what is here, not everything underneath. */
+  let openFolders = $state(new SvelteSet<string>());
+
   /** The folder, named the way a person would name it: its last two segments. */
   const shortRoot = $derived.by(() => {
     const root = $syncRoot;
@@ -351,6 +385,31 @@
         }))
   );
 </script>
+
+{#snippet dataRow(file: { path: string; size: number }, label: string)}
+  <div class="dataset-item">
+    <div class="dataset-main">
+      <div class="dataset-name" title={file.path}>{label}</div>
+      <div class="dataset-meta">{formatBytes(file.size)}</div>
+    </div>
+    <div class="dataset-actions">
+      <button
+        class="ds-btn"
+        title={attachmentSnippet(file.path)}
+        aria-label={`Copy how to read ${file.path}`}
+        onclick={() => {
+          navigator.clipboard?.writeText(attachmentSnippet(file.path));
+          toast(`Copied: ${attachmentSnippet(file.path)}`, 'info');
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2"/>
+          <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+{/snippet}
 
 {#snippet notebookRow(row: NotebookRow)}
             <div class="dataset-item" class:current={row.id === openId}>
@@ -551,28 +610,29 @@
               {#each inFolder as row (row.id)}
                 {@render notebookRow(row)}
               {/each}
-              {#each $syncData as file (file.path)}
-                <div class="dataset-item">
-                  <div class="dataset-main">
-                    <div class="dataset-name" title={file.path}>{file.path}</div>
-                    <div class="dataset-meta">{formatBytes(file.size)}</div>
-                  </div>
-                  <div class="dataset-actions">
-                    <button
-                      class="ds-btn"
-                      title={attachmentSnippet(file.path)}
-                      aria-label={`Copy how to read ${file.path}`}
-                      onclick={() => {
-                        navigator.clipboard?.writeText(attachmentSnippet(file.path));
-                        toast(`Copied: ${attachmentSnippet(file.path)}`, 'info');
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="9" y="9" width="11" height="11" rx="2"/>
-                        <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
-                      </svg>
-                    </button>
-                  </div>
+              {#each dataTree.here as file (file.path)}
+                {@render dataRow(file, file.path)}
+              {/each}
+              {#each dataTree.folders as [dir, held] (dir)}
+                <div class="folder-group">
+                  <button
+                    class="folder-row"
+                    aria-expanded={openFolders.has(dir)}
+                    onclick={() => openFolders.has(dir) ? openFolders.delete(dir) : openFolders.add(dir)}
+                  >
+                    <svg class="folder-chevron" class:open={openFolders.has(dir)} width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M3.5 2l3 3-3 3"/>
+                    </svg>
+                    <span class="folder-name">{dir}/</span>
+                    <span class="folder-count">
+                      {held.files.length} file{held.files.length === 1 ? '' : 's'} · {formatBytes(held.size)}
+                    </span>
+                  </button>
+                  {#if openFolders.has(dir)}
+                    {#each held.files as file (file.path)}
+                      {@render dataRow(file, file.path.slice(dir.length + 1))}
+                    {/each}
+                  {/if}
                 </div>
               {/each}
             </div>
@@ -1292,6 +1352,40 @@
   .dropzone-hint { font-size: 0.72rem; margin: 0; }
 
   .hidden-input { display: none; }
+
+  /* A sub-directory: one line that says how much it holds, and opens. */
+  .folder-group { display: contents; }
+
+  .folder-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.4rem 0.55rem;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-input);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .folder-row:hover { background-color: var(--surface-hover); color: var(--heading); }
+
+  .folder-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+  .folder-chevron.open { transform: rotate(90deg); }
+
+  .folder-name {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-count { margin-left: auto; flex-shrink: 0; color: var(--text-faint); font-size: 0.7rem; }
 
   .dataset-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 1rem; }
 
