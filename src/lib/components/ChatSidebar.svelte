@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { aiService, CorsLikelyError, isWebDeployment, corsProxyConfigured, isLocalBase, type ChatMessage } from '../utils/aiService';
+  import { aiService, CorsLikelyError, corsProxyConfigured, isLocalBase, type ChatMessage } from '../utils/aiService';
   import { loadAISettings, saveAISettings, clearStoredKey } from '../utils/aiSettings';
   import { buildSystemPrompt } from '../utils/notebookContext';
   import { buildCellEditPrompt, extractCodeFromMessage, targetCell } from '../utils/cellEdit';
@@ -54,9 +54,11 @@
   let aiContext = $state('');
   let contextSaved = $state(false);
 
-  // Only a concern on a deployed web build with no CORS proxy configured:
-  // direct browser calls to ollama.com would be blocked by CORS.
-  const showCorsNotice = isWebDeployment() && !corsProxyConfigured();
+  // Only a concern when the browser really would block the call: no proxy in
+  // front, and a base that is not on this machine. An Ollama at localhost
+  // answers a page served from localhost quite happily, and used to be warned
+  // about anyway — every build but the dev server counted as "deployed".
+  const showCorsNotice = $derived(!corsProxyConfigured() && !isLocalBase(baseUrl));
 
   onMount(() => {
     const config = loadAISettings();
@@ -279,9 +281,12 @@
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <path d="M12 9v4M12 17h.01"/>
           </svg>
-          <p title="The browser blocks cross-origin calls to Ollama Cloud unless something proxies them. The dev server does; in production the bundled Cloudflare worker does.">
-            No Ollama proxy here, so the browser blocks Ollama Cloud. Run the app locally,
-            or set <code>VITE_OLLAMA_PROXY_URL</code> (see <code>workers/ollama-proxy</code>).
+          <p title="The browser blocks cross-origin calls to ollama.com unless something proxies them. A deployment can set VITE_OLLAMA_PROXY_URL to the bundled Cloudflare worker; an Ollama on this machine needs nothing.">
+            The browser blocks Ollama Cloud from here. Run <code>ollama serve</code> on this
+            machine and use it instead, with no key.
+            <button class="inline-link" onclick={() => { baseUrl = 'http://localhost:11434'; showSettings = true; }}>
+              Use a local Ollama
+            </button>
           </p>
         </div>
       {/if}
@@ -547,6 +552,19 @@
 </div>
 
 <style>
+  /* A word in a sentence that does something. */
+  .inline-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .inline-link:hover { color: var(--accent-solid-hover); }
+
   .chat-sidebar {
     display: flex;
     flex-direction: column;

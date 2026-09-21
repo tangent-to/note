@@ -42,7 +42,7 @@
   let trigger: HTMLButtonElement | null = $state(null);
 
   const mod =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd+' : 'Ctrl+';
 
   function items(): HTMLButtonElement[] {
     return root ? Array.from(root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')) : [];
@@ -134,7 +134,7 @@
         <span>{saveLabel}</span><kbd>{mod}S</kbd>
       </button>
       <button role="menuitem" class="file-item" onclick={() => run(onsaveas)}>
-        <span>Save as…</span><kbd>{mod}⇧S</kbd>
+        <span>Save as…</span><kbd>{mod}Shift+S</kbd>
       </button>
       <button role="menuitem" class="file-item" onclick={() => run(onexport)}>
         <span>Export…</span>

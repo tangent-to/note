@@ -36,7 +36,7 @@
   let { activeTab, open, dark = false, backupDue = false, ontheme, onselect }: Props = $props();
 
   const mod =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd+' : 'Ctrl+';
 </script>
 
 <nav class="panel-rail" aria-label="Panel">
@@ -44,7 +44,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'storage'}
     onclick={() => onselect?.('storage')}
-    title="Files: the notebooks and data this folder holds, backups and offline ({mod}⇧D)"
+    title="Files: the notebooks and data this folder holds, backups and offline ({mod}Shift+D)"
     aria-label="Files"
     aria-pressed={open && activeTab === 'storage'}
   >

@@ -407,8 +407,8 @@
 
       <div class="palette-footer">
         <span class="footer-hint">
-          <kbd>↑↓</kbd> Navigate
-          <kbd>↵</kbd> Execute
+          <kbd>Up</kbd><kbd>Down</kbd> Navigate
+          <kbd>Enter</kbd> Execute
           <kbd>Esc</kbd> Close
         </span>
       </div>

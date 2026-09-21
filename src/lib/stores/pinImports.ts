@@ -48,8 +48,9 @@ export async function pinNotebookImports(doFetch: typeof fetch = fetch): Promise
           continue;
         }
         pins.push({ start: ref.start, end: ref.end, spec: pinnedSpec });
-        if (!report.pinned.includes(`${ref.spec} → ${pinnedSpec}`)) {
-          report.pinned.push(`${ref.spec} → ${pinnedSpec}`);
+        const line = `${ref.spec} pinned to ${pinnedSpec}`;
+        if (!report.pinned.includes(line)) {
+          report.pinned.push(line);
         }
       }
       return pins.length > 0 ? { ...cell, content: applyPins(cell.content, pins) } : cell;

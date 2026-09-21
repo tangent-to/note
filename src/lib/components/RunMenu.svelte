@@ -49,7 +49,7 @@
   let trigger: HTMLButtonElement | null = $state(null);
 
   const mod =
-    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd+' : 'Ctrl+';
 
   function items(): HTMLButtonElement[] {
     return root
@@ -121,7 +121,7 @@
       <span class="btn-label">Stop</span>
     </button>
   {:else}
-    <button class="run-primary" onclick={() => onrunall?.()} title="Run all cells ({mod}⇧↵)">
+    <button class="run-primary" onclick={() => onrunall?.()} title="Run all cells ({mod}Shift+Enter)">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true">
         <path d="M3 2l9 5-9 5V2z"/>
       </svg>
@@ -155,7 +155,7 @@
     <!-- svelte-ignore a11y_interactive_supports_focus -->
     <div class="run-popup" role="menu" aria-label="Run" tabindex="-1" onkeydown={onMenuKeydown}>
       <button role="menuitem" class="run-item" onclick={() => run(onrunall)}>
-        <span>Run all cells</span><kbd>{mod}⇧↵</kbd>
+        <span>Run all cells</span><kbd>{mod}Shift+Enter</kbd>
       </button>
       <button role="menuitem" class="run-item" disabled={stale === 0} onclick={() => run(onrunstale)}>
         <!-- "Run 0 stale cells" is not a sentence; with none, the item just names what it would do. -->

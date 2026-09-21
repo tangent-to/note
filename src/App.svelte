@@ -230,21 +230,25 @@
     toastTimer = setTimeout(() => { toast = null; }, 5000);
   }
 
+  /** How this machine writes the modifier, in words rather than a glyph. */
+  const shortcutModifier =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd+' : 'Ctrl+';
+
   const SHORTCUTS: { keys: string; action: string }[] = [
-    { keys: '⌘/Ctrl + K', action: 'Command palette' },
-    { keys: '⌘/Ctrl + /', action: 'Toggle AI chat' },
-    { keys: '⌘/Ctrl + S', action: 'Save notebook' },
-    { keys: '⌘/Ctrl + Shift + S', action: 'Save notebook as…' },
-    { keys: '⌘/Ctrl + F', action: 'Find in notebook' },
-    { keys: 'Ctrl + H  ·  ⌘ + ⌥ + F', action: 'Replace in notebook' },
-    { keys: '⌘/Ctrl + N', action: 'New notebook' },
-    { keys: '⌘/Ctrl + O', action: 'Open notebook' },
-    { keys: '⌘/Ctrl + Enter', action: 'Run cell' },
+    { keys: 'Cmd/Ctrl + K', action: 'Command palette' },
+    { keys: 'Cmd/Ctrl + /', action: 'Toggle AI chat' },
+    { keys: 'Cmd/Ctrl + S', action: 'Save notebook' },
+    { keys: 'Cmd/Ctrl + Shift + S', action: 'Save notebook as…' },
+    { keys: 'Cmd/Ctrl + F', action: 'Find in notebook' },
+    { keys: 'Ctrl + H  ·  Cmd + Alt + F', action: 'Replace in notebook' },
+    { keys: 'Cmd/Ctrl + N', action: 'New notebook' },
+    { keys: 'Cmd/Ctrl + O', action: 'Open notebook' },
+    { keys: 'Cmd/Ctrl + Enter', action: 'Run cell' },
     { keys: 'Shift + Enter', action: 'Run cell, select next' },
     { keys: 'Alt + Enter', action: 'Run cell, insert below' },
-    { keys: '⌘/Ctrl + `', action: 'Toggle console' },
-    { keys: '⌘/Ctrl + Shift + D', action: 'Toggle data panel' },
-    { keys: '⌘/Ctrl + Z', action: 'Undo cell delete' },
+    { keys: 'Cmd/Ctrl + `', action: 'Toggle console' },
+    { keys: 'Cmd/Ctrl + Shift + D', action: 'Toggle data panel' },
+    { keys: 'Cmd/Ctrl + Z', action: 'Undo cell delete' },
   ];
 
   // The frozen environment belongs to the folder, so it follows the notebook on
@@ -1197,7 +1201,7 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 8h10M8 3l5 5-5 5"/>
         </svg>
-        <kbd class="kbd-hint">⌘K</kbd>
+        <kbd class="kbd-hint">{shortcutModifier}K</kbd>
       </button>
       <FileMenu
         saveLabel={saveLabel}
