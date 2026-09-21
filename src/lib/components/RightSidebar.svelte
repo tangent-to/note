@@ -741,8 +741,11 @@
         </div>
       {/if}
 
-      <!-- Datasets. Files are read in the browser and cached in IndexedDB.
-           Nothing is uploaded or served publicly. -->
+      <!-- Datasets: files read in the browser and kept in IndexedDB. With a
+           folder open the folder is the better place for data, so the drop
+           target gives way to a line — but the way in stays, because a notebook
+           meant to run away from this folder needs its data carried in the
+           browser. -->
       <div class="storage-section">
         <div class="storage-section-head">
           <h4 class="section-title">Datasets ({$datasets.length})</h4>
@@ -752,11 +755,20 @@
         <!-- With a folder there is a better place for a file than this
              browser: the folder. The drop target is for the case where there
              is none, and saying so beats leaving it there to be wondered at. -->
+        <input
+          bind:this={fileInput}
+          type="file"
+          multiple
+          accept=".csv,.tsv,.json,.ndjson,.txt"
+          class="hidden-input"
+          onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
+        />
         {#if $syncStatus === 'connected'}
           <p class="storage-note">
-            Dropping a file here keeps it in this browser. With a folder open, putting it in
-            <code title={$syncRoot ?? undefined}>{shortRoot}</code> is simpler — it appears above,
-            and travels with your notebooks.
+            A file put in <code title={$syncRoot ?? undefined}>{shortRoot}</code> is listed above
+            and read with <code>FileAttachment</code>. Added here instead, it stays in this browser,
+            where <code>data("name")</code> finds it even away from this folder.
+            <button class="backup-link" onclick={() => fileInput?.click()}>Add a file…</button>
           </p>
         {:else}
         <div
@@ -776,19 +788,11 @@
           <p class="dropzone-text">Drop CSV, TSV or JSON here</p>
           <p class="dropzone-hint">or click to browse. Stays in your browser.</p>
         </div>
-        <input
-          bind:this={fileInput}
-          type="file"
-          multiple
-          accept=".csv,.tsv,.json,.ndjson,.txt"
-          class="hidden-input"
-          onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
-        />
         {/if}
         {#if $datasets.length === 0 && $syncStatus !== 'connected'}
           <div class="empty-vars">No data yet. Drop a file, then read it in a cell with <code>await data("name")</code>.</div>
         {:else if $datasets.length === 0}
-          <!-- Nothing to say: the folder above is where the data is. -->
+          <!-- The line above already says where data goes and how to add some. -->
         {:else}
           <div class="dataset-list">
             {#each $datasets as ds (ds.name)}
@@ -815,10 +819,7 @@
         {/if}
       </div>
 
-      <!-- The rest of what this origin keeps. Settings live in Info, so they are
-           not duplicated here; what this answers is "what else is on my machine,
-           and how do I get rid of it" — the AI key in particular, which is
-           stored unencrypted and had no way out until now. -->
+
       <!-- Housekeeping: what to do about all of the above, below it. -->
       <!-- Backup. Without the companion, this browser's storage is the only
            copy of these notebooks, and the browser may clear it; the archive is
