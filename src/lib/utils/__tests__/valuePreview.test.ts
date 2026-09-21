@@ -99,7 +99,7 @@ describe('previewJson', () => {
     // A handful of items, each far past the ceiling on its own.
     const huge = Array.from({ length: 4 }, () => ({ blob: 'x'.repeat(MAX_JSON_CHARS) }));
     expect(previewJson(huge)).toBeNull();
-    expect(describeValue(huge)).toBe('Array(4) — too large to display');
+    expect(describeValue(huge)).toBe('Array(4), too large to display');
   });
 
   it('returns null for values JSON cannot express', () => {
@@ -108,6 +108,6 @@ describe('previewJson', () => {
   });
 
   it('describes a plain object it could not preview', () => {
-    expect(describeValue({})).toBe('Object — too large to display');
+    expect(describeValue({})).toBe('Object, too large to display');
   });
 });

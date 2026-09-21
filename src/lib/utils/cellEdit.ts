@@ -29,7 +29,7 @@ export function buildCellEditPrompt(notebook: Notebook, target: CellTarget): str
   const role =
     `You are editing one cell of the notebook below: cell ${target.number} (${kind}), ` +
     `marked "THE CELL IN QUESTION".\n\n` +
-    `Reply with the complete new content of that cell and nothing else — no ` +
+    `Reply with the complete new content of that cell and nothing else: no ` +
     `explanation, no commentary, and do not repeat any other cell. Put it in a ` +
     `single fenced code block. Keep everything the user did not ask you to change, ` +
     `including comments and formatting. If the request cannot be done by editing ` +

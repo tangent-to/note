@@ -342,7 +342,7 @@
           />
           <p class="help-text">
             Leave as default unless you route through a proxy. For an Ollama on
-            this machine, use <code>http://localhost:11434</code> — no API key is
+            this machine, use <code>http://localhost:11434</code>. No API key is
             needed, and Ollama already allows requests from localhost origins.
           </p>
         </div>

@@ -548,7 +548,7 @@
       const report = await pinNotebookImports();
       const lines = [
         ...report.pinned,
-        ...report.unresolved.map((spec) => `${spec} — nothing said what it resolves to; left as it is.`),
+        ...report.unresolved.map((spec) => `${spec}: nothing said what it resolves to, so it is left as it is.`),
       ];
       if (report.alreadyPinned > 0) {
         lines.push(`${report.alreadyPinned} import${report.alreadyPinned === 1 ? '' : 's'} already named a version.`);

@@ -91,6 +91,6 @@ export function previewJson(value: any): string | null {
 
 /** What to show when a value is too large to preview at all. */
 export function describeValue(value: any): string {
-  if (Array.isArray(value)) return `Array(${value.length.toLocaleString('en-US')}) — too large to display`;
-  return `${value?.constructor?.name ?? 'Object'} — too large to display`;
+  if (Array.isArray(value)) return `Array(${value.length.toLocaleString('en-US')}), too large to display`;
+  return `${value?.constructor?.name ?? 'Object'}, too large to display`;
 }

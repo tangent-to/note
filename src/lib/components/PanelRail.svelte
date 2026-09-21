@@ -44,7 +44,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'storage'}
     onclick={() => onselect?.('storage')}
-    title="Files — the notebooks and data this folder holds, backups and offline ({mod}⇧D)"
+    title="Files: the notebooks and data this folder holds, backups and offline ({mod}⇧D)"
     aria-label="Files"
     aria-pressed={open && activeTab === 'storage'}
   >
@@ -58,7 +58,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'variables'}
     onclick={() => onselect?.('variables')}
-    title="Variables — what this notebook's kernel is holding"
+    title="Variables: what this notebook's kernel is holding"
     aria-label="Variables"
     aria-pressed={open && activeTab === 'variables'}
   >
@@ -72,7 +72,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'console'}
     onclick={() => onselect?.('console')}
-    title={`Console — its output, and a prompt into the same kernel (${mod}\`)`}
+    title={`Console: its output, and a prompt into the same kernel (${mod}\`)`}
     aria-label="Console"
     aria-pressed={open && activeTab === 'console'}
   >
@@ -86,7 +86,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'chat'}
     onclick={() => onselect?.('chat')}
-    title="Chat — one conversation for the whole app ({mod}/)"
+    title="Chat: one conversation for the whole app ({mod}/)"
     aria-label="Chat"
     aria-pressed={open && activeTab === 'chat'}
   >
@@ -99,7 +99,7 @@
     class="rail-btn"
     class:active={open && activeTab === 'info'}
     onclick={() => onselect?.('info')}
-    title="Info — about this notebook, and where its cells run"
+    title="Info: about this notebook, and where its cells run"
     aria-label="Info"
     aria-pressed={open && activeTab === 'info'}
   >

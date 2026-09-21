@@ -629,7 +629,7 @@
         <div class="storage-warning">
           This browser refused persistent storage (private window, or another tab
           holds an older database). Notebooks are kept in memory and will be gone
-          when you close this tab — export anything you want to keep.
+          when you close this tab. Export anything you want to keep.
         </div>
       {/if}
 
@@ -707,7 +707,7 @@
               <span class="storage-section-size">{formatBytes(browserSize)}</span>
             </div>
             <p class="storage-note">
-              Notebooks this browser holds that no file in this folder matches — opened from a link,
+              Notebooks this browser holds that no file in this folder matches: opened from a link,
               made here, or left by a folder you had open before.
             </p>
             <div class="dataset-list">
@@ -809,10 +809,9 @@
           onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
         />
         {#if $syncStatus === 'connected'}
-          <p class="storage-note">
-            A file dropped on the folder above is written there and read with
-            <code>FileAttachment</code>. Added here instead, it stays in this browser, where
-            <code>data("name")</code> finds it even away from this folder.
+          <p class="storage-note" title="A file in the folder is read with FileAttachment. One kept here travels with the notebook, wherever it runs.">
+            Drop a file above to put it in the folder. Kept here instead,
+            <code>data("name")</code> finds it anywhere.
             <button class="backup-link" onclick={() => fileInput?.click()}>Add a file…</button>
           </p>
         {:else}
@@ -875,40 +874,33 @@
           <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
           <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
         </div>
-        <!-- What the button does, said before anything about why. The answer
-             differs with a companion: the notebooks are files then, and git is
-             already their backup — what this still carries is everything that
-             exists nowhere else. -->
-        <p class="backup-note">
+        <!-- Short on purpose: the reader is deciding whether to press a button,
+             not reading about storage. What the archive is for lives in the
+             tooltips and in the README. -->
+        <p class="backup-note" title={$syncStatus === 'connected'
+          ? 'The notebooks here are files in the folder as well, so git already keeps those. This is for what exists nowhere else.'
+          : 'This browser is the only place these live.'}>
           {#if $syncStatus === 'connected'}
-            Downloads a <code>.zip</code> of what this browser is holding: every notebook in its
-            library, the datasets dropped into it, and what cells saved here. The notebooks in this
-            folder are files on disk as well, so those are git's to keep — this is for anything you
-            never wrote to a file.
+            A <code>.zip</code> of what only this browser holds: its library, datasets, saved files.
           {:else}
-            Downloads a <code>.zip</code> of everything in this browser: every notebook, the
-            datasets dropped in, and the files cells saved. There is no copy anywhere else, so this
-            archive is the copy.
+            A <code>.zip</code> of everything here: notebooks, datasets, saved files.
           {/if}
         </p>
         {#if $backupState.pending > 0}
-          <p class="backup-note">
-            {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
-            only in this browser and changed since the last backup.
-          </p>
+          <p class="backup-note">{$backupState.pending} changed since the last one.</p>
         {/if}
         {#if $storagePersisted === false}
           <p class="backup-note">
-            This browser may delete that storage by itself when it runs low on space.
+            The browser may clear this storage when space runs low.
             <button class="backup-link" onclick={async () => {
               const granted = await requestStoragePersistence();
               toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
             }}>Ask it not to</button>
           </p>
         {/if}
-        <label class="backup-choice">
+        <label class="backup-choice" title="Everything cells loaded from the network, so the archive runs with no network elsewhere.">
           <input type="checkbox" bind:checked={backupLibraries} />
-          Add the libraries cells have loaded, so the archive still runs with no network (much larger)
+          Include the libraries (much larger)
         </label>
         <div class="backup-actions">
           <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
@@ -927,25 +919,24 @@
             <span class="backup-title">Offline</span>
             <span class="backup-age">{$online ? 'online' : 'no network'}</span>
           </div>
-          <p class="backup-note">
+          <p class="backup-note" title="Kept as cells load them, so the app opens and its notebooks run with no network, as far as they have already loaded.">
             {#if $cacheStats}
-              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'} and
-              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library or data file' : 'library and data files'} kept.
-              The app opens and its notebooks run without a network, as far as what they have already loaded.
+              {$cacheStats.app} app {$cacheStats.app === 1 ? 'file' : 'files'},
+              {$cacheStats.remote} {$cacheStats.remote === 1 ? 'library' : 'libraries'} kept.
             {:else}
-              Libraries a cell loads are kept, so the app and its notebooks still work without a network.
+              Libraries are kept as cells load them.
             {/if}
           </p>
           {#if $lockFolder !== null}
-            <p class="backup-note">
+            <p class="backup-note" title={$currentLock?.frozen
+              ? 'Anything not in the lock is refused until you unfreeze.'
+              : 'Freezing pins each library to the exact bytes it loaded. Only what has loaded can be pinned, so run the notebooks first.'}>
               {#if $currentLock?.frozen}
-                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length} pinned
+                <strong>Frozen</strong> to {Object.keys($currentLock.modules).length}
                 {Object.keys($currentLock.modules).length === 1 ? 'file' : 'files'}
-                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock). Anything else is refused until you unfreeze.
+                ({$lockFolder ? `${$lockFolder}/` : ''}tangent.lock).
               {:else}
-                Not frozen: this folder follows whatever its imports resolve to today.
-                Freezing writes {$lockFolder ? `${$lockFolder}/` : ''}tangent.lock, pinning each library to the exact
-                bytes it loaded. Run All first — only what has actually loaded can be pinned.
+                Not frozen: follows what its imports resolve to today. Run All, then freeze.
               {/if}
             </p>
           {/if}

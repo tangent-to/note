@@ -228,7 +228,7 @@ export class AIService {
       const system =
         `You are a ${request.language} code completion engine. ` +
         `Continue the code from where it ends. Respond with ONLY the raw code to ` +
-        `insert at the cursor — no explanations, no markdown fences.` +
+        `insert at the cursor: no explanations, no markdown fences.` +
         (request.context ? `\n\nNotebook context:\n${request.context}` : '');
 
       const text = await this.chat([{ role: 'user', content: request.code }], system);

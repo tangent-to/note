@@ -46,10 +46,10 @@
   // What Ctrl+S will do, said as a place rather than a verb.
   const where = $derived.by(() => {
     if (origin.kind === 'disk') {
-      return { label: origin.path.split('/').pop() ?? origin.path, title: `${origin.path} — Ctrl/Cmd+S writes this file`, linked: true };
+      return { label: origin.path.split('/').pop() ?? origin.path, title: `${origin.path}. Ctrl/Cmd+S writes this file.`, linked: true };
     }
     if (origin.kind === 'url') {
-      return { label: 'from a link', title: `${origin.href} — Ctrl/Cmd+S exports a download`, linked: false };
+      return { label: 'from a link', title: `${origin.href}. Ctrl/Cmd+S exports a download.`, linked: false };
     }
     if (connected) {
       return { label: 'not on disk', title: 'This notebook has no file in the served folder. Ctrl/Cmd+S exports a download; Save as… gives it a file.', linked: false };
