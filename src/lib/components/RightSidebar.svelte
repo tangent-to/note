@@ -123,6 +123,9 @@
   }
 
   async function removeDataset(name: string) {
+    // Dropped in here, and nowhere else: the same question a browser-only
+    // notebook gets.
+    if (!confirm(`Delete the dataset “${name}”? It is only in this browser, and this cannot be undone.`)) return;
     await deleteDataset(name);
     toast(`Removed ${name}`, 'info');
   }
@@ -280,10 +283,23 @@
 
   const openId = $derived($currentNotebook?.id ?? null);
 
-  function confirmDelete(entry: LibraryEntry) {
-    // Deleting is the one irreversible thing this panel does, and a notebook is
-    // worth more than a cached CSV, so it asks. Datasets do not.
-    if (!confirm(`Remove “${entry.name}” from the library? This cannot be undone.`)) return;
+  /**
+   * Ask before destroying something, and only then.
+   *
+   * The rule used to be about what kind of thing it was — notebooks asked,
+   * data did not — which had it backwards: forgetting this browser's copy of a
+   * notebook that is a file in the folder destroys nothing, while a dataset
+   * dropped in here has no other copy at all. So what decides is whether
+   * anything survives the click.
+   */
+  function confirmDelete(entry: LibraryEntry, path: string | null) {
+    // The app says "Removed … from the library" itself, which is what this is:
+    // the file it came from is still in the folder, and still listed.
+    if (path) {
+      ondeleteNotebook?.({ entry });
+      return;
+    }
+    if (!confirm(`Delete “${entry.name}”? It is only in this browser, and this cannot be undone.`)) return;
     ondeleteNotebook?.({ entry });
   }
 
@@ -432,7 +448,7 @@
                     title={row.path
                       ? 'Forget this browser’s copy. The file on disk is untouched.'
                       : 'Remove from the library'}
-                    onclick={() => confirmDelete(row.entry!)}
+                    onclick={() => confirmDelete(row.entry!, row.path)}
                     aria-label="Remove notebook"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -706,6 +722,9 @@
                     aria-label="Delete {file.name}"
                     onclick={async () => {
                       if (!virtualFolder) return;
+                      // Written by a cell into this browser, with no folder to
+                      // hold a copy: gone means gone.
+                      if (!confirm(`Delete “${file.name}”? It is only in this browser, and this cannot be undone.`)) return;
                       await deleteVirtualFile(virtualFolder, file.name);
                       await refreshVirtualFiles();
                       toast(`Deleted ${file.name}`, 'info');
