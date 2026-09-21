@@ -220,6 +220,30 @@
     );
   });
 
+  /**
+   * Which of those rows are in the folder on screen.
+   *
+   * A path is not enough: a notebook opened from another folder keeps the path
+   * it had, and would claim to be here. Only what the companion is serving
+   * right now counts, which is also what makes the leftovers of a previous
+   * folder visible for what they are.
+   */
+  const servedPaths = $derived(new Set($syncFiles.map((f) => f.path)));
+  /** The folder, named the way a person would name it: its last two segments. */
+  const shortRoot = $derived.by(() => {
+    const root = $syncRoot;
+    if (!root) return 'the folder';
+    const parts = root.split('/').filter(Boolean);
+    return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : root;
+  });
+  const inFolder = $derived(shownRows.filter((r) => r.path && servedPaths.has(r.path)));
+  const inBrowser = $derived(shownRows.filter((r) => !(r.path && servedPaths.has(r.path))));
+  const folderSize = $derived(
+    inFolder.reduce((n, r) => n + (r.entry?.size ?? 0), 0) +
+      $syncData.reduce((n, f) => n + f.size, 0)
+  );
+  const browserSize = $derived(inBrowser.reduce((n, r) => n + (r.entry?.size ?? 0), 0) + datasetsSize);
+
   const openId = $derived($currentNotebook?.id ?? null);
 
   function confirmDelete(entry: LibraryEntry) {
@@ -327,6 +351,39 @@
         }))
   );
 </script>
+
+{#snippet notebookRow(row: NotebookRow)}
+            <div class="dataset-item" class:current={row.id === openId}>
+              <button
+                class="notebook-main"
+                onclick={() => row.path
+                  ? onopenDiskFile?.({ path: row.path })
+                  : onopenNotebook?.({ id: row.id })}
+                title={row.path ? `Open ${row.path}` : `Open “${row.name}”`}
+              >
+                <div class="dataset-name">{row.name}</div>
+                <div class="dataset-meta">
+                  {#if row.path}{row.path}{:else}in this browser{/if}{#if row.entry} · {row.entry.cellCount} cell{row.entry.cellCount === 1 ? '' : 's'} · {formatBytes(row.entry.size)}{:else} · not opened yet{/if}{#if row.id === openId} · open{/if}
+                </div>
+              </button>
+              <div class="dataset-actions">
+                {#if row.entry}
+                  <button
+                    class="ds-btn ds-danger"
+                    title={row.path
+                      ? 'Forget this browser’s copy. The file on disk is untouched.'
+                      : 'Remove from the library'}
+                    onclick={() => confirmDelete(row.entry!)}
+                    aria-label="Remove notebook"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                    </svg>
+                  </button>
+                {/if}
+              </div>
+            </div>
+{/snippet}
 
 <div class="right-sidebar">
   {#if activeTab === 'info'}
@@ -445,7 +502,9 @@
   {:else if activeTab === 'storage'}
     <div class="storage-tab">
       <div class="storage-total">
-        <span>Kept in this browser</span>
+        <span title={$syncRoot ?? undefined}>
+          {#if $syncStatus === 'connected'}{shortRoot}{:else}Kept in this browser{/if}
+        </span>
         <span class="storage-total-size">{formatBytes(notebooksSize + datasetsSize)}</span>
       </div>
 
@@ -458,68 +517,98 @@
         </div>
       {/if}
 
-      <!-- One list. A notebook is one thing; where it lives is something it
-           has, so that is a line on the row rather than a separate section:
-           a path, or "in this browser". The row says it; nothing has to
-           explain it. -->
-      <div class="storage-section">
-        <div class="storage-section-head">
-          <h4 class="section-title">Notebooks ({rows.length})</h4>
-          <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
-        </div>
+      <!-- One list when there is one place. A notebook is one thing and where
+           it lives is something it has, so the row says it — but with a folder
+           open there are two places, and a heading each is what tells the
+           notebooks of this folder from what a previous one left behind. -->
+      {#if rows.length >= FILTER_FROM}
+        <input
+          class="storage-filter"
+          type="search"
+          placeholder="Filter notebooks…"
+          aria-label="Filter notebooks"
+          bind:value={notebookFilter}
+        />
+      {/if}
 
-
-        {#if rows.length >= FILTER_FROM}
-          <input
-            class="storage-filter"
-            type="search"
-            placeholder="Filter notebooks…"
-            aria-label="Filter notebooks"
-            bind:value={notebookFilter}
-          />
-        {/if}
-
-        {#if rows.length === 0}
-          <div class="empty-vars">No notebooks stored yet.</div>
-        {:else if shownRows.length === 0}
-          <div class="empty-vars">No notebook matches “{notebookFilter}”.</div>
-        {:else}
-          <div class="dataset-list">
-            {#each shownRows as row (row.id)}
-              <div class="dataset-item" class:current={row.id === openId}>
-                <button
-                  class="notebook-main"
-                  onclick={() => row.path
-                    ? onopenDiskFile?.({ path: row.path })
-                    : onopenNotebook?.({ id: row.id })}
-                  title={row.path ? `Open ${row.path}` : `Open “${row.name}”`}
-                >
-                  <div class="dataset-name">{row.name}</div>
-                  <div class="dataset-meta">
-                    {#if row.path}{row.path}{:else}in this browser{/if}{#if row.entry} · {row.entry.cellCount} cell{row.entry.cellCount === 1 ? '' : 's'} · {formatBytes(row.entry.size)}{:else} · not opened yet{/if}{#if row.id === openId} · open{/if}
+      {#if rows.length === 0 && $syncStatus !== 'connected'}
+        <div class="storage-section"><div class="empty-vars">No notebooks stored yet.</div></div>
+      {:else if shownRows.length === 0 && notebookFilter.trim()}
+        <div class="storage-section"><div class="empty-vars">No notebook matches “{notebookFilter}”.</div></div>
+      {:else if $syncStatus === 'connected'}
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">In this folder ({inFolder.length + $syncData.length})</h4>
+            <span class="storage-section-size">{formatBytes(folderSize)}</span>
+          </div>
+          {#if inFolder.length + $syncData.length === 0}
+            <div class="empty-vars">
+              Nothing here yet. A notebook or a data file put in
+              <code title={$syncRoot ?? undefined}>{shortRoot}</code> appears in this list.
+            </div>
+          {:else}
+            <div class="dataset-list">
+              {#each inFolder as row (row.id)}
+                {@render notebookRow(row)}
+              {/each}
+              {#each $syncData as file (file.path)}
+                <div class="dataset-item">
+                  <div class="dataset-main">
+                    <div class="dataset-name" title={file.path}>{file.path}</div>
+                    <div class="dataset-meta">{formatBytes(file.size)}</div>
                   </div>
-                </button>
-                <div class="dataset-actions">
-                  {#if row.entry}
+                  <div class="dataset-actions">
                     <button
-                      class="ds-btn ds-danger"
-                      title={row.path
-                        ? 'Forget this browser’s copy. The file on disk is untouched.'
-                        : 'Remove from the library'}
-                      onclick={() => confirmDelete(row.entry!)}
-                      aria-label="Remove notebook"
+                      class="ds-btn"
+                      title={attachmentSnippet(file.path)}
+                      aria-label={`Copy how to read ${file.path}`}
+                      onclick={() => {
+                        navigator.clipboard?.writeText(attachmentSnippet(file.path));
+                        toast(`Copied: ${attachmentSnippet(file.path)}`, 'info');
+                      }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="11" height="11" rx="2"/>
+                        <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
                       </svg>
                     </button>
-                  {/if}
+                  </div>
                 </div>
-              </div>
-            {/each}
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        {#if inBrowser.length > 0}
+          <div class="storage-section">
+            <div class="storage-section-head">
+              <h4 class="section-title">In this browser ({inBrowser.length})</h4>
+              <span class="storage-section-size">{formatBytes(browserSize)}</span>
+            </div>
+            <p class="storage-note">
+              Notebooks this browser holds that no file in this folder matches — opened from a link,
+              made here, or left by a folder you had open before.
+            </p>
+            <div class="dataset-list">
+              {#each inBrowser as row (row.id)}
+                {@render notebookRow(row)}
+              {/each}
+            </div>
           </div>
         {/if}
-      </div>
+      {:else}
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">Notebooks ({rows.length})</h4>
+            <span class="storage-section-size">{formatBytes(notebooksSize)}</span>
+          </div>
+          <div class="dataset-list">
+            {#each shownRows as row (row.id)}
+              {@render notebookRow(row)}
+            {/each}
+          </div>
+        </div>
+      {/if}
 
       {#if virtualFolder && virtualFiles.length > 0}
         <!-- Files this notebook's cells wrote with save(), kept in the browser
@@ -573,51 +662,6 @@
         </div>
       {/if}
 
-      <!-- The rest of the folder. A working directory is a directory: listing
-           only its notebooks left the reader guessing whether the file their
-           cell reads is even there. -->
-      {#if $syncStatus === 'connected'}
-        <div class="storage-section">
-          <div class="storage-section-head">
-            <h4 class="section-title">In this folder ({$syncData.length})</h4>
-            <span class="storage-section-size">{formatBytes($syncData.reduce((n, f) => n + f.size, 0))}</span>
-          </div>
-          {#if $syncData.length === 0}
-            <div class="empty-vars">
-              Only notebooks here. Put a file in <code>{$syncRoot ?? 'the folder'}</code> and it
-              appears, ready to read with <code>FileAttachment</code>.
-            </div>
-          {:else}
-            <div class="dataset-list">
-              {#each $syncData as file (file.path)}
-                <div class="dataset-item">
-                  <div class="dataset-main">
-                    <div class="dataset-name" title={file.path}>{file.path}</div>
-                    <div class="dataset-meta">{formatBytes(file.size)}</div>
-                  </div>
-                  <div class="dataset-actions">
-                    <button
-                      class="ds-btn"
-                      title={attachmentSnippet(file.path)}
-                      aria-label={`Copy how to read ${file.path}`}
-                      onclick={() => {
-                        navigator.clipboard?.writeText(attachmentSnippet(file.path));
-                        toast(`Copied: ${attachmentSnippet(file.path)}`, 'info');
-                      }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="9" y="9" width="11" height="11" rx="2"/>
-                        <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-
       <!-- Datasets. Files are read in the browser and cached in IndexedDB.
            Nothing is uploaded or served publicly. -->
       <div class="storage-section">
@@ -632,8 +676,8 @@
         {#if $syncStatus === 'connected'}
           <p class="storage-note">
             Dropping a file here keeps it in this browser. With a folder open, putting it in
-            <code>{$syncRoot ?? 'the folder'}</code> is simpler — it appears above, and travels with
-            your notebooks.
+            <code title={$syncRoot ?? undefined}>{shortRoot}</code> is simpler — it appears above,
+            and travels with your notebooks.
           </p>
         {:else}
         <div
@@ -714,8 +758,8 @@
           {#if $syncStatus === 'connected'}
             Downloads a <code>.zip</code> of what this browser is holding: every notebook in its
             library, the datasets dropped into it, and what cells saved here. The notebooks in
-            <code>{$syncRoot ?? 'the served folder'}</code> are files on disk as well, so those are
-            git's to keep — this is for anything you never wrote to a file.
+            <code title={$syncRoot ?? undefined}>{shortRoot}</code> are files on disk as well, so
+            those are git's to keep — this is for anything you never wrote to a file.
           {:else}
             Downloads a <code>.zip</code> of everything in this browser: every notebook, the
             datasets dropped in, and the files cells saved. There is no copy anywhere else, so this
