@@ -101,7 +101,7 @@ jobs:
           NOTES=$(cat <<'EOF'
           **Linux (AppImage)** — download it, `chmod +x`, run it. Nothing to install.
 
-          It opens `~/tangent-notebooks` the first time; File → Open folder… opens another. On first launch it writes a desktop entry and an icon under `~/.local/share` so your dock knows what it is; delete `tangent-note.desktop` and `tangent-note.png` there to undo that.
+          It opens `~/tangent-notebooks` the first time; File → Open folder… opens another. For an icon in your dock, add it with an AppImage manager — the desktop takes an app's icon from its `.desktop` entry, and an AppImage carries one without installing it.
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
