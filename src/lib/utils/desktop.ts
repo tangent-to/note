@@ -23,10 +23,19 @@ export function isDesktopApp(): boolean {
 /**
  * Open another folder of notebooks.
  *
- * The native folder picker is on the other side of the bridge, and so is the
- * restart that follows: a companion owns one root, and the tabs, caches and
- * socket are all keyed to it.
+ * Two ways in, because the page is not always in the desktop window: the app
+ * can be opened in a browser of your choosing, pointed at the same companion.
+ * Through the bridge when there is one, and otherwise through the companion,
+ * which passes the request up to whoever started it — the only process here
+ * with a window to put a native picker in. Either way the folder is remembered
+ * and the app comes back on it: a companion owns one root, and the tabs, caches
+ * and socket are all keyed to it.
  */
 export async function openFolder(): Promise<void> {
-  await bridge()?.('open_folder');
+  const invoke = bridge();
+  if (invoke) {
+    await invoke('open_folder');
+    return;
+  }
+  await fetch('/__open-folder', { method: 'POST' });
 }

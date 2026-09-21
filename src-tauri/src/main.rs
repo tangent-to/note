@@ -24,6 +24,11 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+/// What the companion prints when the page asks for another folder. The page
+/// cannot reach this process — in a browser window there is no bridge — but the
+/// companion can: it is a child, and this end already reads its output.
+const FOLDER_REQUEST: &str = "@tangent-note open-folder";
+
 /// The running companion, so it can be stopped before the app restarts into
 /// another folder rather than left holding its port.
 struct Companion(Mutex<Option<CommandChild>>);
@@ -174,6 +179,107 @@ fn open_folder(app: tauri::AppHandle) {
         });
 }
 
+/// Which engine draws the app: this window, or a browser you already have.
+///
+/// The app is a page served over http, so the window around it is replaceable.
+/// On Linux the built-in one is WebKitGTK, which is slower than Chromium or
+/// Firefox at building a large page; naming one here hands it the window
+/// instead. Nothing else changes — same companion, same folder, same origin —
+/// and "open another folder" still works, because the page asks the companion
+/// and the companion asks this process.
+///
+/// `TANGENT_NOTE_BROWSER`, or `browser.txt` beside `folder.txt`: `chromium`,
+/// `firefox`, `chrome`, `brave`, `edge`, or any command that takes a URL.
+fn chosen_browser(app: &tauri::AppHandle) -> Option<String> {
+    let named = std::env::var("TANGENT_NOTE_BROWSER").ok().or_else(|| {
+        config_file(app, "browser.txt")
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|text| text.trim().to_string())
+    })?;
+    let named = named.trim().to_string();
+    if named.is_empty() || named == "webview" {
+        None
+    } else {
+        Some(named)
+    }
+}
+
+/// A window without an address bar where the browser offers one, and — when it
+/// can — a profile of its own: the app's library and caches belong to the app
+/// rather than to your browsing.
+///
+/// The profile is the part that may not work. A browser installed as a snap or
+/// a flatpak cannot read a hidden directory in your home, which is exactly
+/// where an app's data belongs, and it exits rather than starting without one.
+/// So the profile arguments come back separately, to be dropped if the browser
+/// refuses them.
+fn browser_command(browser: &str, url: &str, profile: &Path) -> (String, Vec<String>, Vec<String>) {
+    let profile = profile.to_string_lossy().to_string();
+    match browser {
+        "chromium" | "chrome" | "google-chrome" | "brave" | "brave-browser" | "edge"
+        | "microsoft-edge" => {
+            let binary = match browser {
+                "chrome" => "google-chrome",
+                "brave" => "brave-browser",
+                "edge" => "microsoft-edge",
+                other => other,
+            };
+            (
+                binary.to_string(),
+                vec![format!("--app={url}"), "--no-first-run".into()],
+                vec![format!("--user-data-dir={profile}")],
+            )
+        }
+        // Firefox has no app mode since it dropped site-specific browsers, so
+        // this is an ordinary window.
+        "firefox" => (
+            "firefox".to_string(),
+            vec!["--new-instance".into(), url.to_string()],
+            vec!["--profile".into(), profile],
+        ),
+        other => (other.to_string(), vec![url.to_string()], vec![]),
+    }
+}
+
+/// Start the browser and say whether it stayed. A browser that refuses its
+/// profile exits at once, so "stayed a moment" is the whole test.
+fn start_browser(binary: &str, arguments: &[String]) -> Option<std::process::Child> {
+    let mut child = std::process::Command::new(binary).args(arguments).spawn().ok()?;
+    std::thread::sleep(Duration::from_millis(2500));
+    match child.try_wait() {
+        Ok(Some(_)) => None,
+        _ => Some(child),
+    }
+}
+
+/// Where a profile for this browser can actually live.
+///
+/// The app's own data directory is the right place and the first tried. A
+/// browser installed as a snap cannot read it — snap confinement hides every
+/// dot-directory in your home — but it can read its own, so that comes next.
+///
+/// Running without a profile is not on the list: a second `chromium` with the
+/// ordinary profile hands its window to the copy already running and exits,
+/// and this process would take that for the window closing and shut the
+/// companion down underneath it.
+fn profile_candidates(app: &tauri::AppHandle, browser: &str) -> Vec<PathBuf> {
+    let mut places = Vec::new();
+    // A browser with a ~/snap directory is confined and will not see the app's
+    // own; its own is where it can write, so it goes first rather than after a
+    // failure that is hard to detect — the snap launcher stays alive for a
+    // moment even when the browser it started has already given up.
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let snap = home.join("snap").join(browser);
+        if snap.is_dir() {
+            places.push(snap.join("common").join("tangent-note"));
+        }
+    }
+    if let Ok(data) = app.path().app_data_dir() {
+        places.push(data.join(format!("browser-{browser}")));
+    }
+    places
+}
+
 fn main() {
 
     tauri::Builder::default()
@@ -192,6 +298,9 @@ fn main() {
                 // A window killed rather than closed never gets to tidy up;
                 // the companion watches its own stdin and goes with it.
                 "--exit-with-parent".into(),
+                // …and can ask this end for a folder picker, which is the only
+                // thing here that has a window to show one in.
+                "--folder-dialog".into(),
             ];
             // Working on the app itself: the built files live inside the
             // sidecar, so a change to the page would otherwise mean recompiling
@@ -209,10 +318,18 @@ fn main() {
 
             // The companion's own log, forwarded so a failure to start is
             // visible rather than silent.
+            let asked = handle.clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(event) = events.recv().await {
                     match event {
-                        CommandEvent::Stdout(line) => print!("{}", String::from_utf8_lossy(&line)),
+                        CommandEvent::Stdout(line) => {
+                            let text = String::from_utf8_lossy(&line);
+                            if text.trim_end() == FOLDER_REQUEST {
+                                open_folder(asked.clone());
+                            } else {
+                                print!("{text}");
+                            }
+                        }
                         CommandEvent::Stderr(line) => eprint!("{}", String::from_utf8_lossy(&line)),
                         CommandEvent::Terminated(status) => {
                             eprintln!("note serve stopped ({:?})", status.code)
@@ -224,6 +341,46 @@ fn main() {
 
             if !wait_until_listening(port, Duration::from_secs(20)) {
                 return Err("note serve did not start".into());
+            }
+
+            // A browser of your choosing, in place of this window.
+            if let Some(browser) = chosen_browser(&handle) {
+                let url = format!("http://localhost:{port}");
+                let mut started = None;
+                let mut binary = browser.clone();
+                for profile in profile_candidates(&handle, &browser) {
+                    if fs::create_dir_all(&profile).is_err() {
+                        continue;
+                    }
+                    let (found, arguments, profile_arguments) =
+                        browser_command(&browser, &url, &profile);
+                    binary = found;
+                    let mut full = arguments;
+                    full.extend(profile_arguments);
+                    started = start_browser(&binary, &full);
+                    if started.is_some() {
+                        break;
+                    }
+                }
+                match started {
+                    Some(mut child) => {
+                        println!("tangent/note  {}  {url}  ({browser})", folder.display());
+                        // No window of our own: this process lives exactly as
+                        // long as the browser it opened, and the companion goes
+                        // with it.
+                        let quit = handle.clone();
+                        std::thread::spawn(move || {
+                            let _ = child.wait();
+                            quit.exit(0);
+                        });
+                        return Ok(());
+                    }
+                    None => {
+                        eprintln!(
+                            "{binary} would not start with a profile of its own — opening the built-in window instead"
+                        );
+                    }
+                }
             }
 
             let name = folder

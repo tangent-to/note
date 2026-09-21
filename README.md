@@ -165,6 +165,18 @@ Because the built app is *inside* that binary, a change to the page is invisible
 TANGENT_NOTE_DIST=$PWD/dist ./src-tauri/target/release/tangent-note
 ```
 
+### Another engine for the window
+
+On Linux the built-in window is WebKitGTK, which is slower than Chromium or Firefox at building a large page — on a 120-cell notebook, scrolling costs a 16ms median frame against their 17ms, but a heavy output still takes two to three times longer to lay out. The app is a page served over http, so the window around it is replaceable:
+
+```bash
+TANGENT_NOTE_BROWSER=chromium tangent-note     # or firefox, chrome, brave, edge
+```
+
+The same value can live in `browser.txt` beside `folder.txt`. The chosen browser opens on the same companion, with a profile of its own — the app's library and caches belong to the app, not to your browsing — and the app quits when that window closes. A browser installed as a snap cannot read the app's data directory, so its profile goes under `~/snap/<browser>/common/` instead; if no profile can be made to work, the built-in window opens and says so.
+
+**File → Open folder… still works there**, which is the point: a browser window has no bridge to the process that started it, so the page asks the companion instead, over `POST /__open-folder`, and the companion passes the request up the pipe its parent is already reading. Only a companion started by the desktop app answers — one run from a terminal has no window to put a picker in, and says so at the handshake, so the menu item simply does not appear.
+
 The icons are generated from `src-tauri/app-icon.png` (rendered from `src/assets/images/logo.svg`) with `npx tauri icon src-tauri/app-icon.png`.
 
 ### Keyboard Shortcuts
