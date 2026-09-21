@@ -333,13 +333,9 @@
    * dropped in here has no other copy at all. So what decides is whether
    * anything survives the click.
    */
-  function confirmDelete(entry: LibraryEntry, path: string | null) {
-    // The app says "Removed … from the library" itself, which is what this is:
-    // the file it came from is still in the folder, and still listed.
-    if (path) {
-      ondeleteNotebook?.({ entry });
-      return;
-    }
+  function confirmDelete(entry: LibraryEntry) {
+    // Offered only for notebooks with no file in the folder, so there is always
+    // something to lose, and always a question to ask.
     if (!confirm(`Delete “${entry.name}”? It is only in this browser, and this cannot be undone.`)) return;
     ondeleteNotebook?.({ entry });
   }
@@ -483,14 +479,17 @@
                 </div>
               </button>
               <div class="dataset-actions">
-                {#if row.entry}
+                <!-- Only for what lives here. A file in the folder is not this
+                     panel's to delete, and a bin beside it said otherwise: it
+                     offered to forget this browser's copy of it, an internal
+                     detail wearing the icon for "destroy what you see".
+                     Reopening the file makes that copy again anyway. -->
+                {#if row.entry && !(row.path && servedPaths.has(row.path))}
                   <button
                     class="ds-btn ds-danger"
-                    title={row.path
-                      ? 'Forget this browser’s copy. The file on disk is untouched.'
-                      : 'Remove from the library'}
-                    onclick={() => confirmDelete(row.entry!, row.path)}
-                    aria-label="Remove notebook"
+                    title="Delete. This notebook is only in this browser."
+                    onclick={() => confirmDelete(row.entry!)}
+                    aria-label="Delete notebook"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>

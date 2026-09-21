@@ -482,7 +482,7 @@
   async function openFromLibrary(id: string) {
     const record = await getNotebookRecord(id);
     if (!record) {
-      showToast('That notebook is no longer in the library.', 'error');
+      showToast('That notebook is gone from this browser.', 'error');
       await refreshLibrary();
       return;
     }
@@ -604,7 +604,7 @@
     // would autosave it straight back into the library on the next keystroke.
     if (sessionById(entry.id)) closeTab(entry.id);
     await deleteNotebook(entry.id);
-    showToast(`Removed “${entry.name}” from the library`, 'info');
+    showToast(`Deleted “${entry.name}” from this browser`, 'info');
   }
 
   /**

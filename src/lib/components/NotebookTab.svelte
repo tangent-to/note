@@ -49,7 +49,7 @@
   </button>
   <button
     class="tab-close"
-    title="Close (the notebook stays in the library)"
+    title="Close. The notebook is kept, nothing is deleted."
     aria-label={`Close ${$notebook.name}`}
     onclick={() => onclose?.({ id: session.id })}
   >

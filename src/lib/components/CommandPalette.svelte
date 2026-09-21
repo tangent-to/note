@@ -47,7 +47,7 @@
     {
       id: 'close-notebook',
       name: 'Close Notebook',
-      description: 'Close this tab. The notebook stays in the library.',
+      description: 'Close this tab. The notebook is kept, nothing is deleted.',
       icon: 'x-circle',
       action: () => oncommand?.({ id: 'close-notebook' })
     },
