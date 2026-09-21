@@ -9,8 +9,6 @@ export interface ShortcutHandler {
   find?: (replace: boolean) => void;
   newNotebook: () => void;
   importNotebook: () => void;
-  /** Choose another folder of notebooks. Only the desktop app has one. */
-  openFolder?: () => void;
   undo: () => void;
 }
 
@@ -90,11 +88,10 @@ export function handleGlobalKeydown(event: KeyboardEvent, handlers: ShortcutHand
     return true;
   }
 
-  // Open Notebook: Ctrl/Cmd + O — and the folder it lives in with Shift.
+  // Open Notebook: Ctrl/Cmd + O
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') {
     event.preventDefault();
-    if (event.shiftKey && handlers.openFolder) handlers.openFolder();
-    else handlers.importNotebook();
+    handlers.importNotebook();
     return true;
   }
 

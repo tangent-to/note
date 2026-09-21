@@ -30,16 +30,6 @@ export const syncStatus = writable<SyncStatus>('offline');
 /** Absolute path of the directory the companion owns, for display. */
 export const syncRoot = writable<string | null>(null);
 /** Notebook files the companion is offering. */
-/**
- * Whether "open another folder" leads anywhere.
- *
- * Only a companion the desktop app started can answer it — one run from a
- * terminal has no window to put a picker in — so the companion says so at the
- * handshake and the menu follows. This is what lets the app run in a browser of
- * your choosing and still open folders.
- */
-export const canOpenFolder = writable(false);
-
 export const syncFiles = writable<SyncFile[]>([]);
 
 /** Why a file's content arrived. */
@@ -71,8 +61,6 @@ export interface SyncHello {
   files: SyncFile[];
   /** The file a single-file invocation was pointed at, if any. */
   initial: string | null;
-  /** Whoever started the companion can show a folder picker when asked. */
-  canOpenFolder: boolean;
 }
 
 /**
@@ -117,13 +105,7 @@ export function connectSync(h: Handlers): Promise<SyncHello | null> {
           const files: SyncFile[] = Array.isArray(msg.files) ? msg.files : [];
           syncRoot.set(msg.root ?? null);
           syncFiles.set(files);
-          canOpenFolder.set(Boolean(msg.canOpenFolder));
-          return done({
-            root: msg.root ?? null,
-            files,
-            initial: msg.initial ?? null,
-            canOpenFolder: Boolean(msg.canOpenFolder),
-          });
+          return done({ root: msg.root ?? null, files, initial: msg.initial ?? null });
         }
         case 'file': {
           baseHashes.set(msg.path, msg.hash ?? '');

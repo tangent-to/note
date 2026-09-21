@@ -42,6 +42,22 @@ The Deno tasks (`dev`, `build`, `preview`, `check`, `test`, `serve`) mirror the 
 npm run build
 ```
 
+### Your own notebooks, on your own machine
+
+One command. It serves the app and owns a folder of notebooks: cells read and
+write files in it, `Ctrl/Cmd + S` saves in place so git sees an ordinary diff,
+and an edit made in your editor shows up in the open tab.
+
+```bash
+npm run build                                   # once
+deno run -A cli/serve.ts ~/notebooks            # then this, whenever
+# → http://localhost:4321, in whatever browser you like
+```
+
+There is no desktop application to install. The page served at localhost is the
+app, and your browser is a better window than anything that could be bundled
+around it.
+
 ## Usage
 
 ### Open a notebook from a link
@@ -135,49 +151,6 @@ Only the app itself can use the companion's socket and file endpoints. Every web
 Options: `--port` (default 4321) and `--dist` (default `dist`). The companion needs [Deno](https://deno.com). Without it, the app still runs from any static host and falls back to download-based saving.
 
 Serving from localhost keeps the page same-origin with the companion, so this works the same in every browser, Firefox included. It deliberately does not use the File System Access API, which only Chromium implements.
-
-### As a desktop application
-
-The desktop app is the same app: a window wrapped around the companion. It starts `note serve` for a folder on your machine and opens a window on `http://localhost:<port>`, so the origin is the one a browser would have — the sync socket, the working directory, the offline cache and a local Ollama all behave exactly as they do in a tab, and there is no desktop-only path to keep working.
-
-```bash
-npm run desktop          # run it, rebuilding the app and the companion first
-npm run desktop:build    # a .deb and an AppImage in src-tauri/target/release/bundle
-```
-
-Pushing a `v*` tag builds the AppImage on CI and attaches it to a draft release (`.github/workflows/release-desktop.yml`). Only Linux, for now: Tauri cannot cross-compile — the window is the system's own webview — and of the three, Linux is the only one that opens without a paid certificate. An unsigned `.dmg` tells macOS users their download is "damaged", and an unsigned `.exe` puts SmartScreen in front of it. The companion itself cross-compiles fine (`deno compile --target`), so adding those is a matter of extending the matrix.
-
-One thing the AppImage needs that the bundler does not do: it is repacked without the Wayland libraries the build machine put in it. On a newer desktop those lose to the host's, and WebKit's rendering process dies with *Could not create default EGL display*, leaving a window with nothing in it.
-
-A bare AppImage has no icon in the dock, since the desktop takes it from a `.desktop` file and an AppImage installs none. An AppImage manager (AppImageLauncher, AppManager) installs both from the file itself; the app deliberately does not write into your home to do it for them.
-
-It needs [Rust](https://rustup.rs) and [Deno](https://deno.com) to build, and on Linux the WebKitGTK development packages Tauri asks for; what it produces needs neither.
-
-On first run it opens `~/tangent-notebooks`, creating it if it is not there. **File → Open folder…** (`Ctrl/Cmd + Shift + O`) opens another one; the choice is remembered in `folder.txt` beside the app's configuration, and the app restarts into it — a companion owns one root, and the tabs, caches and socket are all keyed to that root.
-
-That item is in the app's own File menu, not a native menu bar: a menu bar holding one item costs a strip of the window above a header that already has a File menu. It is there only in the desktop app, which the page can tell because Tauri injects its bridge into the window it opens — and because the page is served over http rather than Tauri's own protocol, the one command it may call is named explicitly in `src-tauri/permissions/`.
-
-The companion travels inside the bundle as a sidecar binary (`deno compile --include dist`, so the built app is inside it too). That binary carries the Deno runtime and weighs about 100 MB, which is most of the bundle; the window itself is the system's own webview, and the Rust side is under 10 MB.
-
-Because the built app is *inside* that binary, a change to the page is invisible until the sidecar is compiled again. While working on the app, set `TANGENT_NOTE_DIST` to the repository's `dist` and the companion serves it from disk instead — then `npm run build` is the whole loop:
-
-```bash
-TANGENT_NOTE_DIST=$PWD/dist ./src-tauri/target/release/tangent-note
-```
-
-### Another engine for the window
-
-On Linux the built-in window is WebKitGTK, which is slower than Chromium or Firefox at building a large page — on a 120-cell notebook, scrolling costs a 16ms median frame against their 17ms, but a heavy output still takes two to three times longer to lay out. The app is a page served over http, so the window around it is replaceable:
-
-```bash
-TANGENT_NOTE_BROWSER=chromium tangent-note     # or firefox, chrome, brave, edge
-```
-
-The same value can live in `browser.txt` beside `folder.txt`. The chosen browser opens on the same companion, with a profile of its own — the app's library and caches belong to the app, not to your browsing — and the app quits when that window closes. A browser installed as a snap cannot read the app's data directory, so its profile goes under `~/snap/<browser>/common/` instead; if no profile can be made to work, the built-in window opens and says so.
-
-**File → Open folder… still works there**, which is the point: a browser window has no bridge to the process that started it, so the page asks the companion instead, over `POST /__open-folder`, and the companion passes the request up the pipe its parent is already reading. Only a companion started by the desktop app answers — one run from a terminal has no window to put a picker in, and says so at the handshake, so the menu item simply does not appear.
-
-The icons are generated from `src-tauri/app-icon.png` (rendered from `src/assets/images/logo.svg`) with `npx tauri icon src-tauri/app-icon.png`.
 
 ### Keyboard Shortcuts
 

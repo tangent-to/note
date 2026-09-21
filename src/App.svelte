@@ -61,7 +61,6 @@
     startPersistingSessions,
   } from './lib/stores/sessions';
   import { theme, toggleTheme } from './lib/utils/theme';
-  import { isDesktopApp, openFolder } from './lib/utils/desktop';
   import { handleGlobalKeydown } from './lib/utils/keyboardShortcuts';
   import {
     saveNotebook,
@@ -87,7 +86,6 @@
   } from './lib/utils/notebookLibrary';
   import { parseImportRequest, decodeRedirect, fetchNotebookFromUrl, notebooksEquivalent, type ImportRequest } from './lib/utils/urlImport';
   import {
-    canOpenFolder,
     connectSync,
     isSyncConnected,
     openSyncFile,
@@ -721,7 +719,6 @@
       find: (replace) => window.dispatchEvent(new CustomEvent('open-find', { detail: { replace } })),
       newNotebook: () => handleNewNotebook(),
       importNotebook: () => handleImportNotebook(),
-      openFolder: isDesktopApp() || get(canOpenFolder) ? () => void openFolder() : undefined,
       undo: () => handleUndo(),
     });
   }
@@ -1207,7 +1204,6 @@
         canClose={$activeSessionId !== null}
         onnew={handleNewNotebook}
         onopen={handleImportNotebook}
-        onopenfolder={isDesktopApp() || $canOpenFolder ? () => void openFolder() : undefined}
         onsave={() => void performSaveShortcut()}
         onsaveas={openSaveAs}
         onexport={handleExportNotebook}

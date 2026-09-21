@@ -16,15 +16,10 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
     "deploy:clean": "gh-pages -d dist -f",
-    "serve": "deno run -A cli/serve.ts",
-    "desktop:sidecar": "npm run build && node scripts/build-sidecar.mjs",
-    "desktop": "npm run desktop:sidecar && tauri dev",
-    "desktop:build": "npm run desktop:sidecar && tauri build",
-    "tauri": "tauri"
+    "serve": "deno run -A cli/serve.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
-    "@tauri-apps/cli": "^2.11.4",
     "@tsconfig/svelte": "^3.0.0",
     "fake-indexeddb": "^6.2.5",
     "gh-pages": "^6.3.0",

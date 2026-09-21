@@ -1,8 +1,0 @@
-# The page the companion serves is the app itself, and it is loaded over http
-# rather than Tauri's own protocol, so nothing reaches the Rust side without
-# being named here. This names one command and no more.
-
-[[permission]]
-identifier = "allow-open-folder"
-description = "Choose another folder of notebooks, from the app's own File menu."
-commands.allow = ["open_folder"]

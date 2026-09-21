@@ -1,10 +1,5 @@
 # Build output
 dist
-src-tauri/target
-
-# The companion compiled for the desktop app: ~100 MB of embedded Deno runtime,
-# rebuilt by `npm run desktop:sidecar`.
-src-tauri/binaries
 
 # Dependencies
 node_modules
@@ -28,6 +23,3 @@ node_modules
 # My notebooks (or yours)
 .notebooks
 
-
-# Tauri regenerates these from the config at build time.
-src-tauri/gen/schemas

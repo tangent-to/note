@@ -38,20 +38,7 @@ import {
 import { checkRequest } from "./requestGuard.ts";
 
 const DEFAULT_PORT = 4321;
-/**
- * What this process says to whoever started it when the page asks for another
- * folder.
- *
- * Only the desktop app can show a native folder picker, and the page cannot
- * reach it: a browser window pointed at this server has no bridge to the
- * process that started it, and building one would mean a second listener and a
- * second origin to defend. But the parent already reads this process's output,
- * so the request travels back up that pipe, prefixed so it is never taken for
- * a log line.
- */
-const FOLDER_REQUEST = "@tangent-note open-folder";
 const SYNC_PATH = "/__sync";
-const OPEN_FOLDER_PATH = "/__open-folder";
 /** The working directory: files next to the notebooks, read and written by cells. */
 const FILES_PATH = "/__files/";
 // A write lands as one or more fs events; coalesce them before reading.
@@ -64,10 +51,6 @@ interface Args {
   targets: string[];
   port: number;
   dist: string;
-  /** Stop when whoever started this stops. See `exitWithParent`. */
-  exitWithParent: boolean;
-  /** Whoever started this can show a folder picker. See `FOLDER_REQUEST`. */
-  folderDialog: boolean;
 }
 
 /**
@@ -93,17 +76,13 @@ export function parseArgs(argv: string[]): Args {
   const targets: string[] = [];
   let port = DEFAULT_PORT;
   let dist = defaultDist();
-  let exitWithParent = false;
-  let folderDialog = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--port") port = Number(argv[++i]);
     else if (a === "--dist") dist = argv[++i];
-    else if (a === "--exit-with-parent") exitWithParent = true;
-    else if (a === "--folder-dialog") folderDialog = true;
     else if (!a.startsWith("-")) targets.push(a);
   }
-  return { targets, port, dist, exitWithParent, folderDialog };
+  return { targets, port, dist };
 }
 
 /** djb2, matching the app's cheap content-change hash. */
@@ -251,36 +230,8 @@ function discover(root: string): NotebookFile[] {
   return found;
 }
 
-/**
- * Stop when whoever started this stops.
- *
- * The desktop app spawns the companion as a child and pipes its stdin. A parent
- * that is killed rather than closed — a crash, a `kill`, a session ending —
- * never gets to tidy up, and the companion would go on holding the folder and
- * its port with no window left to talk to it. The pipe answers that: it reaches
- * end of file the moment the parent is gone, whatever took it away.
- *
- * Only when asked for (`--exit-with-parent`): run from a terminal, stdin is a
- * keyboard, and read from a script it may be `/dev/null`, which is at end of
- * file straight away.
- */
-function exitWithParent() {
-  (async () => {
-    const buffer = new Uint8Array(256);
-    try {
-      while ((await Deno.stdin.read(buffer)) !== null) {
-        // Nothing is sent on this pipe; only its closing means anything.
-      }
-    } catch {
-      // A broken pipe is the same news as the end of one.
-    }
-    Deno.exit(0);
-  })();
-}
-
 export function main(args: Args) {
   const { targets, port, dist } = args;
-  if (args.exitWithParent) exitWithParent();
   const { root, initial } = resolveRoot(targets, Deno.cwd());
 
   let files = discover(root);
@@ -393,11 +344,7 @@ export function main(args: Args) {
     // The sync socket and the working directory read and write the reader's
     // files, so only the app itself may use them — not any other page open in
     // the same browser (see requestGuard.ts). The static app stays open.
-    if (
-      url.pathname === SYNC_PATH ||
-      url.pathname === OPEN_FOLDER_PATH ||
-      url.pathname.startsWith(FILES_PATH)
-    ) {
+    if (url.pathname === SYNC_PATH || url.pathname.startsWith(FILES_PATH)) {
       const verdict = checkRequest((name) => req.headers.get(name), port);
       if (!verdict.ok) {
         console.warn(`  refused   ${url.pathname} (${verdict.reason})`);
@@ -407,30 +354,13 @@ export function main(args: Args) {
 
     if (url.pathname.startsWith(FILES_PATH)) return handleFile(req, url);
 
-    // "Open another folder", asked by the page, answered by whoever started
-    // this process: nothing here has a window to put a picker in.
-    if (url.pathname === OPEN_FOLDER_PATH) {
-      if (req.method !== "POST") return json(405, { error: "Use POST." });
-      if (!args.folderDialog) {
-        return json(501, { error: "Nothing here can show a folder picker." });
-      }
-      console.log(FOLDER_REQUEST);
-      return json(202, { asked: true });
-    }
-
     if (url.pathname === SYNC_PATH) {
       const { socket, response } = Deno.upgradeWebSocket(req);
 
       socket.onopen = () => {
         sockets.add(socket);
         rescan();
-        socket.send(JSON.stringify({
-          type: "hello",
-          root,
-          files,
-          initial,
-          canOpenFolder: args.folderDialog,
-        }));
+        socket.send(JSON.stringify({ type: "hello", root, files, initial }));
       };
 
       socket.onmessage = (event) => {
