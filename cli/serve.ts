@@ -139,6 +139,15 @@ function contentType(path: string): string {
   return (dot >= 0 && MIME[path.slice(dot)]) || "application/octet-stream";
 }
 
+/** Anything in the folder that is not a notebook: the data cells read. */
+interface DataFile {
+  /** Relative to the root, as every path here is. */
+  path: string;
+  size: number;
+  /** Seconds since the epoch, so the app can say how fresh it is. */
+  modified: number | null;
+}
+
 interface NotebookFile {
   /** Relative to the root, and the key for every message about this file. */
   path: string;
@@ -180,8 +189,35 @@ function resolveRoot(targets: string[], cwd: string): { root: string; initial: s
 }
 
 /** Walk `root` for notebooks, shallowly, skipping the heavy and the hidden. */
-function discover(root: string): NotebookFile[] {
+/**
+ * What the folder holds: the notebooks, and everything else worth naming.
+ *
+ * "Everything else" is the point of a working directory — a cell reads
+ * `FileAttachment("measures.csv")`, and until now nothing said whether that
+ * file was there. Notebooks are sniffed and titled; the rest is listed as it
+ * is, minus what no one wants to see: hidden files, lock files, and whatever
+ * the skipped directories hold.
+ */
+function discover(root: string): { notebooks: NotebookFile[]; data: DataFile[] } {
   const found: NotebookFile[] = [];
+  const data: DataFile[] = [];
+
+  const collect = (absolute: string, name: string) => {
+    // Hidden files are configuration, and a lock file is machinery.
+    if (name.startsWith(".") || name.endsWith(".lock")) return;
+    const path = relativeTo(root, absolute);
+    if (!path) return;
+    try {
+      const info = Deno.statSync(absolute);
+      data.push({
+        path,
+        size: info.size,
+        modified: info.mtime ? Math.round(info.mtime.getTime() / 1000) : null,
+      });
+    } catch {
+      // Gone between listing and asking: not a file to offer.
+    }
+  };
 
   const walk = (dir: string, depth: number) => {
     let entries: Iterable<Deno.DirEntry>;
@@ -197,7 +233,10 @@ function discover(root: string): NotebookFile[] {
         walk(absolute, depth + 1);
         continue;
       }
-      if (!hasNotebookExtension(entry.name)) continue;
+      if (!hasNotebookExtension(entry.name)) {
+        collect(absolute, entry.name);
+        continue;
+      }
       let head: string;
       try {
         const handle = Deno.openSync(absolute, { read: true });
@@ -208,7 +247,10 @@ function discover(root: string): NotebookFile[] {
       } catch {
         continue;
       }
-      if (!looksLikeAnyNotebook(head)) continue;
+      if (!looksLikeAnyNotebook(head)) {
+        collect(absolute, entry.name);
+        continue;
+      }
       const path = relativeTo(root, absolute);
       if (path) {
         // An Observable notebook carries its name in `<title>` and has no id of
@@ -227,14 +269,15 @@ function discover(root: string): NotebookFile[] {
 
   walk(root, 0);
   found.sort((a, b) => a.path.localeCompare(b.path));
-  return found;
+  data.sort((a, b) => a.path.localeCompare(b.path));
+  return { notebooks: found, data };
 }
 
 export function main(args: Args) {
   const { targets, port, dist } = args;
   const { root, initial } = resolveRoot(targets, Deno.cwd());
 
-  let files = discover(root);
+  let { notebooks: files, data } = discover(root);
   // Content this server wrote itself, per path. The watcher fires for our own
   // writes too, and re-broadcasting them would bounce a tab back to what it
   // just sent.
@@ -259,13 +302,16 @@ export function main(args: Args) {
   const rescan = () => {
     const next = discover(root);
     const changed =
-      next.length !== files.length ||
-      next.some((f, i) =>
+      next.notebooks.length !== files.length ||
+      next.notebooks.some((f, i) =>
         f.path !== files[i].path || f.name !== files[i].name || f.id !== files[i].id
-      );
+      ) ||
+      next.data.length !== data.length ||
+      next.data.some((f, i) => f.path !== data[i].path || f.size !== data[i].size);
     if (!changed) return;
-    files = next;
-    broadcast({ type: "files", files });
+    files = next.notebooks;
+    data = next.data;
+    broadcast({ type: "files", files, data });
   };
 
   const json = (status: number, body: unknown) =>
@@ -360,7 +406,7 @@ export function main(args: Args) {
       socket.onopen = () => {
         sockets.add(socket);
         rescan();
-        socket.send(JSON.stringify({ type: "hello", root, files, initial }));
+        socket.send(JSON.stringify({ type: "hello", root, files, data, initial }));
       };
 
       socket.onmessage = (event) => {
@@ -478,9 +524,14 @@ export function main(args: Args) {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     for await (const event of watcher) {
       for (const raw of event.paths) {
-        if (!hasNotebookExtension(raw)) continue;
         const path = relativeTo(root, raw);
         if (!path) continue;
+        // A data file changing is news for the folder's listing, not for any
+        // open tab: nothing has it loaded, and its content is not ours to send.
+        if (!hasNotebookExtension(raw)) {
+          rescan();
+          continue;
+        }
         clearTimeout(timers.get(path));
         timers.set(path, setTimeout(() => {
           timers.delete(path);

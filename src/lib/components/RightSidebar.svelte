@@ -5,7 +5,7 @@
   import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
-  import { syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
+  import { syncData, syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
   import {
     libraryEntries,
     libraryPersistent,
@@ -227,6 +227,27 @@
     // worth more than a cached CSV, so it asks. Datasets do not.
     if (!confirm(`Remove “${entry.name}” from the library? This cannot be undone.`)) return;
     ondeleteNotebook?.({ entry });
+  }
+
+  /**
+   * How a cell reads this file. The extension decides the method, because
+   * `FileAttachment` does: a reader copying this line should get the data and
+   * not a string of it.
+   */
+  function attachmentSnippet(path: string): string {
+    const lower = path.toLowerCase();
+    const method = lower.endsWith('.csv')
+      ? 'csv({ typed: true })'
+      : lower.endsWith('.tsv')
+        ? 'tsv({ typed: true })'
+        : lower.endsWith('.json') || lower.endsWith('.ndjson')
+          ? 'json()'
+          : /\.(png|jpe?g|gif|webp|svg)$/.test(lower)
+            ? 'image()'
+            : /\.(wav|mp3|ogg|flac|mid|midi|zip|parquet|arrow)$/.test(lower)
+              ? 'arrayBuffer()'
+              : 'text()';
+    return `await FileAttachment(${JSON.stringify(path)}).${method}`;
   }
 
   function copyUsage(name: string) {
@@ -552,6 +573,51 @@
         </div>
       {/if}
 
+      <!-- The rest of the folder. A working directory is a directory: listing
+           only its notebooks left the reader guessing whether the file their
+           cell reads is even there. -->
+      {#if $syncStatus === 'connected'}
+        <div class="storage-section">
+          <div class="storage-section-head">
+            <h4 class="section-title">In this folder ({$syncData.length})</h4>
+            <span class="storage-section-size">{formatBytes($syncData.reduce((n, f) => n + f.size, 0))}</span>
+          </div>
+          {#if $syncData.length === 0}
+            <div class="empty-vars">
+              Only notebooks here. Put a file in <code>{$syncRoot ?? 'the folder'}</code> and it
+              appears, ready to read with <code>FileAttachment</code>.
+            </div>
+          {:else}
+            <div class="dataset-list">
+              {#each $syncData as file (file.path)}
+                <div class="dataset-item">
+                  <div class="dataset-main">
+                    <div class="dataset-name" title={file.path}>{file.path}</div>
+                    <div class="dataset-meta">{formatBytes(file.size)}</div>
+                  </div>
+                  <div class="dataset-actions">
+                    <button
+                      class="ds-btn"
+                      title={attachmentSnippet(file.path)}
+                      aria-label={`Copy how to read ${file.path}`}
+                      onclick={() => {
+                        navigator.clipboard?.writeText(attachmentSnippet(file.path));
+                        toast(`Copied: ${attachmentSnippet(file.path)}`, 'info');
+                      }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="11" height="11" rx="2"/>
+                        <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       <!-- Datasets. Files are read in the browser and cached in IndexedDB.
            Nothing is uploaded or served publicly. -->
       <div class="storage-section">
@@ -560,6 +626,16 @@
           <span class="storage-section-size">{formatBytes(datasetsSize)}</span>
         </div>
 
+        <!-- With a folder there is a better place for a file than this
+             browser: the folder. The drop target is for the case where there
+             is none, and saying so beats leaving it there to be wondered at. -->
+        {#if $syncStatus === 'connected'}
+          <p class="storage-note">
+            Dropping a file here keeps it in this browser. With a folder open, putting it in
+            <code>{$syncRoot ?? 'the folder'}</code> is simpler — it appears above, and travels with
+            your notebooks.
+          </p>
+        {:else}
         <div
           class="dropzone"
           class:active={dragActive}
@@ -585,9 +661,11 @@
           class="hidden-input"
           onchange={(e) => { ingest((e.target as HTMLInputElement).files); (e.target as HTMLInputElement).value = ''; }}
         />
-
-        {#if $datasets.length === 0}
+        {/if}
+        {#if $datasets.length === 0 && $syncStatus !== 'connected'}
           <div class="empty-vars">No data yet. Drop a file, then read it in a cell with <code>await data("name")</code>.</div>
+        {:else if $datasets.length === 0}
+          <!-- Nothing to say: the folder above is where the data is. -->
         {:else}
           <div class="dataset-list">
             {#each $datasets as ds (ds.name)}

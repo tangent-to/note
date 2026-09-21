@@ -30,6 +30,14 @@ export const syncStatus = writable<SyncStatus>('offline');
 /** Absolute path of the directory the companion owns, for display. */
 export const syncRoot = writable<string | null>(null);
 /** Notebook files the companion is offering. */
+/**
+ * The folder's other files — what `FileAttachment` will find.
+ *
+ * A working directory is a directory: listing only the notebooks in it left
+ * the reader guessing whether the CSV they meant to read was there at all.
+ */
+export const syncData = writable<SyncData[]>([]);
+
 export const syncFiles = writable<SyncFile[]>([]);
 
 /** Why a file's content arrived. */
@@ -56,9 +64,19 @@ let handlers: Handlers | null = null;
 // companion can tell whether we are about to overwrite someone else's edit.
 const baseHashes = new Map<string, string>();
 
+/** A file in the served folder that is not a notebook: data a cell can read. */
+export interface SyncData {
+  path: string;
+  size: number;
+  /** Seconds since the epoch, or null when the companion could not tell. */
+  modified: number | null;
+}
+
 export interface SyncHello {
   root: string | null;
   files: SyncFile[];
+  /** Everything else in the folder: the data those notebooks read. */
+  data: SyncData[];
   /** The file a single-file invocation was pointed at, if any. */
   initial: string | null;
 }
@@ -103,9 +121,11 @@ export function connectSync(h: Handlers): Promise<SyncHello | null> {
           clearTimeout(timeout);
           syncStatus.set('connected');
           const files: SyncFile[] = Array.isArray(msg.files) ? msg.files : [];
+          const data: SyncData[] = Array.isArray(msg.data) ? msg.data : [];
           syncRoot.set(msg.root ?? null);
           syncFiles.set(files);
-          return done({ root: msg.root ?? null, files, initial: msg.initial ?? null });
+          syncData.set(data);
+          return done({ root: msg.root ?? null, files, data, initial: msg.initial ?? null });
         }
         case 'file': {
           baseHashes.set(msg.path, msg.hash ?? '');
@@ -129,6 +149,7 @@ export function connectSync(h: Handlers): Promise<SyncHello | null> {
         case 'files': {
           const files: SyncFile[] = Array.isArray(msg.files) ? msg.files : [];
           syncFiles.set(files);
+          if (Array.isArray(msg.data)) syncData.set(msg.data);
           handlers?.onFiles?.(files);
           return;
         }

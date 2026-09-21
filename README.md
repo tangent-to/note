@@ -142,6 +142,8 @@ await save("out/summary.json", { n: rows.length });
 await save("figures/chart.svg", Plot.plot({ marks: [Plot.dot(rows, { x: "mass" })] }));
 ```
 
+The Files panel lists the folder, not just its notebooks: everything else in it appears under **In this folder**, with its size, and a button that copies the line a cell needs to read it — `await FileAttachment("data/measures.csv").csv({ typed: true })`. A file you drop into the folder from anywhere shows up there within a moment. Dropping a file into the panel instead keeps it in the browser, which is what to do when there is no folder; with one open, the panel says so rather than offering the target.
+
 `FileAttachment` follows Observable's API (`.text()`, `.json()`, `.csv()`, `.tsv()`, `.arrayBuffer()`, `.blob()`, `.url()`, `.image()`), so data loading moves between the two unchanged. `save` writes what the file name asks for: text, JSON, records as CSV or TSV, a chart or any element containing an `<svg>` as a standalone SVG, a canvas as an image, and Blobs or typed arrays as they are. Names are relative to the notebook, a leading `/` starts at the served root, and missing folders are created. Nothing outside the served directory can be read or written, and `save` refuses to overwrite a notebook file.
 
 Without the companion the notebook still has a folder: its own, in the browser's private file system. The same calls work — `save` writes a file the notebook can read back, not a download it cannot — and the Storage panel lists those files with a way to download or delete each one. Reads also fall back to datasets dropped into that panel. It is storage rather than a place in your file manager, and the browser may clear it, which is what the backup is for.
