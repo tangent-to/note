@@ -279,11 +279,9 @@
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <path d="M12 9v4M12 17h.01"/>
           </svg>
-          <p>
-            This deployment has no Ollama proxy configured, so the browser will
-            block calls to Ollama Cloud (CORS). Run the app locally (the dev server
-            proxies requests), or deploy the bundled Cloudflare proxy and set
-            <code>VITE_OLLAMA_PROXY_URL</code> (see <code>workers/ollama-proxy</code>).
+          <p title="The browser blocks cross-origin calls to Ollama Cloud unless something proxies them. The dev server does; in production the bundled Cloudflare worker does.">
+            No Ollama proxy here, so the browser blocks Ollama Cloud. Run the app locally,
+            or set <code>VITE_OLLAMA_PROXY_URL</code> (see <code>workers/ollama-proxy</code>).
           </p>
         </div>
       {/if}
@@ -312,9 +310,8 @@
             Remember key on this device
           </label>
           {#if rememberKey}
-            <p class="key-warning">
-              ⚠ Stored unencrypted in this browser (localStorage). Avoid on shared
-              or public devices. Unchecked, the key is kept only until you close the tab.
+            <p class="key-warning" title="Unchecked, the key is kept in memory only until you close the tab.">
+              ⚠ Kept unencrypted in localStorage. Not on a shared machine.
             </p>
           {/if}
         </div>
@@ -340,10 +337,9 @@
             placeholder="https://ollama.com/api"
             class="input"
           />
-          <p class="help-text">
-            Leave as default unless you route through a proxy. For an Ollama on
-            this machine, use <code>http://localhost:11434</code>. No API key is
-            needed, and Ollama already allows requests from localhost origins.
+          <p class="help-text" title="Ollama allows requests from localhost origins, so no key is needed there.">
+            For an Ollama on this machine, <code>http://localhost:11434</code>, no key.
+            Otherwise leave it.
           </p>
         </div>
 
@@ -359,9 +355,8 @@
 
       <div class="form-group context-group">
         <label for="ai-context">Assistant context</label>
-        <p class="help-text">
-          Appended to the system prompt on every chat. Defaults to a Tangent,
-          Observable Plot and Arquero cheatsheet. Edit to fit your work.
+        <p class="help-text" title="Defaults to a Tangent, Observable Plot and Arquero cheatsheet.">
+          Added to the system prompt on every chat.
         </p>
         <textarea
           id="ai-context"

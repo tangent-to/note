@@ -82,10 +82,9 @@
 
   <div class="console-log" bind:this={logEl}>
     {#if $consoleEntries.length === 0}
-      <div class="console-empty">
-        Evaluates in the notebook scope: <code>nb</code> lists the variables,
-        <code>nb.x</code> reads one, <code>await data("file.csv")</code> loads data.
-        Enter runs, Shift+Enter adds a line, Arrow Up recalls history.
+      <div class="console-empty" title="Enter runs, Shift+Enter adds a line, Arrow Up recalls history.">
+        Runs in the notebook scope. <code>nb</code> lists the variables,
+        <code>nb.x</code> reads one.
       </div>
     {:else}
       {#each $consoleEntries as entry (entry.id)}

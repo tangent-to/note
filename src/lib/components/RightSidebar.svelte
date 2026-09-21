@@ -535,7 +535,7 @@
               checked={$kernelMode === 'worker'}
               onchange={() => kernelMode.set('worker')}
             />
-            <span><strong>Background worker</strong> (default). Plots and tables render normally, the page stays responsive during long computations, and runs can be stopped.</span>
+            <span title="Plots and tables render normally, the page stays responsive during long computations, and a run can be stopped."><strong>Background worker</strong> (default)</span>
           </label>
           <label class="setting-option">
             <input
@@ -545,9 +545,9 @@
               checked={$kernelMode === 'main'}
               onchange={() => kernelMode.set('main')}
             />
-            <span><strong>Main thread</strong>. Only needed when an output runs its own scripts after rendering (hover tooltips, zoomable charts, animated players); long runs freeze the page.</span>
+            <span title="Hover tooltips, zoomable charts, animated players. Long runs freeze the page."><strong>Main thread</strong>, for outputs that run their own scripts</span>
           </label>
-          <p class="setting-hint">Variables don't carry across kernels; re-run cells after switching.</p>
+          <p class="setting-hint">Variables don't carry across; re-run after switching.</p>
 
           <div class="setting-label">Notebook width</div>
           <div class="width-choice" role="radiogroup" aria-label="Notebook width">
@@ -573,7 +573,7 @@
               onclick={() => notebookWidth.set('full')}
             >Full</button>
           </div>
-          <p class="setting-hint">Normal is a reading measure; the wider settings give code room so a single line stops wrapping.</p>
+          <p class="setting-hint" title="Normal is a reading measure; the wider settings give code room so a single line stops wrapping.">Normal reads best; wider gives code room.</p>
         </div>
 
         <div class="divider"></div>
@@ -626,10 +626,9 @@
 
       <div class="storage-scroll">
       {#if !$libraryPersistent}
-        <div class="storage-warning">
-          This browser refused persistent storage (private window, or another tab
-          holds an older database). Notebooks are kept in memory and will be gone
-          when you close this tab. Export anything you want to keep.
+        <div class="storage-warning" title="A private window, or another tab holding an older version of the database.">
+          This browser refused persistent storage: notebooks last until you close the tab.
+          Export what you want to keep.
         </div>
       {/if}
 
@@ -665,7 +664,7 @@
             <span class="storage-section-size">{formatBytes(folderSize)}</span>
           </div>
           {#if inFolder.length + $syncData.length === 0}
-            <div class="empty-vars">Nothing here yet. Drop a file, or put one in the folder, and it appears in this list.</div>
+            <div class="empty-vars">Nothing here yet. Drop a file, or put one in the folder.</div>
           {:else}
             <div class="dataset-list">
               {#each inFolder as row (row.id)}
@@ -707,8 +706,8 @@
               <span class="storage-section-size">{formatBytes(browserSize)}</span>
             </div>
             <p class="storage-note">
-              Notebooks this browser holds that no file in this folder matches: opened from a link,
-              made here, or left by a folder you had open before.
+              Held here, with no file in this folder: opened from a link, made here, or left by
+              a folder opened before.
             </p>
             <div class="dataset-list">
               {#each inBrowser as row (row.id)}

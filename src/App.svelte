@@ -1349,9 +1349,8 @@
             autofocus
             spellcheck="false"
           />
-          <p class="report-intro">
-            <code>.js</code> saves in Tangent's format, <code>.html</code> in Observable's.
-            The tab moves to the new file; the file it came from is left as it is.
+          <p class="report-intro" title="The tab moves to the new file; the file it came from is left as it is.">
+            <code>.js</code> is Tangent's format, <code>.html</code> Observable's.
           </p>
           {#if saveAs.error}
             <p class="save-as-error" role="alert">{saveAs.error}</p>
