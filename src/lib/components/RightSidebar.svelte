@@ -5,7 +5,7 @@
   import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
-  import { syncFiles } from '../utils/serverSync';
+  import { syncFiles, syncRoot, syncStatus } from '../utils/serverSync';
   import {
     libraryEntries,
     libraryPersistent,
@@ -628,6 +628,22 @@
           <span class="backup-title">{$backupState.due ? 'Back up your work' : 'Backup'}</span>
           <span class="backup-age">last: {backupAge($lastBackupAt)}</span>
         </div>
+        <!-- What the button does, said before anything about why. The answer
+             differs with a companion: the notebooks are files then, and git is
+             already their backup — what this still carries is everything that
+             exists nowhere else. -->
+        <p class="backup-note">
+          {#if $syncStatus === 'connected'}
+            Downloads a <code>.zip</code> of what this browser is holding: every notebook in its
+            library, the datasets dropped into it, and what cells saved here. The notebooks in
+            <code>{$syncRoot ?? 'the served folder'}</code> are files on disk as well, so those are
+            git's to keep — this is for anything you never wrote to a file.
+          {:else}
+            Downloads a <code>.zip</code> of everything in this browser: every notebook, the
+            datasets dropped in, and the files cells saved. There is no copy anywhere else, so this
+            archive is the copy.
+          {/if}
+        </p>
         {#if $backupState.pending > 0}
           <p class="backup-note">
             {$backupState.pending} {$backupState.pending === 1 ? 'notebook or dataset exists' : 'notebooks and datasets exist'}
@@ -636,16 +652,16 @@
         {/if}
         {#if $storagePersisted === false}
           <p class="backup-note">
-            The browser may clear this storage when space runs low.
+            This browser may delete that storage by itself when it runs low on space.
             <button class="backup-link" onclick={async () => {
               const granted = await requestStoragePersistence();
               toast(granted ? 'The browser will keep this storage.' : 'The browser declined; a backup is the safe copy.', 'info');
-            }}>Ask it to keep it</button>
+            }}>Ask it not to</button>
           </p>
         {/if}
         <label class="backup-choice">
           <input type="checkbox" bind:checked={backupLibraries} />
-          Include the libraries, so the backup still runs offline elsewhere (larger)
+          Add the libraries cells have loaded, so the archive still runs with no network (much larger)
         </label>
         <div class="backup-actions">
           <button class="backup-btn primary" onclick={() => onbackup?.({ includeLibraries: backupLibraries })}>Back up…</button>
