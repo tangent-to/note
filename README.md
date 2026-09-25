@@ -34,7 +34,7 @@ deno task dev        # Deno
 # then head to http://localhost:5173
 ```
 
-The Deno tasks (`dev`, `build`, `preview`, `check`, `test`, `serve`) mirror the npm scripts and run the same Vite/Svelte toolchain from `node_modules`; see `deno.json`. Both paths are tested: install, dev, build, type-check and the test suite all pass under Deno.
+The Deno tasks (`dev`, `build`, `preview`, `check`, `test`, `serve`, `install:note`) mirror the npm scripts and run the same Vite/Svelte toolchain from `node_modules`; see `deno.json`. Both paths are tested: install, dev, build, type-check and the test suite all pass under Deno.
 
 **Build for Production:**
 
@@ -57,6 +57,52 @@ deno run -A cli/serve.ts ~/notebooks            # then this, whenever
 There is no desktop application to install. The page served at localhost is the
 app, and your browser is a better window than anything that could be bundled
 around it.
+
+#### Installing the companion
+
+To get a `note` of your own, compile the companion into one file with the app
+built inside it. The result runs from anywhere, carrying its own copy of the
+app, so there is nothing left to keep in step with a checkout:
+
+```bash
+deno task install:note                           # needs `deno task build` once first
+note serve ~/notebooks                           # → http://localhost:4321
+```
+
+Deno puts the binary in `~/.deno/bin` (or `$DENO_INSTALL_ROOT/bin`) and says so
+if that is not yet on your `PATH`. `deno install -g --name note cli/serve.ts`
+installs the same command without compiling, which runs the companion from your
+checkout instead: the right one while you are working on the app itself, since
+it picks up your edits. `note --help` lists the options.
+
+##### Updating it
+
+The binary carries a snapshot of the app, so an update is a fresh install of a
+freshly pulled checkout:
+
+```bash
+git pull
+deno task install:note     # about half a minute, and it overwrites the old one
+note --version             # to see that it did
+```
+
+`note --version` names the source the binary was built from and when, which is
+the only way to tell an update from a reinstall: the version number itself only
+changes when package.json does.
+
+```
+note 0.1.1
+  built    2026-09-25T18:27:47.467Z  445dd95
+```
+
+A run from a checkout says `unknown` there instead, because what is running is
+the checkout rather than a build.
+
+`dist` is built by CI and committed back to `main` ([`dist.yml`](.github/workflows/dist.yml)),
+so a clone usually already holds the app and `deno task install:note` needs no
+build step. Building it yourself is still worth doing while you are working on
+the app; be aware that doing so leaves `dist` looking modified in `git status`,
+which `git checkout -- dist` puts back.
 
 ## Usage
 
@@ -150,7 +196,7 @@ Without the companion the notebook still has a folder: its own, in the browser's
 
 Only the app itself can use the companion's socket and file endpoints. Every web page open in your browser can send requests to localhost, and a WebSocket ignores the same-origin policy, so the companion checks the Host, Origin and Sec-Fetch-Site of each request and refuses anything that is not the app on its own port.
 
-Options: `--port` (default 4321) and `--dist` (default `dist`). The companion needs [Deno](https://deno.com). Without it, the app still runs from any static host and falls back to download-based saving.
+Options: `--port` (default 4321) and `--dist` (default `dist`, resolved beside the companion rather than against the working directory, so an installed binary finds the app inside it), plus `--help` and `--version`. The companion needs [Deno](https://deno.com). Without it, the app still runs from any static host and falls back to download-based saving.
 
 Serving from localhost keeps the page same-origin with the companion, so this works the same in every browser, Firefox included. It deliberately does not use the File System Access API, which only Chromium implements.
 
