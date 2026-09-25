@@ -1,3 +1,4 @@
+#!/usr/bin/env -S deno run -A
 /**
  * `note serve` - local companion for tangent/note.
  *
@@ -18,7 +19,11 @@
  * browser names files here, and any page can be pointed at localhost.
  *
  * Usage:
- *   deno run -A cli/serve.ts <notebook.js|notebook.html|directory> [more...] [--port 4321] [--dist dist]
+ *   note serve <notebook.js|notebook.html|directory> [more...] [--port 4321] [--dist dist]
+ *
+ * The shebang above is what makes this installable: `deno task install:note`
+ * compiles this file into a single binary with the built app embedded, and it is
+ * a script Deno can run without being asked for its permissions twice.
  */
 import {
   MAX_DEPTH,
@@ -47,42 +52,146 @@ const WATCH_DEBOUNCE_MS = 120;
 // file. The whole block is a handful of short comment lines.
 const SNIFF_BYTES = 512;
 
-interface Args {
+/**
+ * What the binary reports, and what install.ts prints.
+ *
+ * Kept next to the arguments rather than read from a manifest, because the
+ * binary is the thing being asked and the manifests are not compiled into it.
+ * A test holds this to package.json's version, so the two cannot drift.
+ */
+export const VERSION = "0.1.1";
+
+export interface Args {
   targets: string[];
   port: number;
   dist: string;
+  /** `note --help`: say what this is, and serve nothing. */
+  help: boolean;
+  /** `note --version`: say which build this is, and serve nothing. */
+  version: boolean;
+}
+
+/** The one command, spelled the way an installed binary is invoked. */
+export function help(): string {
+  return `note ${VERSION}: the tangent/note companion.
+
+  note serve <notebook.js|notebook.html|directory> [more...] [options]
+
+Serves the app at http://localhost:${DEFAULT_PORT} and keeps the notebooks under
+one root in step with the open tabs, both ways: cells read and write files
+beside the notebook, saving lands in place so git sees an ordinary diff, and an
+edit made in your editor turns up in the tab holding it.
+
+Options:
+  --port N     the port to listen on (default ${DEFAULT_PORT})
+  --dist DIR   the built app to serve, when it is not the one this file finds
+  --help       this text
+  --version    which build this is
+
+Install it with \`deno task install:note\`, which puts a \`note\` binary on your
+PATH carrying its own copy of the app. From a clone, \`deno task build\` once and
+then \`deno task serve <directory>\` runs it from here.`;
+}
+
+/** A file URL as a path. A Windows file URL carries its drive letter behind a
+ *  leading slash, which no path has. */
+export function filePath(url: URL): string {
+  const path = decodeURIComponent(url.pathname);
+  return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path;
 }
 
 /**
  * Where the built app is, when `--dist` does not say.
  *
  * Run from the repository, that is `dist/` beside the source. Compiled into a
- * single binary (`deno compile --include dist`, which is how the desktop app
- * ships it), the files travel inside the executable and are reachable at the
- * path they had when it was built — so resolving against this module rather
+ * single binary (`deno compile --include dist`, which is how the installed
+ * binary is built), the files travel inside the executable and are reachable at
+ * the path they had when it was built — so resolving against this module rather
  * than the working directory is what lets the binary be run from anywhere.
  *
  * The URL does the resolving: inside a compiled binary the embedded files are
  * looked up by exact path, and a `..` left in the middle of one finds nothing.
  */
-function defaultDist(): string {
+export function defaultDist(): string {
   if (!import.meta.url.startsWith("file:")) return "dist";
-  const path = decodeURIComponent(new URL("../dist", import.meta.url).pathname);
-  // A Windows file URL carries its drive letter behind a leading slash.
-  return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path;
+  return filePath(new URL("../dist", import.meta.url));
+}
+
+/** What the install recorded about the build it carried. */
+export interface BuildInfo {
+  /** The source it was built from, in full, so it can be pasted anywhere. */
+  revision: string;
+  /** When the install made it: what tells an update from a reinstall. */
+  installed: string;
+}
+
+/** Whether an executable of this name is the runtime rather than a built binary. */
+export function isRuntime(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === "deno" || lower === "deno.exe";
+}
+
+/**
+ * What this build was made from, if it was installed at all.
+ *
+ * install.ts writes this beside the app and embeds it alongside, so
+ * `note --version` can answer the only question an update raises: is this the
+ * one I just built?
+ *
+ * A run from a checkout gets nothing. What is running there is whatever the
+ * checkout says this minute, and the stamp on disk would be describing the last
+ * install, not this process: a true answer with the wrong subject. The
+ * executable is what tells them apart, the runtime running a module and a
+ * binary running itself.
+ */
+export function buildInfo(): BuildInfo | null {
+  const executable = Deno.execPath().split(/[/\\]/).pop() || "";
+  if (isRuntime(executable)) return null;
+  try {
+    const info = JSON.parse(
+      Deno.readTextFileSync(filePath(new URL("../note-build.json", import.meta.url))),
+    );
+    if (typeof info?.revision === "string" && typeof info?.installed === "string") {
+      return { revision: info.revision, installed: info.installed };
+    }
+  } catch {
+    // Installed before there was a stamp. Unknown, like a checkout.
+  }
+  return null;
+}
+
+/**
+ * What `note --version` says.
+ *
+ * The version alone cannot answer "did that update land?", because it only
+ * changes when package.json does. The build does, so the build is named here.
+ */
+export function versionText(info: BuildInfo | null): string {
+  const built = info
+    ? `${info.installed}  ${info.revision.slice(0, 7)}`
+    : "unknown, not an installed build";
+  return `note ${VERSION}\n  built    ${built}`;
 }
 
 export function parseArgs(argv: string[]): Args {
   const targets: string[] = [];
   let port = DEFAULT_PORT;
   let dist = defaultDist();
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--port") port = Number(argv[++i]);
-    else if (a === "--dist") dist = argv[++i];
+  let help = false;
+  let version = false;
+  // `note serve ...` and a bare `note ...` are the same command. The subcommand
+  // is what the installed binary is called with, and it is where any second
+  // command would go; before it existed every invocation was a bare target.
+  const rest = argv[0] === "serve" ? argv.slice(1) : argv;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === "--port") port = Number(rest[++i]);
+    else if (a === "--dist") dist = rest[++i];
+    else if (a === "--help" || a === "-h") help = true;
+    else if (a === "--version" || a === "-v") version = true;
     else if (!a.startsWith("-")) targets.push(a);
   }
-  return { targets, port, dist };
+  return { targets, port, dist, help, version };
 }
 
 /** djb2, matching the app's cheap content-change hash. */
@@ -167,9 +276,7 @@ interface NotebookFile {
  */
 function resolveRoot(targets: string[], cwd: string): { root: string; initial: string | null } {
   if (targets.length === 0) {
-    console.error(
-      "Usage: note serve <notebook.js|notebook.html|directory> [more...] [--port N] [--dist DIR]",
-    );
+    console.error(help());
     Deno.exit(2);
   }
 
@@ -274,7 +381,20 @@ function discover(root: string): { notebooks: NotebookFile[]; data: DataFile[] }
 }
 
 export function main(args: Args) {
-  const { targets, port, dist } = args;
+  const { targets, port, dist, help: wantsHelp, version: wantsVersion } = args;
+
+  // Both of these are questions, and a question is not a reason to start a
+  // server: an installed `note` is what someone types when they want to know
+  // what it is.
+  if (wantsVersion) {
+    console.log(versionText(buildInfo()));
+    return;
+  }
+  if (wantsHelp) {
+    console.log(help());
+    return;
+  }
+
   const { root, initial } = resolveRoot(targets, Deno.cwd());
 
   let { notebooks: files, data } = discover(root);
@@ -489,7 +609,8 @@ export function main(args: Args) {
         return new Response(body, { headers: { "content-type": MIME[".html"] } });
       } catch {
         return new Response(
-          `Built app not found in "${dist}". Run \`npm run build\` first, or pass --dist.`,
+          `Built app not found in "${dist}". Run \`deno task build\` first (or \`npm run build\`), or pass --dist. ` +
+            "A \`note\` installed with \`deno task install:note\` carries its own copy of the app.",
           { status: 500 },
         );
       }

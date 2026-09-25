@@ -8,6 +8,7 @@
     "preview": "deno run -A npm:vite preview",
     "check": "deno run -A npm:svelte-check --tsconfig ./tsconfig.json",
     "test": "deno run -A npm:vitest run",
-    "serve": "deno run -A cli/serve.ts"
+    "serve": "deno run -A cli/serve.ts",
+    "install:note": "deno run -A cli/install.ts"
   }
 }

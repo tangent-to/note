@@ -16,7 +16,8 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
     "deploy:clean": "gh-pages -d dist -f",
-    "serve": "deno run -A cli/serve.ts"
+    "serve": "deno run -A cli/serve.ts",
+    "install:note": "deno run -A cli/install.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
