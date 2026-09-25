@@ -14,10 +14,8 @@
  *
  * `--root` means what it means to `deno install`: a root, with bin inside it.
  */
-import { defaultDist, filePath, help, VERSION } from "./serve.ts";
-
-/** What the binary is called. Deno's own binaries take no extension on POSIX. */
-const NAME = "note";
+import { NAME, VERSION, binaryName, help, installDir } from "./command.ts";
+import { defaultDist, filePath } from "./serve.ts";
 
 /**
  * The one fact a binary cannot work out for itself: which source it was built
@@ -29,25 +27,6 @@ const NAME = "note";
  * the path it was given.
  */
 const STAMP = "note-build.json";
-
-/**
- * Where `deno install -g` puts executables.
- *
- * Deno resolves its install root from the environment and the home directory,
- * and appends `bin`; taking the same two steps means the binary lands beside
- * the ones `deno install` already made, and the PATH advice below is the advice
- * Deno itself would give. `USERPROFILE` is the home on Windows, where `HOME`
- * is often not set at all.
- */
-export function installDir(env: Record<string, string | undefined>): string {
-  const root = env.DENO_INSTALL_ROOT || `${env.HOME || env.USERPROFILE || "."}/.deno`;
-  return `${root}/bin`;
-}
-
-/** The compiled file's own name, which Windows needs an extension for. */
-export function binaryName(os: string): string {
-  return os === "windows" ? `${NAME}.exe` : NAME;
-}
 
 /**
  * The paths the compile is given, relative to the repository.

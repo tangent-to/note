@@ -7,62 +7,75 @@
  * that is called `note serve` by anybody who did not clone anything. So the
  * subcommand is parsed off, the flags keep working on either side of it, and
  * asking the binary what it is must not start a server.
+ *
+ * These come from cli/command.ts rather than cli/serve.ts, and that is not
+ * tidiness: a test inside src/ is type checked with the app's tsconfig, where
+ * `Deno` does not exist. Importing the Deno modules from here would put 47
+ * errors into the app's type check and turn CI red.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { VERSION, help, isRuntime, parseArgs, versionText } from '../../../../cli/serve';
-import { binaryName, installDir } from '../../../../cli/install';
+// A JSON import, not node:fs: the app's tsconfig has no node types either.
+import pkg from '../../../../package.json';
+import {
+  DEFAULT_PORT,
+  VERSION,
+  binaryName,
+  help,
+  installDir,
+  isRuntime,
+  parseArgs,
+  versionText,
+} from '../../../../cli/command';
+
+/** Where the app is, supplied by the caller, which knows where its own module is. */
+const DIST = '/somewhere/dist';
+const args = (argv: string[]) => parseArgs(argv, DIST);
 
 describe('parseArgs', () => {
   it('takes the subcommand off, so `note serve nb` is the documented form', () => {
-    expect(parseArgs(['serve', 'nb']).targets).toEqual(['nb']);
-  });
-
-  it('reads a question that follows the subcommand', () => {
-    expect(parseArgs(['serve', '--help']).help).toBe(true);
+    expect(args(['serve', 'nb']).targets).toEqual(['nb']);
   });
 
   it('still takes a bare target, as every existing call does', () => {
-    expect(parseArgs(['nb']).targets).toEqual(['nb']);
+    expect(args(['nb']).targets).toEqual(['nb']);
   });
 
   it('reads the flags that follow the subcommand', () => {
-    const args = parseArgs(['serve', 'nb', '--port', '5000', '--dist', 'build']);
-    expect(args.targets).toEqual(['nb']);
-    expect(args.port).toBe(5000);
-    expect(args.dist).toBe('build');
+    const parsed = args(['serve', 'nb', '--port', '5000', '--dist', 'build']);
+    expect(parsed.targets).toEqual(['nb']);
+    expect(parsed.port).toBe(5000);
+    expect(parsed.dist).toBe('build');
   });
 
   it('reads the subcommand only as the first word, so a folder called serve is still a folder', () => {
     // Anywhere else in the line, "serve" is a path the reader typed.
-    expect(parseArgs(['--port', '5000', 'serve']).targets).toEqual(['serve']);
+    expect(args(['--port', '5000', 'serve']).targets).toEqual(['serve']);
   });
 
-  it('defaults the port, and finds the app beside itself', () => {
-    const args = parseArgs(['serve', 'nb']);
-    expect(args.port).toBe(4321);
-    // Resolved against the module, not the working directory, so a binary
-    // installed anywhere still finds the copy of the app inside it.
-    expect(args.dist).toMatch(/[/\\]dist$/);
+  it('defaults the port, and the app to the one it was given', () => {
+    expect(args(['serve', 'nb']).port).toBe(DEFAULT_PORT);
+    expect(args(['serve', 'nb']).dist).toBe(DIST);
   });
 
   it('has a serve subcommand with nothing after it mean no notebook at all', () => {
     // Which is what help() gets printed for, rather than a target named
     // "serve" that does not exist.
-    expect(parseArgs(['serve']).targets).toEqual([]);
+    expect(args(['serve']).targets).toEqual([]);
   });
 
   it('reads a question as a question', () => {
     for (const flag of ['--help', '-h']) {
-      expect(parseArgs([flag]).help).toBe(true);
+      expect(args([flag]).help).toBe(true);
+      expect(args(['serve', flag]).help).toBe(true);
     }
     for (const flag of ['--version', '-v']) {
-      expect(parseArgs([flag]).version).toBe(true);
+      expect(args([flag]).version).toBe(true);
+      expect(args(['serve', flag]).version).toBe(true);
     }
   });
 
   it('ignores a flag it does not know, as it always has', () => {
-    expect(parseArgs(['--nonsense', 'nb']).targets).toEqual(['nb']);
+    expect(args(['--nonsense', 'nb']).targets).toEqual(['nb']);
   });
 });
 
@@ -76,9 +89,15 @@ describe('help', () => {
   });
 });
 
+describe('DEFAULT_PORT', () => {
+  it('is 4321, the port the README and the help both promise', () => {
+    expect(DEFAULT_PORT).toBe(4321);
+    expect(help()).toContain('4321');
+  });
+});
+
 describe('VERSION', () => {
   it('is the version in package.json, which is the one thing that ships a number', () => {
-    const pkg = JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8'));
     expect(VERSION).toBe(pkg.version);
   });
 });
@@ -108,8 +127,8 @@ describe('versionText', () => {
   });
 
   it('says so when there is nothing to claim, rather than guessing', () => {
-    // Run from a checkout there is no stamp, and an older binary has none
-    // either. Both are "unknown", which is the truth in either case.
+    // A checkout has no stamp, and an older binary has none either. Both are
+    // "unknown", which is the truth in either case.
     expect(versionText(null)).toContain('unknown');
     expect(versionText(null)).toContain(`note ${VERSION}`);
   });

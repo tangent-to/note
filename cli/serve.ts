@@ -26,6 +26,15 @@
  * a script Deno can run without being asked for its permissions twice.
  */
 import {
+  DEFAULT_PORT,
+  help,
+  isRuntime,
+  parseArgs,
+  versionText,
+  type Args,
+  type BuildInfo,
+} from "./command.ts";
+import {
   MAX_DEPTH,
   displayName,
   frontmatterId,
@@ -42,7 +51,6 @@ import {
 } from "./notebookPaths.ts";
 import { checkRequest } from "./requestGuard.ts";
 
-const DEFAULT_PORT = 4321;
 const SYNC_PATH = "/__sync";
 /** The working directory: files next to the notebooks, read and written by cells. */
 const FILES_PATH = "/__files/";
@@ -51,47 +59,6 @@ const WATCH_DEBOUNCE_MS = 120;
 // Enough to see the frontmatter fence and its title without reading a large
 // file. The whole block is a handful of short comment lines.
 const SNIFF_BYTES = 512;
-
-/**
- * What the binary reports, and what install.ts prints.
- *
- * Kept next to the arguments rather than read from a manifest, because the
- * binary is the thing being asked and the manifests are not compiled into it.
- * A test holds this to package.json's version, so the two cannot drift.
- */
-export const VERSION = "0.1.1";
-
-export interface Args {
-  targets: string[];
-  port: number;
-  dist: string;
-  /** `note --help`: say what this is, and serve nothing. */
-  help: boolean;
-  /** `note --version`: say which build this is, and serve nothing. */
-  version: boolean;
-}
-
-/** The one command, spelled the way an installed binary is invoked. */
-export function help(): string {
-  return `note ${VERSION}: the tangent/note companion.
-
-  note serve <notebook.js|notebook.html|directory> [more...] [options]
-
-Serves the app at http://localhost:${DEFAULT_PORT} and keeps the notebooks under
-one root in step with the open tabs, both ways: cells read and write files
-beside the notebook, saving lands in place so git sees an ordinary diff, and an
-edit made in your editor turns up in the tab holding it.
-
-Options:
-  --port N     the port to listen on (default ${DEFAULT_PORT})
-  --dist DIR   the built app to serve, when it is not the one this file finds
-  --help       this text
-  --version    which build this is
-
-Install it with \`deno task install:note\`, which puts a \`note\` binary on your
-PATH carrying its own copy of the app. From a clone, \`deno task build\` once and
-then \`deno task serve <directory>\` runs it from here.`;
-}
 
 /** A file URL as a path. A Windows file URL carries its drive letter behind a
  *  leading slash, which no path has. */
@@ -115,20 +82,6 @@ export function filePath(url: URL): string {
 export function defaultDist(): string {
   if (!import.meta.url.startsWith("file:")) return "dist";
   return filePath(new URL("../dist", import.meta.url));
-}
-
-/** What the install recorded about the build it carried. */
-export interface BuildInfo {
-  /** The source it was built from, in full, so it can be pasted anywhere. */
-  revision: string;
-  /** When the install made it: what tells an update from a reinstall. */
-  installed: string;
-}
-
-/** Whether an executable of this name is the runtime rather than a built binary. */
-export function isRuntime(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower === "deno" || lower === "deno.exe";
 }
 
 /**
@@ -158,40 +111,6 @@ export function buildInfo(): BuildInfo | null {
     // Installed before there was a stamp. Unknown, like a checkout.
   }
   return null;
-}
-
-/**
- * What `note --version` says.
- *
- * The version alone cannot answer "did that update land?", because it only
- * changes when package.json does. The build does, so the build is named here.
- */
-export function versionText(info: BuildInfo | null): string {
-  const built = info
-    ? `${info.installed}  ${info.revision.slice(0, 7)}`
-    : "unknown, not an installed build";
-  return `note ${VERSION}\n  built    ${built}`;
-}
-
-export function parseArgs(argv: string[]): Args {
-  const targets: string[] = [];
-  let port = DEFAULT_PORT;
-  let dist = defaultDist();
-  let help = false;
-  let version = false;
-  // `note serve ...` and a bare `note ...` are the same command. The subcommand
-  // is what the installed binary is called with, and it is where any second
-  // command would go; before it existed every invocation was a bare target.
-  const rest = argv[0] === "serve" ? argv.slice(1) : argv;
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i];
-    if (a === "--port") port = Number(rest[++i]);
-    else if (a === "--dist") dist = rest[++i];
-    else if (a === "--help" || a === "-h") help = true;
-    else if (a === "--version" || a === "-v") version = true;
-    else if (!a.startsWith("-")) targets.push(a);
-  }
-  return { targets, port, dist, help, version };
 }
 
 /** djb2, matching the app's cheap content-change hash. */
@@ -674,4 +593,4 @@ export function main(args: Args) {
   })();
 }
 
-if (import.meta.main) main(parseArgs(Deno.args));
+if (import.meta.main) main(parseArgs(Deno.args, defaultDist()));
