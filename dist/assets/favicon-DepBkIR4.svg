@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <!-- Favicon copy of logo.svg, same drawing with heavier strokes: at a 16px tab
+       the logo's 1.2-unit lines thin out to hairlines. The Inkscape transforms
+       are flattened to plain coordinates so this stays small and editable.
+       Keep in step with logo.svg by hand; the artwork rarely changes. -->
+  <rect width="40" height="40" fill="#ffffff"/>
+  <g fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="21.665" cy="21.582" r="14.517"/>
+    <path d="M3.821 18.047 17.964 3.904"/>
+    <path d="M16.07 16.582 21.07 21.582 16.07 26.582"/>
+    <path d="M23.07 16.582 28.07 21.582 23.07 26.582"/>
+  </g>
+  <circle cx="11.022" cy="11.105" r="2.6" fill="#0fae8f" stroke="#000000" stroke-width="2"/>
+</svg>

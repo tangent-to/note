@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Tangent Notebook</title>
+        <script>
+            // GitHub Pages serves this page for any path that isn't a real
+            // file, e.g. the deep links /gh/owner/repo/notebook.js or /import.
+            // Bounce to the SPA root with the original path in ?p= so the app
+            // can route it (see decodeRedirect in src/lib/utils/urlImport.ts).
+            var l = window.location;
+            l.replace(
+                l.origin +
+                    "/?p=" +
+                    encodeURIComponent(l.pathname + l.search + l.hash),
+            );
+        </script>
+    </head>
+    <body></body>
+</html>

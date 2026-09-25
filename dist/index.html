@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+        <title>tangent/note</title>
+        <meta
+            name="description"
+            content="A local-first JavaScript notebook that runs in the browser. Write, run, and visualize data in reactive cells."
+        />
+        <!-- Favicon copy of the logo with heavier strokes, so it survives a 16px
+             tab. Bundled from source: Vite rewrites this to the hashed asset at
+             build time. -->
+        <link rel="icon" type="image/svg+xml" href="/assets/favicon-DepBkIR4.svg" />
+        <script>
+            // Apply the saved/system theme before first paint to avoid a flash.
+            (function () {
+                try {
+                    var stored = localStorage.getItem("tangent-theme");
+                    var theme =
+                        stored === "light" || stored === "dark"
+                            ? stored
+                            : window.matchMedia &&
+                                window.matchMedia("(prefers-color-scheme: dark)")
+                                    .matches
+                              ? "dark"
+                              : "light";
+                    document.documentElement.setAttribute("data-theme", theme);
+                } catch (e) {
+                    document.documentElement.setAttribute("data-theme", "light");
+                }
+            })();
+        </script>
+      <script type="module" crossorigin src="/assets/index-9cfQenYZ.js"></script>
+      <link rel="stylesheet" crossorigin href="/assets/index-DCod2u3F.css">
+    </head>
+    <body>
+        <div id="app"></div>
+    </body>
+</html>
