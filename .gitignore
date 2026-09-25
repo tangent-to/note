@@ -1,5 +1,11 @@
 # Build output
+# dist is gitignored, and CI commits it back with `git add -f` so a clone
+# carries the app that main was built into. See .github/workflows/dist.yml.
 dist
+
+# A note of what an install embedded, written by cli/install.ts: which source
+# the binary was made from, and when. True of one machine at a time.
+note-build.json
 
 # Dependencies
 node_modules

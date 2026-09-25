@@ -1,0 +1,55 @@
+name: Commit the built app
+
+# The installed `note` binary carries the app inside it (see cli/install.ts),
+# and an install has to have an app to carry. So the app is built here, on every
+# push to main, and committed: a clone then already holds the app as it is on
+# main, and `git pull && deno task install:note` is the whole of an update.
+#
+# The build is done with the same Node toolchain and the same VITE_OLLAMA_PROXY_URL
+# as deploy.yml, so what gets committed is what gets deployed.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  commit-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          # The same repository Variable deploy.yml passes. Without it the
+          # committed build would differ from the deployed site.
+          VITE_OLLAMA_PROXY_URL: ${{ vars.VITE_OLLAMA_PROXY_URL }}
+
+      - name: Commit the app
+        run: |
+          # `dist` is in .gitignore, so it takes -f. Nothing is committed when
+          # the build came out the same as what is already there, which is most
+          # of the time: a change that never touched the app.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f dist
+          if git diff --cached --quiet; then
+            echo "dist is unchanged, nothing to commit."
+            exit 0
+          fi
+          git commit -m 'chore(dist): the app as it is on main'
+          git push origin HEAD:main
