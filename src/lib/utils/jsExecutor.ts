@@ -866,13 +866,25 @@ export class JavaScriptExecutor {
    * that a `const …` sitting at column 0 *inside a template literal* is left
    * alone instead of being rewritten into the string.
    *
-   * Left untransformed, and so private to the cell: `export` wrappers, and
-   * anything in a cell that does not parse.
+   * Left untransformed, and so private to the cell: `export` wrappers.
+   *
+   * A cell the parser reports as broken is run as written, since its
+   * declarations cannot be located reliably enough to rewrite; the engine
+   * reports a genuine syntax error. But the parser can also be wrong about
+   * valid code (@lezer/javascript 1.5.5 rejects `({ slope = 0 }) => …`), and
+   * such a cell runs fine. Its names are therefore still copied out at the
+   * end, each guarded, so that a misread cell does not silently keep its
+   * variables to itself and leave the next cell with "flight is not defined".
    */
   private transformForScope(code: string): string {
-    // A cell with a syntax error can't be analysed meaningfully; run it as
-    // written and let the engine report the error.
-    if (hasSyntaxErrors(code)) return code;
+    if (hasSyntaxErrors(code)) {
+      const names = [...topLevelDefinitions(code)];
+      if (names.length === 0) return code;
+      const syncs = names
+        .map(n => `try { window.__tangent_scope.${n} = ${n}; } catch {}`)
+        .join('\n');
+      return `${code}\n${syncs}`;
+    }
 
     // Collect edits first, then apply them back-to-front so earlier offsets
     // stay valid.

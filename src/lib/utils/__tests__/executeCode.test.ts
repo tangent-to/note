@@ -139,6 +139,23 @@ describe('executeCode', () => {
     expect(Object.prototype.hasOwnProperty.call(executor.getVariables(), 'Missing')).toBe(true);
   });
 
+  it('shares a valid cell that the syntax analysis misreads', async () => {
+    // Regression: @lezer/javascript 1.5.5 rejects a default on a shorthand
+    // pattern property, so this cell was run as written and `flight` stayed
+    // private: the next cell failed with "flight is not defined".
+    const { JavaScriptExecutor } = await import('../jsExecutor');
+    const executor = new JavaScriptExecutor();
+    const first = await executor.executeCode([
+      'const flight = ({ start, slope = 0 }) => start + slope;',
+      'const range = 3;',
+    ].join('\n'));
+    expect(first.type).not.toBe('error');
+
+    const second = await executor.executeCode('flight({ start: 4 }) + range');
+    expect(second.type).not.toBe('error');
+    expect(String(second.content)).toContain('7');
+  });
+
   it('shares a class declared in an earlier cell', async () => {
     const { JavaScriptExecutor } = await import('../jsExecutor');
     const executor = new JavaScriptExecutor();
