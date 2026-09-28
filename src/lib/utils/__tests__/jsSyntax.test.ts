@@ -167,4 +167,10 @@ describe('hasSyntaxErrors', () => {
     expect(hasSyntaxErrors('const x = ;')).toBe(true);
     expect(hasSyntaxErrors('const x = [1,\n  2,\n];')).toBe(false);
   });
+
+  it('accepts defaults on shorthand pattern properties', () => {
+    // @lezer/javascript 1.5.5 rejects these; it is pinned to 1.5.4.
+    expect(hasSyntaxErrors('const f = ({ start, slope = 0 }) => start + slope;')).toBe(false);
+    expect(hasSyntaxErrors('const { a, b = 0 } = o;')).toBe(false);
+  });
 });
