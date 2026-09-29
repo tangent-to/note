@@ -380,20 +380,22 @@ export function main(args: Args) {
     if (!absolute) return json(403, { error: "That path is outside the served directory." });
     const target = relativeTo(root, absolute) ?? relative;
 
-    if (req.method === "GET") {
+    // HEAD is GET without the body: how a client checks a file exists before
+    // relying on it (jmon's sample loader probes its source that way).
+    if (req.method === "GET" || req.method === "HEAD") {
       try {
         if (Deno.statSync(absolute).isDirectory) return json(404, { error: `${target} is a directory.` });
       } catch {
         return json(404, { error: `No file ${target}.` });
       }
-      return new Response(await Deno.readFile(absolute), {
-        headers: {
-          "content-type": fileContentType(target),
-          "cache-control": "no-store",
-          "x-content-type-options": "nosniff",
-          "content-security-policy": "sandbox",
-        },
-      });
+      const headers = {
+        "content-type": fileContentType(target),
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "sandbox",
+      };
+      if (req.method === "HEAD") return new Response(null, { headers });
+      return new Response(await Deno.readFile(absolute), { headers });
     }
 
     if (req.method === "PUT") {
@@ -415,7 +417,7 @@ export function main(args: Args) {
       }
     }
 
-    return json(405, { error: "Only GET and PUT are supported." });
+    return json(405, { error: "Only GET, HEAD and PUT are supported." });
   }
 
   Deno.serve({ port, hostname: "127.0.0.1", onListen: () => {
