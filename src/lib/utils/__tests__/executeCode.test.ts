@@ -156,6 +156,29 @@ describe('executeCode', () => {
     expect(String(second.content)).toContain('7');
   });
 
+  it('imports a path as a file of the page, not as an npm package', async () => {
+    // Regression: `import algo from "/__files/algo/src/index.js"` — a module in
+    // the directory `note serve` serves — was rewritten to
+    // https://cdn.jsdelivr.net/npm//__files/algo/src/index.js/+esm.
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(`${tmpdir()}/tangent-import-`);
+    writeFileSync(`${dir}/answer.js`, 'export default 42;');
+    const saved = g.location;
+    g.location = { href: `file://${dir}/notebook.html` };
+    try {
+      const { JavaScriptExecutor } = await import('../jsExecutor');
+      const executor = new JavaScriptExecutor();
+      const output = await executor.executeCode(`import answer from "${dir}/answer.js";\nanswer`);
+      expect(output.type).not.toBe('error');
+      expect(String(output.content)).toContain('42');
+      const relative = await executor.executeCode('import again from "./answer.js";\nagain + 1');
+      expect(String(relative.content)).toContain('43');
+    } finally {
+      g.location = saved;
+    }
+  });
+
   it('shares a class declared in an earlier cell', async () => {
     const { JavaScriptExecutor } = await import('../jsExecutor');
     const executor = new JavaScriptExecutor();

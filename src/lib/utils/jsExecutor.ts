@@ -1202,6 +1202,10 @@ export class JavaScriptExecutor {
 
   private normalizeModuleUrl(moduleUrl: string): string {
     if (/^https?:\/\//.test(moduleUrl)) return moduleUrl;
+    // A path is a file the page can reach, not an npm package: with `note
+    // serve`, `/__files/...` is the served directory. classifyImport already
+    // calls these relative, but they were sent to jsDelivr's npm registry.
+    if (/^(\.{1,2})?\//.test(moduleUrl)) return new URL(moduleUrl, location.href).href;
     return `https://cdn.jsdelivr.net/npm/${moduleUrl}/+esm`;
   }
 
