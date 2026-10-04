@@ -8,9 +8,9 @@
    * the tabs outgrow it, and disappears entirely on narrow screens where a
    * forty-pixel sliver would help nobody (Ctrl+K still switches notebooks).
    *
-   * Hidden too while a single notebook is open: a strip with one tab in it is
-   * chrome that explains nothing, and the app has to stay as quiet as it was
-   * for the reader who only ever wants one notebook.
+   * Shown as soon as one notebook is open, so the tab (and its close button)
+   * is always where the reader expects it; with none open there is nothing to
+   * show, and the empty state's New notebook takes over.
    */
   import { sessions } from '../stores/sessions';
   import NotebookTab from './NotebookTab.svelte';
@@ -33,7 +33,7 @@
   }
 </script>
 
-{#if $sessions.length > 1}
+{#if $sessions.length > 0}
   <div class="tab-strip" role="tablist" aria-label="Open notebooks" onwheel={onWheel}>
     {#each $sessions as session (session.id)}
       <NotebookTab {session} {onclose} />

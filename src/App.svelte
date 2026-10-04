@@ -454,11 +454,11 @@
   /**
    * Close a tab. The notebook stays in the library — closing is not deleting —
    * but its kernel does not: the worker is terminated rather than left running
-   * for a notebook nobody can see.
+   * for a notebook nobody can see. Closing the last one leaves the empty state,
+   * whose New notebook button is the way back in.
    */
   function closeTab(id: string) {
     closeSession(id);
-    if (get(sessions).length === 0) void loadSampleNotebook();
   }
 
   /**
