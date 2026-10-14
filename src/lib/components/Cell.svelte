@@ -2,6 +2,7 @@
   import { tick, untrack } from 'svelte';
   import { marked } from 'marked';
   import katex from 'katex';
+  import { renderMath } from '../utils/markdownMath';
   import DOMPurify from 'dompurify';
   import CodeEditor from './CodeEditor.svelte';
   import CellOutput from './CellOutput.svelte';
@@ -221,20 +222,13 @@
       try {
         let md = cell.content || '';
 
-        md = md.replace(/\$\$([\s\S]*?)\$\$/g, (m, expr) => {
+        // Which dollars are TeX is decided in markdownMath: money, `\$` and
+        // code stay as typed.
+        md = renderMath(md, (tex, displayMode) => {
           try {
-            return katex.renderToString(expr, { throwOnError: false, displayMode: true });
+            return katex.renderToString(tex, { throwOnError: false, displayMode });
           } catch (e: any) {
-            return `<pre style="color: var(--danger-fg);">${e.message}</pre>`;
-          }
-        });
-
-        // Inline math: single $...$ on one line (run after $$ so it isn't caught here).
-        md = md.replace(/\$([^$\n]+?)\$/g, (m, expr) => {
-          try {
-            return katex.renderToString(expr, { throwOnError: false, displayMode: false });
-          } catch {
-            return m;
+            return displayMode ? `<pre style="color: var(--danger-fg);">${e.message}</pre>` : `$${tex}$`;
           }
         });
 
@@ -532,10 +526,12 @@
           </div>
         {/if}
       {:else}
+        <!-- Collapsed means none of the content shows, not even its first
+             line: only what kind of cell it is and how long. -->
+        {@const lineCount = cell.content.trim() ? cell.content.trim().split('\n').length : 0}
         <div class="collapsed-indicator">
           <span class="collapsed-text">
-            {cell.type === 'code' ? cell.content.split('\n')[0]?.substring(0, 80) || 'Empty cell' : 'Markdown cell'}
-            {#if cell.content.split('\n').length > 1}...{/if}
+            {cell.type === 'code' ? 'Code' : 'Text'} hidden ({lineCount} {lineCount === 1 ? 'line' : 'lines'})
           </span>
         </div>
       {/if}
@@ -961,6 +957,11 @@
   .collapsed-indicator {
     padding: 0.1rem 0;
     cursor: pointer;
+  }
+
+  .collapsed-text {
+    font-size: 0.75rem;
+    color: var(--text-faint);
   }
 
   .collapsed-output-indicator {
