@@ -409,6 +409,21 @@
         </span>
       {/if}
 
+      <!-- Show/hide the cell's content. Revealed on hover like the drag
+           handle; it stays visible while the cell is collapsed, since it is
+           then the only sign that something is hidden. -->
+      <button
+        class="collapse-btn"
+        class:collapsed={cell.collapsed}
+        onclick={(e) => { e.stopPropagation(); ontoggleCollapse?.({ cellId: cell.id }); }}
+        title={cell.collapsed ? 'Show cell' : 'Hide cell'}
+        aria-label={cell.collapsed ? 'Show cell' : 'Hide cell'}
+        aria-expanded={!cell.collapsed}
+        data-testid="collapse-cell-btn"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.75L5 6.25l2.5-2.5"/></svg>
+      </button>
+
       <span
         class="drag-handle"
         draggable="true"
@@ -525,15 +540,6 @@
             {/if}
           </div>
         {/if}
-      {:else}
-        <!-- Collapsed means none of the content shows, not even its first
-             line: only what kind of cell it is and how long. -->
-        {@const lineCount = cell.content.trim() ? cell.content.trim().split('\n').length : 0}
-        <div class="collapsed-indicator">
-          <span class="collapsed-text">
-            {cell.type === 'code' ? 'Code' : 'Text'} hidden ({lineCount} {lineCount === 1 ? 'line' : 'lines'})
-          </span>
-        </div>
       {/if}
 
       {#if $outputPosition === 'below'}
@@ -829,6 +835,30 @@
   .cell-wrapper.selected .drag-handle { opacity: 1; }
 
   .drag-handle:hover { color: var(--text-muted); }
+
+  .collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-input);
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+
+  .collapse-btn svg { transition: transform 0.15s ease; }
+  .collapse-btn.collapsed svg { transform: rotate(-90deg); }
+
+  .cell-wrapper:hover .collapse-btn,
+  .cell-wrapper:focus-within .collapse-btn,
+  .cell-wrapper.selected .collapse-btn,
+  .collapse-btn.collapsed { opacity: 1; }
+
+  .collapse-btn:hover { color: var(--text-muted); }
   .drag-handle:active { cursor: grabbing; }
 
   @media (max-width: 640px) {
@@ -953,16 +983,6 @@
 
   .output-layer.wide { --breakout-w: max(100%, min(1200px, 96cqw - 72px)); }
   .output-layer.full { --breakout-w: max(100%, calc(98cqw - 72px)); }
-
-  .collapsed-indicator {
-    padding: 0.1rem 0;
-    cursor: pointer;
-  }
-
-  .collapsed-text {
-    font-size: 0.75rem;
-    color: var(--text-faint);
-  }
 
   .collapsed-output-indicator {
     padding: 0.3rem 0.65rem;
