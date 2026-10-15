@@ -109,3 +109,21 @@ a + b`;
     expect(nb.cells[2].content).toBe('a + b');
   });
 });
+
+describe('parseJSNotebook metadata', () => {
+  it('keeps frontmatter metadata, so opening a file from disk does not lose it', () => {
+    const text = [
+      '// ---', '// title: Billet', '// id: billet', '// date: 2026-10-15',
+      '// author: Essi Parent', '// translation: /en/posts/x/', '// ---', '',
+      '// %% [markdown]', '// Texte',
+    ].join('\n');
+    const nb = parseJSNotebook(text, 'source.js') as any;
+    expect(nb.meta).toEqual({ date: '2026-10-15', author: 'Essi Parent', translation: '/en/posts/x/' });
+    expect(nb.meta.title).toBeUndefined();
+  });
+
+  it('adds no metadata when the frontmatter has none', () => {
+    const nb = parseJSNotebook('// ---\n// title: T\n// id: t\n// ---\n// %% [javascript]\n1', 't.js') as any;
+    expect(nb.meta).toBeUndefined();
+  });
+});

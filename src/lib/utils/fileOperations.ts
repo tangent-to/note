@@ -5,6 +5,7 @@ import {
   cellTypeFromTag,
   normalizeMarkdownContent,
   serializeNotebook,
+  isMetaKey,
 } from './notebookFormat';
 import {
   looksLikeObservableNotebook,
@@ -190,6 +191,12 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     (metadata.id && metadata.id.length > 0 ? metadata.id : slugifyValue(notebookName)) ||
     `notebook-${Date.now()}`;
 
+  // Every other frontmatter key is the notebook's metadata, kept as written.
+  // Dropping them here lost them on the next save or export.
+  const meta = Object.fromEntries(
+    Object.entries(metadata).filter(([key, value]) => isMetaKey(key) && value.trim()),
+  );
+
   return {
     id: notebookId,
     name: notebookName,
@@ -197,6 +204,7 @@ export function parseJSNotebook(text: string, filename = 'notebook.js') {
     updatedAt: Date.now(),
     cells,
     ...(metadata.readonly === 'true' ? { readOnly: true } : {}),
+    ...(Object.keys(meta).length ? { meta } : {}),
   };
 }
 
