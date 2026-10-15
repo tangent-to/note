@@ -2,7 +2,8 @@
   import type { PanelTab } from '../types/panel';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
-  import { currentNotebook, kernelMode, notebookWidth } from '../stores/notebook';
+  import { currentNotebook, kernelMode, notebookWidth, setNotebookMeta } from '../stores/notebook';
+  import { isMetaKey } from '../utils/notebookFormat';
   import { kernelVariables } from '../utils/kernelClient';
   import { datasets, refreshDatasets, addFiles, deleteDataset, formatBytes } from '../utils/dataStore';
   import { SvelteSet } from 'svelte/reactivity';
@@ -71,6 +72,41 @@
     onbackup,
     onrestore,
   }: Props = $props();
+
+  // Metadata (Info tab): the notebook's free `key: value` pairs, edited as rows.
+  // A row commits when its field loses focus; the new-entry row adds one once
+  // it has a valid key and a value.
+  let newMetaKey = $state('');
+  let newMetaValue = $state('');
+  const metaEntries = $derived(Object.entries($currentNotebook?.meta ?? {}));
+  const metaLocked = $derived($currentNotebook?.readOnly === true);
+  const newMetaKeyInvalid = $derived(newMetaKey.trim() !== '' && !isMetaKey(newMetaKey.trim()));
+
+  function writeMeta(next: Record<string, string>): void {
+    currentNotebook.update((notebook) => (notebook ? setNotebookMeta(notebook, next) : notebook));
+  }
+
+  /** Rename or re-value one entry, keeping its place in the order. */
+  function editMeta(oldKey: string, key: string, value: string): void {
+    const next: Record<string, string> = {};
+    for (const [k, v] of metaEntries) {
+      if (k === oldKey) next[key.trim() || oldKey] = value;
+      else if (k !== key.trim()) next[k] = v;
+    }
+    writeMeta(next);
+  }
+
+  function removeMeta(key: string): void {
+    writeMeta(Object.fromEntries(metaEntries.filter(([k]) => k !== key)));
+  }
+
+  function addMeta(): void {
+    const key = newMetaKey.trim(), value = newMetaValue.trim();
+    if (!isMetaKey(key) || !value) return;
+    writeMeta({ ...Object.fromEntries(metaEntries), [key]: value });
+    newMetaKey = '';
+    newMetaValue = '';
+  }
 
   /** Whether a backup carries the libraries too — heavier, but it runs offline. */
   let backupLibraries = $state(false);
@@ -517,6 +553,33 @@
         <div class="info-section">
           <div class="info-label">Last Modified</div>
           <div class="info-value">{formatDateTime($currentNotebook.updatedAt)}</div>
+        </div>
+
+        <div class="info-section">
+          <div class="info-label">Metadata</div>
+          <p class="setting-hint">Written to the file header as <code>key: value</code>, exported as <code>&lt;meta&gt;</code> tags.</p>
+          {#each metaEntries as [key, value] (key)}
+            <div class="meta-row">
+              <input class="meta-key" value={key} disabled={metaLocked} aria-label="Metadata key"
+                onchange={(e) => editMeta(key, e.currentTarget.value, value)} />
+              <input class="meta-value" value={value} disabled={metaLocked} aria-label={`Value of ${key}`}
+                onchange={(e) => editMeta(key, key, e.currentTarget.value)} />
+              <button class="meta-remove" disabled={metaLocked} onclick={() => removeMeta(key)}
+                title={`Remove ${key}`} aria-label={`Remove ${key}`}>×</button>
+            </div>
+          {/each}
+          {#if !metaLocked}
+            <form class="meta-row" onsubmit={(e) => { e.preventDefault(); addMeta(); }}>
+              <input class="meta-key" bind:value={newMetaKey} placeholder="key" aria-label="New metadata key"
+                aria-invalid={newMetaKeyInvalid} />
+              <input class="meta-value" bind:value={newMetaValue} placeholder="value" aria-label="New metadata value" />
+              <button class="meta-add" type="submit" disabled={!isMetaKey(newMetaKey.trim()) || !newMetaValue.trim()}
+                title="Add" aria-label="Add metadata">+</button>
+            </form>
+            {#if newMetaKeyInvalid}
+              <p class="setting-hint meta-error">A key is a word starting with a letter, other than title, id or readonly.</p>
+            {/if}
+          {/if}
         </div>
 
         <div class="divider"></div>
@@ -1048,6 +1111,22 @@
   }
 
   .info-value { font-size: 0.875rem; color: var(--heading); font-weight: 500; }
+
+  .meta-row { display: flex; gap: 0.3rem; align-items: center; margin-bottom: 0.3rem; }
+  .meta-row input {
+    min-width: 0; padding: 0.25rem 0.4rem; font-size: 0.8rem; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  }
+  .meta-key { flex: 0 0 34%; font-family: var(--font-mono); }
+  .meta-value { flex: 1; }
+  .meta-row input[aria-invalid="true"] { border-color: var(--danger-border); }
+  .meta-remove, .meta-add {
+    flex: 0 0 auto; width: 1.6rem; height: 1.6rem; padding: 0; line-height: 1;
+    color: var(--text-muted); background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer;
+  }
+  .meta-remove:hover:not(:disabled), .meta-add:hover:not(:disabled) { color: var(--heading); border-color: var(--border); }
+  .meta-remove:disabled, .meta-add:disabled { opacity: 0.4; cursor: default; }
+  .meta-error { color: var(--danger-fg); }
 
   .divider { height: 1px; background-color: var(--border); margin: 1.1rem 0; }
 

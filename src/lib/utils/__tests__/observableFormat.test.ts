@@ -487,3 +487,26 @@ describe('Save As from Observable to Tangent', () => {
     expect(content).toContain('// %% [javascript]');
   });
 });
+
+describe('notebook metadata in Observable 2.0', () => {
+  it('exports metadata as meta tags after the title, escaped', () => {
+    const notebook = { ...nb([{ type: 'markdown', content: '# Hi' }]), meta: { date: '2026-10-15', author: 'A "B" & C' } };
+    const { html } = serializeObservableNotebook(notebook);
+    expect(html).toContain('<title>Test</title>\n  <meta name="date" content="2026-10-15">\n  <meta name="author" content="A &quot;B&quot; &amp; C">');
+  });
+
+  it('reads meta tags back, and round-trips them', () => {
+    const notebook = { ...nb([{ type: 'markdown', content: '# Hi' }]), meta: { date: '2026-10-15', translation: '/en/posts/x/' } };
+    const { notebook: back } = parseObservableNotebook(serializeObservableNotebook(notebook).html, 'x.html');
+    expect(back.meta).toEqual(notebook.meta);
+  });
+
+  it('ignores a meta tag written inside a cell', () => {
+    const html = HELLO.replace('# Hello, world!', '<meta name="date" content="1999-01-01">');
+    expect(parseObservableNotebook(html, 'x.html').notebook.meta).toBeUndefined();
+  });
+
+  it('exports nothing extra for a notebook without metadata', () => {
+    expect(serializeObservableNotebook(nb([{ content: '1' }])).html).not.toContain('<meta');
+  });
+});

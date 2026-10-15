@@ -51,6 +51,18 @@ export function applyCellTags(cell: NotebookCell, delimiterLine: string): void {
  * // %% [javascript]
  * const a = 3;
  */
+/** Frontmatter keys with a field of their own on Notebook; anything else is metadata. */
+const RESERVED_KEYS = new Set(["title", "id", "readonly"]);
+
+/**
+ * Whether a key can name a metadata entry: a word (letters, digits, `_`, `-`,
+ * starting with a letter) that is not one of the reserved keys. The same rule
+ * holds in the frontmatter and in a `<meta name>`, so an entry survives both.
+ */
+export function isMetaKey(key: string): boolean {
+  return /^[A-Za-z][\w-]*$/.test(key) && !RESERVED_KEYS.has(key.toLowerCase());
+}
+
 export function serializeNotebook(notebook: Notebook): string {
   const lines: string[] = [];
 
@@ -58,6 +70,9 @@ export function serializeNotebook(notebook: Notebook): string {
   lines.push(`// ---`);
   lines.push(`// title: ${notebook.name || "Untitled"}`);
   lines.push(`// id: ${notebook.id}`);
+  for (const [key, value] of Object.entries(notebook.meta ?? {})) {
+    if (isMetaKey(key) && value.trim()) lines.push(`// ${key}: ${value.trim()}`);
+  }
   // Only written when set: an absent field reads as false, and a notebook that
   // is not locked should not carry a line saying so.
   if (notebook.readOnly) lines.push(`// readonly: true`);
@@ -161,6 +176,7 @@ export function parseNotebook(
   let title = filename.replace(/\.(js|txt)$/, "");
   let notebookId = `notebook-${Date.now()}`;
   let readOnly = false;
+  const meta: Record<string, string> = {};
 
   let i = 0;
   // Skip any lines before the header block — but stop at the first cell. Past
@@ -188,6 +204,10 @@ export function parseNotebook(
         notebookId = line.substring("// id:".length).trim();
       } else if (line.startsWith("// readonly:")) {
         readOnly = line.substring("// readonly:".length).trim() === "true";
+      } else {
+        // Any other `// key: value` is metadata, kept as written.
+        const entry = /^\/\/\s*([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
+        if (entry && isMetaKey(entry[1]) && entry[2].trim()) meta[entry[1]] = entry[2].trim();
       }
       i++;
     }
@@ -274,6 +294,7 @@ export function parseNotebook(
     createdAt: now,
     updatedAt: now,
     ...(readOnly ? { readOnly: true } : {}),
+    ...(Object.keys(meta).length ? { meta } : {}),
   };
 }
 

@@ -11,6 +11,7 @@ import {
   computeStaleCells,
   findDuplicateDefinitions,
 } from '../utils/dependencyGraph';
+import { isMetaKey } from '../utils/notebookFormat';
 
 /**
  * The notebook stores, as the app has always read them.
@@ -236,6 +237,22 @@ export function createNewCell(type: 'code' | 'markdown' = 'code'): NotebookCell 
     content: '',
     isRunning: false
   };
+}
+
+/**
+ * Replace the notebook's metadata (frontmatter `key: value` pairs, exported as
+ * <meta> tags). Entries with an invalid key or an empty value are dropped, so
+ * what is kept is exactly what the file can carry.
+ */
+export function setNotebookMeta(notebook: Notebook, meta: Record<string, string>): Notebook {
+  const kept = Object.fromEntries(
+    Object.entries(meta)
+      .map(([key, value]) => [key.trim(), value.trim()] as const)
+      .filter(([key, value]) => isMetaKey(key) && value),
+  );
+  markNotebookDirty();
+  const { meta: _old, ...rest } = notebook;
+  return { ...rest, ...(Object.keys(kept).length ? { meta: kept } : {}), updatedAt: Date.now() };
 }
 
 // Update cell content

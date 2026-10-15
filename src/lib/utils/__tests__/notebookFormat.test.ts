@@ -425,3 +425,45 @@ describe('parseJSNotebook - markdown formats', () => {
     expect(parseJSNotebook(src, 't.js').cells.find((c: any) => c.type === 'markdown').content).toBe('## Old\nbody');
   });
 });
+
+describe('notebook metadata', () => {
+  const header = (content: string) => content.split('\n// %%')[0];
+
+  it('reads any other frontmatter key as metadata, in order', () => {
+    const src = [
+      '// ---', '// title: Billet', '// id: billet', '// date: 2026-10-15',
+      '// author: Essi Parent', '// translation: /en/posts/x/', '// ---', '',
+      '// %% [markdown]', '// Texte',
+    ].join('\n');
+    const nb = parseNotebook(src, 'source.js');
+    expect(nb.name).toBe('Billet');
+    expect(nb.meta).toEqual({ date: '2026-10-15', author: 'Essi Parent', translation: '/en/posts/x/' });
+    expect(Object.keys(nb.meta!)).toEqual(['date', 'author', 'translation']);
+  });
+
+  it('writes metadata after the id, and round-trips it', () => {
+    const nb = makeNotebook({ meta: { date: '2026-10-15', author: 'Essi Parent' } });
+    const out = serializeNotebook(nb);
+    expect(header(out)).toContain('// id: test-notebook\n// date: 2026-10-15\n// author: Essi Parent\n// ---');
+    expect(parseNotebook(out, 'x.js').meta).toEqual(nb.meta);
+  });
+
+  it('keeps a colon or a URL inside a value', () => {
+    const nb = makeNotebook({ meta: { source: 'https://example.org/a:b' } });
+    expect(parseNotebook(serializeNotebook(nb), 'x.js').meta).toEqual({ source: 'https://example.org/a:b' });
+  });
+
+  it('never takes a reserved key or an empty value for metadata', () => {
+    const nb = makeNotebook({ meta: { title: 'no', readonly: 'true', empty: '  ', ok: 'yes' } });
+    const out = serializeNotebook(nb);
+    expect(out.match(/\/\/ title:/g)).toHaveLength(1);
+    expect(out).not.toContain('// readonly:');
+    expect(out).not.toContain('// empty:');
+    expect(parseNotebook(out, 'x.js').meta).toEqual({ ok: 'yes' });
+  });
+
+  it('leaves a notebook without metadata exactly as before', () => {
+    const nb = makeNotebook();
+    expect(parseNotebook(serializeNotebook(nb), 'x.js').meta).toBeUndefined();
+  });
+});

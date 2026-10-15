@@ -19,6 +19,7 @@
  * Format reference: https://observablehq.com/notebook-kit/kit
  */
 import type { Notebook, NotebookCell } from '../types/notebook';
+import { isMetaKey } from './notebookFormat';
 
 /** Something a conversion could not carry across, in the reader's terms. */
 export interface Loss {
@@ -129,6 +130,11 @@ function decodeEntities(text: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/** Text for a double-quoted attribute value: entities, plus the quote itself. */
+function encodeAttribute(text: string): string {
+  return encodeEntities(text).replace(/"/g, '&quot;');
+}
+
 function encodeEntities(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -210,6 +216,18 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
     'Untitled Notebook';
 
   const readonly = 'readonly' in notebookAttrs;
+
+  // <meta name content> before the first cell: the notebook's metadata (date,
+  // author…). Only before it, so a meta tag written inside a cell's source
+  // stays source.
+  const meta: Record<string, string> = {};
+  const head = html.slice(0, html.search(/<script\b/i) === -1 ? html.length : html.search(/<script\b/i));
+  for (const tag of head.match(/<meta\b[^>]*>/gi) ?? []) {
+    const attrs = parseAttributes(tag);
+    const key = attrs.name ?? '';
+    const value = decodeEntities(attrs.content ?? '').trim();
+    if (isMetaKey(key) && value) meta[key] = value;
+  }
 
   const cells: NotebookCell[] = [];
   scanCells(html).forEach((raw, index) => {
@@ -302,6 +320,7 @@ export function parseObservableNotebook(html: string, filename = 'notebook.html'
       // the same thing the author wrote rather than as a lock stamped onto
       // every cell.
       ...(readonly ? { readOnly: true } : {}),
+      ...(Object.keys(meta).length ? { meta } : {}),
     },
     losses,
   };
@@ -357,6 +376,13 @@ export function serializeObservableNotebook(notebook: Notebook): ExportResult {
     (notebook.cells.length > 0 && notebook.cells.every((cell) => cell.readOnly));
   lines.push(allReadOnly ? '<notebook readonly>' : '<notebook>');
   lines.push(`  <title>${encodeEntities(notebook.name || 'Untitled Notebook')}</title>`);
+  // Metadata as <meta> tags: Notebook Kit ignores them, a site publishing the
+  // notebook can read them (date, author, a link to a translation…).
+  for (const [key, value] of Object.entries(notebook.meta ?? {})) {
+    if (isMetaKey(key) && value.trim()) {
+      lines.push(`  <meta name="${key}" content="${encodeAttribute(value.trim())}">`);
+    }
+  }
 
   const indent = (source: string) =>
     escapeCellSource(source.trim())

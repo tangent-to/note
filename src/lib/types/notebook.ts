@@ -84,6 +84,14 @@ export interface Notebook {
    * thing, and no longer recognisable as what the author wrote.
    */
   readOnly?: boolean;
+  /**
+   * Free metadata about the notebook (date, author, translation…), in the
+   * order the author wrote it. Kept in the frontmatter as `// key: value` and
+   * exported to Observable Notebooks 2.0 as `<meta name="key" content="value">`,
+   * so a site that publishes the notebook can read it. `title`, `id` and
+   * `readonly` are not metadata: they have their own fields.
+   */
+  meta?: Record<string, string>;
 }
 
 export interface NotebookFile {
